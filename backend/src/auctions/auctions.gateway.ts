@@ -2,11 +2,9 @@ import {
   ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
-  OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
-  WsException,
 } from '@nestjs/websockets';
 import { UseGuards } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
@@ -14,9 +12,10 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
+import { extractWsToken } from '../common/utils/ws.utils';
 
 @WebSocketGateway({ cors: { origin: '*' }, namespace: '/auctions' })
-export class AuctionsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class AuctionsGateway implements OnGatewayConnection {
   @WebSocketServer()
   server: Server;
 
@@ -28,27 +27,16 @@ export class AuctionsGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   async handleConnection(client: Socket) {
     try {
-      const token =
-        client.handshake.auth?.token ??
-        client.handshake.headers?.authorization?.replace('Bearer ', '');
-
-      if (!token) {
-        client.disconnect();
-        return;
-      }
+      const token = extractWsToken(client);
+      if (!token) { client.disconnect(); return; }
 
       const payload = this.jwtService.verify(token, {
         secret: this.configService.getOrThrow('jwt.secret'),
       });
-      const user = await this.usersService.findById(payload.sub);
-      client.data.user = user;
+      client.data.user = await this.usersService.findById(payload.sub);
     } catch {
       client.disconnect();
     }
-  }
-
-  handleDisconnect(client: Socket) {
-    // rooms are cleaned up automatically by socket.io on disconnect
   }
 
   @UseGuards(WsJwtGuard)

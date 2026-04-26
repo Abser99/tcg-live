@@ -18,12 +18,9 @@ import { Auction, AuctionItem, Bid } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
 import { AppStackParamList } from '../../navigation/types';
 import { WS_URL } from '../../api/client';
+import { formatMXN } from '../../utils/currency';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'AuctionDetail'>;
-
-function formatMXN(cents: number) {
-  return `$${(cents / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
-}
 
 const CONDITIONS: Record<string, string> = {
   mint: 'Mint', near_mint: 'Near Mint', excellent: 'Excellent', good: 'Good', played: 'Played',
@@ -85,7 +82,7 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
           id: data.bidId,
           auctionItemId: data.itemId,
           bidderId: data.bidderId,
-          bidder: { username: data.bidderUsername } as any,
+          bidder: { username: data.bidderUsername as string } as Bid['bidder'],
           amount: data.amount,
           createdAt: data.timestamp,
         },
@@ -96,12 +93,11 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
     socket.on('item:closed', (data) => {
       setActiveItem((prev) => prev?.id === data.itemId ? ({ ...prev!, status: data.status as AuctionItem['status'] }) : prev);
       if (data.nextItemId) {
-        // reload to get next item details
         load();
       }
     });
 
-    socket.on('auction:started', (data) => {
+    socket.on('auction:started', () => {
       load();
     });
 
@@ -113,7 +109,7 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
       socket.emit('leave-auction', auctionId);
       socket.disconnect();
     };
-  }, [token, auctionId]);
+  }, [token, auctionId, load]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -152,7 +148,6 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
       <View style={styles.headerRow}>
         <View style={[styles.badge, { backgroundColor: isLive ? colors.error : colors.textMuted }]}>
           {isLive && <View style={styles.liveDot} />}
@@ -168,7 +163,6 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
         <Text style={styles.description}>{auction.description}</Text>
       ) : null}
 
-      {/* Active item */}
       {activeItem && (
         <View style={styles.activeCard}>
           <Text style={styles.sectionLabel}>CARTA ACTUAL</Text>
@@ -193,7 +187,6 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
             )}
           </View>
 
-          {/* Bid input */}
           {isLive && !isSeller && (
             <View style={styles.bidRow}>
               <TextInput
@@ -220,7 +213,6 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* Recent bids */}
       {recentBids.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>OFERTAS RECIENTES</Text>
@@ -235,7 +227,6 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* Item list */}
       {auction.items && auction.items.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>TODAS LAS CARTAS</Text>

@@ -27,7 +27,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         const { data: user } = await authApi.me();
         set({ user, token });
       }
-    } catch {
+    } catch (err) {
+      console.warn('Session restore failed:', err);
       await SecureStore.deleteItemAsync('token');
     } finally {
       set({ isInitialized: true });

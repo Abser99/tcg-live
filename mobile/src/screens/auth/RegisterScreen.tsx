@@ -13,7 +13,8 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuthStore } from '../../store/auth.store';
-import { colors, spacing, radius, font } from '../../theme';
+import { colors, spacing, font } from '../../theme';
+import { authStyles } from '../../theme/authStyles';
 import { AuthStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
@@ -56,7 +57,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
         <View style={styles.form}>
           <TextInput
-            style={styles.input}
+            style={authStyles.input}
             placeholder="Correo electrónico"
             placeholderTextColor={colors.textMuted}
             value={email}
@@ -65,7 +66,7 @@ export default function RegisterScreen({ navigation }: Props) {
             autoCapitalize="none"
           />
           <TextInput
-            style={styles.input}
+            style={authStyles.input}
             placeholder="Nombre de usuario"
             placeholderTextColor={colors.textMuted}
             value={username}
@@ -73,7 +74,7 @@ export default function RegisterScreen({ navigation }: Props) {
             autoCapitalize="none"
           />
           <TextInput
-            style={styles.input}
+            style={authStyles.input}
             placeholder="Contraseña"
             placeholderTextColor={colors.textMuted}
             value={password}
@@ -81,7 +82,7 @@ export default function RegisterScreen({ navigation }: Props) {
             secureTextEntry
           />
           <TextInput
-            style={styles.input}
+            style={authStyles.input}
             placeholder="Confirmar contraseña"
             placeholderTextColor={colors.textMuted}
             value={confirm}
@@ -90,21 +91,21 @@ export default function RegisterScreen({ navigation }: Props) {
           />
 
           <TouchableOpacity
-            style={[styles.button, isLoading && styles.buttonDisabled]}
+            style={[authStyles.button, isLoading && authStyles.buttonDisabled]}
             onPress={handleRegister}
             disabled={isLoading}
           >
             {isLoading ? (
               <ActivityIndicator color={colors.white} />
             ) : (
-              <Text style={styles.buttonText}>Crear cuenta</Text>
+              <Text style={authStyles.buttonText}>Crear cuenta</Text>
             )}
           </TouchableOpacity>
         </View>
 
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.link}>
-            ¿Ya tienes cuenta? <Text style={styles.linkAccent}>Inicia sesión</Text>
+          <Text style={authStyles.link}>
+            ¿Ya tienes cuenta? <Text style={authStyles.linkAccent}>Inicia sesión</Text>
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -123,25 +124,4 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   form: { gap: spacing.md, marginBottom: spacing.xl },
-  input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    color: colors.text,
-    fontSize: font.base,
-  },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md + 2,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: colors.white, fontSize: font.base, fontWeight: '700' },
-  link: { color: colors.textMuted, textAlign: 'center', fontSize: font.md },
-  linkAccent: { color: colors.primaryLight, fontWeight: '600' },
 });

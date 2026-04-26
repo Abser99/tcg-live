@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Socket } from 'socket.io';
 import { UsersService } from '../../users/users.service';
+import { extractWsToken } from '../utils/ws.utils';
 
 @Injectable()
 export class WsJwtGuard implements CanActivate {
@@ -14,9 +15,7 @@ export class WsJwtGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const client: Socket = context.switchToWs().getClient();
-    const token =
-      client.handshake.auth?.token ??
-      client.handshake.headers?.authorization?.replace('Bearer ', '');
+    const token = extractWsToken(client);
 
     if (!token) throw new UnauthorizedException('No token provided');
 
@@ -24,8 +23,7 @@ export class WsJwtGuard implements CanActivate {
       const payload = this.jwtService.verify(token, {
         secret: this.configService.getOrThrow('jwt.secret'),
       });
-      const user = await this.usersService.findById(payload.sub);
-      client.data.user = user;
+      client.data.user = await this.usersService.findById(payload.sub);
       return true;
     } catch {
       throw new UnauthorizedException('Invalid token');

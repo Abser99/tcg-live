@@ -12,6 +12,7 @@ import { Bid } from './entities/bid.entity';
 import { CreateAuctionDto } from './dto/create-auction.dto';
 import { PlaceBidDto } from './dto/place-bid.dto';
 import { AuctionsGateway } from './auctions.gateway';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class AuctionsService {
@@ -24,6 +25,7 @@ export class AuctionsService {
     private readonly bidsRepo: Repository<Bid>,
     private readonly dataSource: DataSource,
     private readonly gateway: AuctionsGateway,
+    private readonly usersService: UsersService,
   ) {}
 
   async create(sellerId: string, dto: CreateAuctionDto): Promise<Auction> {
@@ -58,7 +60,7 @@ export class AuctionsService {
 
   async start(id: string, sellerId: string): Promise<Auction> {
     const auction = await this.findOne(id);
-    if (auction.sellerId !== sellerId) throw new ForbiddenException();
+    this.assertOwner(auction.sellerId, sellerId);
     if (auction.status !== AuctionStatus.SCHEDULED) {
       throw new BadRequestException('Auction is not in scheduled state');
     }
@@ -66,7 +68,7 @@ export class AuctionsService {
     auction.status = AuctionStatus.LIVE;
     auction.startedAt = new Date();
 
-    const firstItem = auction.items.sort((a, b) => a.position - b.position)[0];
+    const firstItem = [...auction.items].sort((a, b) => a.position - b.position)[0];
     if (firstItem) {
       firstItem.status = AuctionItemStatus.ACTIVE;
       await this.itemsRepo.save(firstItem);
@@ -83,7 +85,7 @@ export class AuctionsService {
 
   async end(id: string, sellerId: string): Promise<Auction> {
     const auction = await this.findOne(id);
-    if (auction.sellerId !== sellerId) throw new ForbiddenException();
+    this.assertOwner(auction.sellerId, sellerId);
     if (auction.status !== AuctionStatus.LIVE) {
       throw new BadRequestException('Auction is not live');
     }
@@ -98,7 +100,7 @@ export class AuctionsService {
   }
 
   async placeBid(itemId: string, bidderId: string, dto: PlaceBidDto): Promise<Bid> {
-    const bid = await this.dataSource.transaction(async (manager) => {
+    const { bid, auctionId } = await this.dataSource.transaction(async (manager) => {
       // Lock only the item row — no joins (PostgreSQL rejects FOR UPDATE on nullable join sides)
       const item = await manager.findOne(AuctionItem, {
         where: { id: itemId },
@@ -128,21 +130,16 @@ export class AuctionsService {
       await manager.save(AuctionItem, item);
 
       const newBid = manager.create(Bid, { auctionItemId: itemId, bidderId, amount: dto.amount });
-      return manager.save(Bid, newBid);
+      return { bid: await manager.save(Bid, newBid), auctionId: item.auctionId };
     });
 
-    // load bidder username for the broadcast
-    const bidWithBidder = await this.bidsRepo.findOne({
-      where: { id: bid.id },
-      relations: ['bidder', 'auctionItem'],
-    });
-
-    this.gateway.emitBidPlaced(bidWithBidder!.auctionItem.auctionId, {
-      auctionId: bidWithBidder!.auctionItem.auctionId,
+    const bidder = await this.usersService.findById(bidderId);
+    this.gateway.emitBidPlaced(auctionId, {
+      auctionId,
       itemId,
       bidId: bid.id,
       bidderId,
-      bidderUsername: bidWithBidder!.bidder.username,
+      bidderUsername: bidder.username,
       amount: dto.amount,
       timestamp: bid.createdAt.toISOString(),
     });
@@ -157,7 +154,7 @@ export class AuctionsService {
     });
 
     if (!item) throw new NotFoundException('Item not found');
-    if (item.auction.sellerId !== sellerId) throw new ForbiddenException();
+    this.assertOwner(item.auction.sellerId, sellerId);
     if (item.status !== AuctionItemStatus.ACTIVE) {
       throw new BadRequestException('Item is not active');
     }
@@ -194,5 +191,9 @@ export class AuctionsService {
       relations: ['bidder'],
       order: { createdAt: 'DESC' },
     });
+  }
+
+  private assertOwner(ownerId: string, requesterId: string): void {
+    if (ownerId !== requesterId) throw new ForbiddenException();
   }
 }

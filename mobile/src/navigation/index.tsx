@@ -23,9 +23,16 @@ const AppStack = createNativeStackNavigator<AppStackParamList>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
+const stackScreenOptions = {
+  headerStyle: { backgroundColor: colors.surface },
+  headerTintColor: colors.text,
+  headerTitleStyle: { fontWeight: '700' as const },
+  contentStyle: { backgroundColor: colors.bg },
+};
+
 function AuctionsStack() {
   return (
-    <AppStack.Navigator screenOptions={{ headerStyle: { backgroundColor: colors.surface }, headerTintColor: colors.text, headerTitleStyle: { fontWeight: '700' }, contentStyle: { backgroundColor: colors.bg } }}>
+    <AppStack.Navigator screenOptions={stackScreenOptions}>
       <AppStack.Screen name="AuctionList" component={AuctionListScreen} options={{ title: 'Subastas' }} />
       <AppStack.Screen name="AuctionDetail" component={AuctionDetailScreen} options={{ title: 'Detalle' }} />
     </AppStack.Navigator>
@@ -33,9 +40,8 @@ function AuctionsStack() {
 }
 
 function ProfileNavigator() {
-  const screenOptions = { headerStyle: { backgroundColor: colors.surface }, headerTintColor: colors.text, headerTitleStyle: { fontWeight: '700' as const }, contentStyle: { backgroundColor: colors.bg } };
   return (
-    <ProfileStack.Navigator screenOptions={screenOptions}>
+    <ProfileStack.Navigator screenOptions={stackScreenOptions}>
       <ProfileStack.Screen name="ProfileHome" component={ProfileScreen} options={{ title: 'Perfil' }} />
       <ProfileStack.Screen name="ApplySeller" component={ApplySellerScreen} options={{ title: 'Ser vendedor' }} />
       <ProfileStack.Screen name="AdminApplications" component={AdminApplicationsScreen} options={{ title: 'Solicitudes' }} />

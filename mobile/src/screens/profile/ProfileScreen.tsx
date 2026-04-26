@@ -4,13 +4,13 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/auth.store';
 import { sellerApplicationsApi } from '../../api/seller-applications';
-import { SellerApplication } from '../../types';
+import { SellerApplication, ApplicationStatus } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
 import { ProfileStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'ProfileHome'>;
 
-const STATUS_LABEL: Record<string, { label: string; color: string }> = {
+const STATUS_LABEL: Record<ApplicationStatus, { label: string; color: string }> = {
   pending:  { label: 'Solicitud en revisión', color: colors.warning },
   approved: { label: 'Vendedor aprobado',     color: colors.success },
   rejected: { label: 'Solicitud rechazada',   color: colors.error },

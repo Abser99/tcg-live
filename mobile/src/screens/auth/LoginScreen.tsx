@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuthStore } from '../../store/auth.store';
-import { colors, spacing, radius, font } from '../../theme';
+import { colors, spacing, font } from '../../theme';
+import { authStyles } from '../../theme/authStyles';
 import { AuthStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
@@ -45,7 +46,7 @@ export default function LoginScreen({ navigation }: Props) {
 
         <View style={styles.form}>
           <TextInput
-            style={styles.input}
+            style={authStyles.input}
             placeholder="Correo electrónico"
             placeholderTextColor={colors.textMuted}
             value={email}
@@ -54,7 +55,7 @@ export default function LoginScreen({ navigation }: Props) {
             autoCapitalize="none"
           />
           <TextInput
-            style={styles.input}
+            style={authStyles.input}
             placeholder="Contraseña"
             placeholderTextColor={colors.textMuted}
             value={password}
@@ -63,21 +64,21 @@ export default function LoginScreen({ navigation }: Props) {
           />
 
           <TouchableOpacity
-            style={[styles.button, isLoading && styles.buttonDisabled]}
+            style={[authStyles.button, isLoading && authStyles.buttonDisabled]}
             onPress={handleLogin}
             disabled={isLoading}
           >
             {isLoading ? (
               <ActivityIndicator color={colors.white} />
             ) : (
-              <Text style={styles.buttonText}>Entrar</Text>
+              <Text style={authStyles.buttonText}>Entrar</Text>
             )}
           </TouchableOpacity>
         </View>
 
         <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-          <Text style={styles.link}>
-            ¿No tienes cuenta? <Text style={styles.linkAccent}>Regístrate</Text>
+          <Text style={authStyles.link}>
+            ¿No tienes cuenta? <Text style={authStyles.linkAccent}>Regístrate</Text>
           </Text>
         </TouchableOpacity>
       </View>
@@ -88,39 +89,7 @@ export default function LoginScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   inner: { flex: 1, justifyContent: 'center', paddingHorizontal: spacing.xl },
-  logo: {
-    fontSize: 40,
-    fontWeight: '800',
-    color: colors.primaryLight,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
-  },
-  subtitle: {
-    fontSize: font.md,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginBottom: spacing.xxl,
-  },
+  logo: { fontSize: 40, fontWeight: '800', color: colors.primaryLight, textAlign: 'center', marginBottom: spacing.xs },
+  subtitle: { fontSize: font.md, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.xxl },
   form: { gap: spacing.md, marginBottom: spacing.xl },
-  input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    color: colors.text,
-    fontSize: font.base,
-  },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md + 2,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: colors.white, fontSize: font.base, fontWeight: '700' },
-  link: { color: colors.textMuted, textAlign: 'center', fontSize: font.md },
-  linkAccent: { color: colors.primaryLight, fontWeight: '600' },
 });

@@ -13,22 +13,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { auctionsApi } from '../../api/auctions';
 import { Auction } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
+import { auctionStatusBadge } from '../../utils/auction';
 import { AppStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'AuctionList'>;
 
-function statusBadge(status: Auction['status']) {
-  if (status === 'live') return { label: 'EN VIVO', bg: colors.error };
-  if (status === 'scheduled') return { label: 'PRÓXIMO', bg: colors.warning };
-  return { label: status.toUpperCase(), bg: colors.textMuted };
-}
-
-function formatMXN(cents: number) {
-  return `$${(cents / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
-}
-
 function AuctionCard({ auction, onPress }: { auction: Auction; onPress: () => void }) {
-  const badge = statusBadge(auction.status);
+  const badge = auctionStatusBadge(auction.status);
   const itemCount = auction.items?.length ?? 0;
 
   return (

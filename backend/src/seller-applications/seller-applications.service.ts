@@ -59,7 +59,6 @@ export class SellerApplicationsService {
   ): Promise<SellerApplication> {
     const application = await this.repo.findOne({
       where: { id: applicationId },
-      relations: ['user'],
     });
     if (!application) throw new NotFoundException('Solicitud no encontrada');
     if (application.status !== ApplicationStatus.PENDING) {

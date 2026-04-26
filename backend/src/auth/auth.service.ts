@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
-import { UserRole } from '../users/user.entity';
+import { User, UserRole } from '../users/user.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -40,7 +40,7 @@ export class AuthService {
     return { token, user: this.sanitize(user) };
   }
 
-  private sanitize(user: any) {
+  private sanitize(user: User): Omit<User, 'passwordHash'> {
     const { passwordHash, ...safe } = user;
     return safe;
   }
