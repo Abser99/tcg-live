@@ -53,6 +53,22 @@ export interface Auction {
   createdAt: string;
 }
 
+export interface CreateAuctionItemPayload {
+  cardName: string;
+  cardSet?: string;
+  cardNumber?: string;
+  condition?: AuctionItem['condition'];
+  startingPrice: number;
+  reservePrice?: number;
+}
+
+export interface CreateAuctionPayload {
+  title: string;
+  description?: string;
+  scheduledAt?: string;
+  items?: CreateAuctionItemPayload[];
+}
+
 export interface Bid {
   id: string;
   auctionItemId: string;

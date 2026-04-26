@@ -24,6 +24,12 @@ export class AuctionsController {
     return this.auctionsService.findAll();
   }
 
+  @Get('my')
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  findMy(@CurrentUser() user: User) {
+    return this.auctionsService.findMy(user.id);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.auctionsService.findOne(id);

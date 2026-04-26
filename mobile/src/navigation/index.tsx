@@ -15,6 +15,9 @@ import AuctionDetailScreen from '../screens/auctions/AuctionDetailScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 import ApplySellerScreen from '../screens/profile/ApplySellerScreen';
 import AdminApplicationsScreen from '../screens/profile/AdminApplicationsScreen';
+import SellerDashboardScreen from '../screens/seller/SellerDashboardScreen';
+import CreateAuctionScreen from '../screens/seller/CreateAuctionScreen';
+import ManageAuctionScreen from '../screens/seller/ManageAuctionScreen';
 
 import { AuthStackParamList, AppStackParamList, ProfileStackParamList, TabParamList } from './types';
 
@@ -45,6 +48,9 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="ProfileHome" component={ProfileScreen} options={{ title: 'Perfil' }} />
       <ProfileStack.Screen name="ApplySeller" component={ApplySellerScreen} options={{ title: 'Ser vendedor' }} />
       <ProfileStack.Screen name="AdminApplications" component={AdminApplicationsScreen} options={{ title: 'Solicitudes' }} />
+      <ProfileStack.Screen name="SellerDashboard" component={SellerDashboardScreen} options={{ title: 'Mis Subastas' }} />
+      <ProfileStack.Screen name="CreateAuction" component={CreateAuctionScreen} options={{ title: 'Nueva Subasta' }} />
+      <ProfileStack.Screen name="ManageAuction" component={ManageAuctionScreen} options={{ title: 'Gestionar Subasta' }} />
     </ProfileStack.Navigator>
   );
 }

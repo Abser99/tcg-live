@@ -100,7 +100,16 @@ export default function ProfileScreen({ navigation }: Props) {
         </View>
       )}
 
-      {/* Admin panel link */}
+      {(user?.role === 'seller' || user?.role === 'admin') && (
+        <View style={styles.section}>
+          <TouchableOpacity style={styles.sellerBtn} onPress={() => navigation.navigate('SellerDashboard')}>
+            <Ionicons name="albums-outline" size={18} color={colors.primaryLight} />
+            <Text style={styles.sellerBtnText}>Mis Subastas</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {user?.role === 'admin' && (
         <View style={styles.section}>
           <TouchableOpacity style={styles.sellerBtn} onPress={() => navigation.navigate('AdminApplications')}>

@@ -41,6 +41,14 @@ export class AuctionsService {
     return this.auctionsRepo.save(auction);
   }
 
+  async findMy(sellerId: string): Promise<Auction[]> {
+    return this.auctionsRepo.find({
+      where: { sellerId },
+      relations: ['items'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async findAll(): Promise<Auction[]> {
     return this.auctionsRepo.find({
       where: [{ status: AuctionStatus.SCHEDULED }, { status: AuctionStatus.LIVE }],

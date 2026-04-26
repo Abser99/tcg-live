@@ -12,6 +12,9 @@ export type ProfileStackParamList = {
   ProfileHome: undefined;
   ApplySeller: undefined;
   AdminApplications: undefined;
+  SellerDashboard: undefined;
+  CreateAuction: undefined;
+  ManageAuction: { auctionId: string };
 };
 
 export type TabParamList = {
