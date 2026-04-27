@@ -9,12 +9,14 @@ import { AuctionsService } from './auctions.service';
 import { AuctionsController } from './auctions.controller';
 import { AuctionsGateway } from './auctions.gateway';
 import { UsersModule } from '../users/users.module';
+import { LivekitModule } from '../livekit/livekit.module';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Auction, AuctionItem, Bid]),
     UsersModule,
+    LivekitModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

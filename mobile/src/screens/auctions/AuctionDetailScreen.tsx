@@ -19,6 +19,7 @@ import { colors, spacing, radius, font } from '../../theme';
 import { AppStackParamList } from '../../navigation/types';
 import { WS_URL } from '../../api/client';
 import { formatMXN } from '../../utils/currency';
+import StreamViewer from '../../components/streaming/StreamViewer';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'AuctionDetail'>;
 
@@ -37,14 +38,19 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
   const [bidAmount, setBidAmount] = useState('');
   const [bidding, setBidding] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [streamCreds, setStreamCreds] = useState<{ token: string; wsUrl: string } | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const { data } = await auctionsApi.get(auctionId);
-      setAuction(data);
-      const active = data.items?.find((i) => i.status === 'active') ?? null;
+      const [auctionRes, tokenRes] = await Promise.all([
+        auctionsApi.get(auctionId),
+        auctionsApi.getLiveKitToken(auctionId).catch(() => null),
+      ]);
+      setAuction(auctionRes.data);
+      if (tokenRes) setStreamCreds(tokenRes.data);
+      const active = auctionRes.data.items?.find((i) => i.status === 'active') ?? null;
       setActiveItem(active);
       if (active) {
         const { data: bids } = await auctionsApi.getItemBids(active.id);
@@ -155,6 +161,10 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
         </View>
         <View style={[styles.wsIndicator, { backgroundColor: connected ? colors.success : colors.textMuted }]} />
       </View>
+
+      {isLive && streamCreds && (
+        <StreamViewer wsUrl={streamCreds.wsUrl} token={streamCreds.token} />
+      )}
 
       <Text style={styles.title}>{auction.title}</Text>
       <Text style={styles.seller}>@{auction.seller?.username}</Text>

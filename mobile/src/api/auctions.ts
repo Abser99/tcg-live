@@ -16,6 +16,9 @@ export const auctionsApi = {
 
   closeItem: (itemId: string) => api.patch<AuctionItem>(`/auctions/items/${itemId}/close`),
 
+  getLiveKitToken: (auctionId: string) =>
+    api.get<{ token: string; wsUrl: string }>(`/auctions/${auctionId}/livekit-token`),
+
   placeBid: (itemId: string, amount: number) =>
     api.post<Bid>(`/auctions/items/${itemId}/bids`, { amount }),
 

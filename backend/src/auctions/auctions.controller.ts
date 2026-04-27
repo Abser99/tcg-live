@@ -7,11 +7,15 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { User, UserRole } from '../users/user.entity';
+import { LivekitService } from '../livekit/livekit.service';
 
 @Controller('auctions')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class AuctionsController {
-  constructor(private readonly auctionsService: AuctionsService) {}
+  constructor(
+    private readonly auctionsService: AuctionsService,
+    private readonly livekitService: LivekitService,
+  ) {}
 
   @Post()
   @Roles(UserRole.SELLER, UserRole.ADMIN)
@@ -28,6 +32,14 @@ export class AuctionsController {
   @Roles(UserRole.SELLER, UserRole.ADMIN)
   findMy(@CurrentUser() user: User) {
     return this.auctionsService.findMy(user.id);
+  }
+
+  @Get(':id/livekit-token')
+  async getLivekitToken(@Param('id') id: string, @CurrentUser() user: User) {
+    const auction = await this.auctionsService.findOne(id);
+    const canPublish = auction.sellerId === user.id;
+    const token = await this.livekitService.generateToken(user.id, user.username, id, canPublish);
+    return { token, wsUrl: this.livekitService.wsUrl };
   }
 
   @Get(':id')

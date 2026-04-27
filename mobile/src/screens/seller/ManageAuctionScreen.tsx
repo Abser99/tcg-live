@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { io, Socket } from 'socket.io-client';
 import { auctionsApi } from '../../api/auctions';
 import { useAuthStore } from '../../store/auth.store';
+import StreamPublisher from '../../components/streaming/StreamPublisher';
 import { Auction, AuctionItem } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
 import { formatMXN } from '../../utils/currency';
@@ -34,6 +35,8 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
   const [activeItem, setActiveItem] = useState<AuctionItem | null>(null);
   const [connected, setConnected] = useState(false);
   const [acting, setActing] = useState(false);
+  const [streamToken, setStreamToken] = useState<{ token: string; wsUrl: string } | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
 
@@ -78,6 +81,16 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
       socket.disconnect();
     };
   }, [token, auctionId, load]);
+
+  const handleGoLive = async () => {
+    try {
+      const { data } = await auctionsApi.getLiveKitToken(auctionId);
+      setStreamToken(data);
+      setIsStreaming(true);
+    } catch {
+      Alert.alert('Error', 'No se pudo iniciar el stream');
+    }
+  };
 
   const handleStart = () => {
     Alert.alert('Iniciar subasta', '¿Listo para comenzar? Esto es en vivo y no se puede pausar.', [
@@ -160,6 +173,23 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
         <Text style={styles.title} numberOfLines={2}>{auction.title}</Text>
         <View style={[styles.wsIndicator, { backgroundColor: connected ? colors.success : colors.textMuted }]} />
       </View>
+
+      {isLive && (
+        <View style={styles.streamSection}>
+          {isStreaming && streamToken ? (
+            <StreamPublisher
+              wsUrl={streamToken.wsUrl}
+              token={streamToken.token}
+              onStop={() => { setIsStreaming(false); setStreamToken(null); }}
+            />
+          ) : (
+            <TouchableOpacity style={styles.goLiveBtn} onPress={handleGoLive}>
+              <Ionicons name="videocam-outline" size={20} color={colors.white} />
+              <Text style={styles.goLiveBtnText}>Ir en vivo</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {isScheduled && (
         <View style={styles.actionCard}>
@@ -304,6 +334,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4, borderRadius: radius.sm,
   },
   winnerText: { color: colors.warning, fontSize: font.sm },
+  streamSection: { marginBottom: spacing.md },
+  goLiveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.sm, backgroundColor: colors.error,
+    paddingVertical: spacing.md, borderRadius: radius.md,
+  },
+  goLiveBtnText: { color: colors.white, fontWeight: '700', fontSize: font.base },
   endBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: spacing.sm, padding: spacing.md, marginBottom: spacing.md,
