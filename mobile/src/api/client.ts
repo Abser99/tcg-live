@@ -1,9 +1,9 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-// Use your machine's local IP so the phone/simulator can reach the backend
-export const API_URL = 'http://192.168.1.246:3000/api';
-export const WS_URL = 'http://192.168.1.246:3000';
+// 10.0.2.2 is the Android emulator's alias for the host machine (localhost)
+export const API_URL = 'http://10.0.2.2:3000/api';
+export const WS_URL = 'http://10.0.2.2:3000';
 
 export const api = axios.create({ baseURL: API_URL });
 

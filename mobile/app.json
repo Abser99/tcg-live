@@ -28,17 +28,37 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#6C3AE8",
+          "sounds": [],
+          "mode": "production"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Se necesita acceso a tus fotos para agregar imágenes de las cartas.",
+          "cameraPermission": "Se necesita la cámara para tomar fotos de las cartas."
+        }
+      ]
     ],
     "extra": {
       "eas": {

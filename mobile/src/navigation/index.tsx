@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ActivityIndicator, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { setupNotificationListeners } from '../services/pushNotifications';
 
 import { useAuthStore } from '../store/auth.store';
 import { colors } from '../theme';
@@ -12,12 +13,18 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import AuctionListScreen from '../screens/auctions/AuctionListScreen';
 import AuctionDetailScreen from '../screens/auctions/AuctionDetailScreen';
+import SellerProfileScreen from '../screens/profile/SellerProfileScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 import ApplySellerScreen from '../screens/profile/ApplySellerScreen';
 import AdminApplicationsScreen from '../screens/profile/AdminApplicationsScreen';
 import SellerDashboardScreen from '../screens/seller/SellerDashboardScreen';
 import CreateAuctionScreen from '../screens/seller/CreateAuctionScreen';
 import ManageAuctionScreen from '../screens/seller/ManageAuctionScreen';
+import MyOrdersScreen from '../screens/profile/MyOrdersScreen';
+import AddressSettingsScreen from '../screens/profile/AddressSettingsScreen';
+import PaymentMethodsScreen from '../screens/profile/PaymentMethodsScreen';
+import AuctionOrdersScreen from '../screens/seller/AuctionOrdersScreen';
+import ShippingSettingsScreen from '../screens/seller/ShippingSettingsScreen';
 
 import { AuthStackParamList, AppStackParamList, ProfileStackParamList, TabParamList } from './types';
 
@@ -38,6 +45,7 @@ function AuctionsStack() {
     <AppStack.Navigator screenOptions={stackScreenOptions}>
       <AppStack.Screen name="AuctionList" component={AuctionListScreen} options={{ title: 'Subastas' }} />
       <AppStack.Screen name="AuctionDetail" component={AuctionDetailScreen} options={{ title: 'Detalle' }} />
+      <AppStack.Screen name="SellerProfile" component={SellerProfileScreen} options={({ route }) => ({ title: 'Vendedor' })} />
     </AppStack.Navigator>
   );
 }
@@ -51,6 +59,11 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="SellerDashboard" component={SellerDashboardScreen} options={{ title: 'Mis Subastas' }} />
       <ProfileStack.Screen name="CreateAuction" component={CreateAuctionScreen} options={{ title: 'Nueva Subasta' }} />
       <ProfileStack.Screen name="ManageAuction" component={ManageAuctionScreen} options={{ title: 'Gestionar Subasta' }} />
+      <ProfileStack.Screen name="MyOrders" component={MyOrdersScreen} options={{ title: 'Mis Compras' }} />
+      <ProfileStack.Screen name="AuctionOrders" component={AuctionOrdersScreen} options={({ route }) => ({ title: route.params.title })} />
+      <ProfileStack.Screen name="ShippingSettings" component={ShippingSettingsScreen} options={{ title: 'Configurar Envíos' }} />
+      <ProfileStack.Screen name="AddressSettings" component={AddressSettingsScreen} options={{ title: 'Mi Dirección' }} />
+      <ProfileStack.Screen name="PaymentMethods" component={PaymentMethodsScreen} options={{ title: 'Formas de Pago' }} />
     </ProfileStack.Navigator>
   );
 }
@@ -81,8 +94,14 @@ function AppTabs() {
 
 export default function Navigation() {
   const { token, isInitialized, initialize } = useAuthStore();
+  const navRef = useNavigationContainerRef();
 
   useEffect(() => { initialize(); }, []);
+
+  useEffect(() => {
+    if (!isInitialized || !token) return;
+    return setupNotificationListeners(navRef);
+  }, [isInitialized, token]);
 
   if (!isInitialized) {
     return (
@@ -93,7 +112,7 @@ export default function Navigation() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navRef}>
       {token ? (
         <AppTabs />
       ) : (

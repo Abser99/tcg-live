@@ -42,7 +42,7 @@ export class SellerApplication {
   @Column({ nullable: true })
   reviewedBy: string; // admin userId
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   reviewNote: string | null;
 
   @Column({ nullable: true })

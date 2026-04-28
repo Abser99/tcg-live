@@ -36,13 +36,40 @@ export class User {
   balance: number; // in MXN cents
 
   @Column({ default: 0 })
-  reputationScore: number;
+  reputationScore: number; // positive ratings count (≥ 4 stars)
+
+  @Column({ default: 0 })
+  totalRatings: number;
+
+  @Column({ default: 0 })
+  totalRatingPoints: number;
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.BUYER })
   role: UserRole;
 
   @Column({ default: true })
   isActive: boolean;
+
+  @Column({ nullable: true, length: 300 })
+  shippingNote: string;
+
+  @Column({ default: false })
+  shippingInsurance: boolean;
+
+  @Column({ nullable: true, length: 10 })
+  zipCode: string;
+
+  @Column({ nullable: true })
+  street: string;
+
+  @Column({ nullable: true })
+  colonia: string;
+
+  @Column({ nullable: true })
+  city: string;
+
+  @Column({ nullable: true })
+  state: string;
 
   @CreateDateColumn()
   createdAt: Date;

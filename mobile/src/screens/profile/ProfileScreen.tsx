@@ -100,11 +100,43 @@ export default function ProfileScreen({ navigation }: Props) {
         </View>
       )}
 
+      {user?.role === 'buyer' && (
+        <View style={styles.section}>
+          <TouchableOpacity style={styles.sellerBtn} onPress={() => navigation.navigate('MyOrders')}>
+            <Ionicons name="receipt-outline" size={18} color={colors.primaryLight} />
+            <Text style={styles.sellerBtnText}>Mis Compras</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View style={styles.section}>
+        <TouchableOpacity style={styles.sellerBtn} onPress={() => navigation.navigate('PaymentMethods')}>
+          <Ionicons name="card-outline" size={18} color={colors.primaryLight} />
+          <Text style={styles.sellerBtnText}>Formas de Pago</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+        <View style={styles.sectionDivider} />
+        <TouchableOpacity style={styles.sellerBtn} onPress={() => navigation.navigate('AddressSettings')}>
+          <Ionicons name="location-outline" size={18} color={colors.primaryLight} />
+          <Text style={styles.sellerBtnText}>
+            Mi Dirección{user?.zipCode ? ` · CP ${user.zipCode}` : ''}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+
       {(user?.role === 'seller' || user?.role === 'admin') && (
         <View style={styles.section}>
           <TouchableOpacity style={styles.sellerBtn} onPress={() => navigation.navigate('SellerDashboard')}>
             <Ionicons name="albums-outline" size={18} color={colors.primaryLight} />
             <Text style={styles.sellerBtnText}>Mis Subastas</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+          <View style={styles.sectionDivider} />
+          <TouchableOpacity style={styles.sellerBtn} onPress={() => navigation.navigate('ShippingSettings')}>
+            <Ionicons name="cube-outline" size={18} color={colors.primaryLight} />
+            <Text style={styles.sellerBtnText}>Configurar Envíos</Text>
             <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
@@ -147,6 +179,7 @@ const styles = StyleSheet.create({
   sellerBtnText: { flex: 1, color: colors.primaryLight, fontSize: font.md, fontWeight: '600' },
   appStatus: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md },
   appStatusText: { fontSize: font.md, fontWeight: '600' },
+  sectionDivider: { height: 1, backgroundColor: colors.border, marginHorizontal: spacing.md },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, padding: spacing.md },
   logoutText: { color: colors.error, fontSize: font.base, fontWeight: '600' },
 });

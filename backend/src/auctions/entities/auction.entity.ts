@@ -18,6 +18,15 @@ export enum AuctionStatus {
   CANCELLED = 'cancelled',
 }
 
+export enum AuctionGame {
+  POKEMON  = 'pokemon',
+  MTG      = 'mtg',
+  YUGIOH   = 'yugioh',
+  ONEPIECE = 'onepiece',
+  LORCANA  = 'lorcana',
+  OTHER    = 'other',
+}
+
 @Entity('auctions')
 export class Auction {
   @PrimaryGeneratedColumn('uuid')
@@ -32,6 +41,9 @@ export class Auction {
 
   @Column()
   title: string;
+
+  @Column({ type: 'enum', enum: AuctionGame, default: AuctionGame.POKEMON })
+  game: AuctionGame;
 
   @Column({ nullable: true })
   description: string;

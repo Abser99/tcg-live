@@ -1,28 +1,27 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
+  View, Text, TextInput, TouchableOpacity, ScrollView,
+  StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView,
+  Platform, Image, ActionSheetIOS,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { auctionsApi } from '../../api/auctions';
-import { CreateAuctionItemPayload } from '../../types';
+import { scanCardImage } from '../../api/cards';
+import { searchCards, GameType, CardResult } from '../../services/cardSearch';
+import { uploadImage } from '../../services/cloudinary';
+import { AuctionGame, CreateAuctionItemPayload } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
 import { authStyles } from '../../theme/authStyles';
 import { formatMXN } from '../../utils/currency';
+import DateTimePicker from '../../components/DateTimePicker';
 import { ProfileStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'CreateAuction'>;
 
 type Condition = 'mint' | 'near_mint' | 'excellent' | 'good' | 'played';
+
 const CONDITIONS: { value: Condition; label: string }[] = [
   { value: 'mint', label: 'Mint' },
   { value: 'near_mint', label: 'NM' },
@@ -31,31 +30,186 @@ const CONDITIONS: { value: Condition; label: string }[] = [
   { value: 'played', label: 'Played' },
 ];
 
-const EMPTY_ITEM: ItemForm = {
-  cardName: '', cardSet: '', cardNumber: '',
-  condition: 'near_mint', startingPrice: '', reservePrice: '',
-};
+const GAMES: { value: GameType; label: string }[] = [
+  { value: 'pokemon', label: 'Pokémon' },
+  { value: 'mtg',     label: 'Magic' },
+  { value: 'yugioh',  label: 'Yu-Gi-Oh' },
+  { value: 'other',   label: 'Otro' },
+];
+
+const AUCTION_GAMES: { value: AuctionGame; label: string; emoji: string }[] = [
+  { value: 'pokemon',  label: 'Pokémon',   emoji: '⚡' },
+  { value: 'mtg',      label: 'MTG',       emoji: '🔮' },
+  { value: 'yugioh',   label: 'Yu-Gi-Oh',  emoji: '👁️' },
+  { value: 'onepiece', label: 'One Piece', emoji: '🏴‍☠️' },
+  { value: 'lorcana',  label: 'Lorcana',   emoji: '✨' },
+  { value: 'other',    label: 'Otros',     emoji: '🎮' },
+];
+
+const MXN_PER_USD = 17.5;
 
 interface ItemForm {
+  game: GameType;
   cardName: string;
   cardSet: string;
   cardNumber: string;
   condition: Condition;
   startingPrice: string;
   reservePrice: string;
+  marketPriceUSD?: number;
+  imageUris: string[];
+}
+
+const EMPTY_ITEM: ItemForm = {
+  game: 'pokemon',
+  cardName: '', cardSet: '', cardNumber: '',
+  condition: 'near_mint', startingPrice: '', reservePrice: '',
+  imageUris: [],
+};
+
+function formatDate(d: Date): string {
+  const days  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} · ${hh}:${mm}`;
 }
 
 export default function CreateAuctionScreen({ navigation }: Props) {
-  const [title, setTitle] = useState('');
+  const [title, setTitle]           = useState('');
+  const [auctionGame, setAuctionGame] = useState<AuctionGame>('pokemon');
   const [description, setDescription] = useState('');
-  const [scheduledAt, setScheduledAt] = useState('');
-  const [items, setItems] = useState<CreateAuctionItemPayload[]>([]);
+  const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [items, setItems]           = useState<CreateAuctionItemPayload[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const [showItemForm, setShowItemForm] = useState(false);
-  const [itemForm, setItemForm] = useState<ItemForm>(EMPTY_ITEM);
+  const [itemForm, setItemForm]         = useState<ItemForm>(EMPTY_ITEM);
+  const [searchResults, setSearchResults] = useState<CardResult[]>([]);
+  const [searching, setSearching]         = useState(false);
+  const [scanning, setScanning]           = useState(false);
+  const [uploading, setUploading]         = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const addItem = () => {
+  const pickImages = async () => {
+    const remaining = 5 - itemForm.imageUris.length;
+    if (remaining <= 0) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
+      quality: 0.75,
+    });
+    if (!result.canceled) {
+      const uris = result.assets.map(a => a.uri);
+      setItemForm(p => ({ ...p, imageUris: [...p.imageUris, ...uris].slice(0, 5) }));
+    }
+  };
+
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permiso requerido', 'Activa el acceso a la cámara en configuración');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.75 });
+    if (!result.canceled) {
+      setItemForm(p => ({ ...p, imageUris: [...p.imageUris, result.assets[0].uri].slice(0, 5) }));
+    }
+  };
+
+  const scanCard = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permiso requerido', 'Activa el acceso a la cámara en configuración');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.5, base64: true });
+    if (result.canceled || !result.assets[0].base64) return;
+
+    setScanning(true);
+    try {
+      const asset = result.assets[0];
+      const scan = await scanCardImage(asset.base64!, asset.mimeType ?? 'image/jpeg');
+      if (!scan.cardName) {
+        Alert.alert('No encontrada', 'No se pudo identificar la carta. Intenta con mejor iluminación.');
+        return;
+      }
+      const game = scan.game === 'other' ? itemForm.game : scan.game;
+      setItemForm(p => ({ ...p, game, cardName: scan.cardName, cardSet: scan.cardSet, cardNumber: scan.cardNumber }));
+      setSearchResults([]);
+
+      if (game !== 'other') {
+        setSearching(true);
+        const results = await searchCards(game, scan.cardName);
+        if (results.length === 1) {
+          selectCard(results[0]);
+        } else {
+          setSearchResults(results);
+        }
+        setSearching(false);
+      }
+    } catch {
+      Alert.alert('Error', 'No se pudo escanear la carta');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const promptImageSource = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Cancelar', 'Galería', 'Cámara'], cancelButtonIndex: 0 },
+        (i) => { if (i === 1) pickImages(); else if (i === 2) takePhoto(); },
+      );
+    } else {
+      Alert.alert('Agregar foto', '', [
+        { text: 'Galería', onPress: pickImages },
+        { text: 'Cámara', onPress: takePhoto },
+        { text: 'Cancelar', style: 'cancel' },
+      ]);
+    }
+  };
+
+  const updateItemField = <K extends keyof ItemForm>(key: K, value: ItemForm[K]) =>
+    setItemForm(p => ({ ...p, [key]: value }));
+
+  const handleCardNameChange = (text: string) => {
+    updateItemField('cardName', text);
+    updateItemField('marketPriceUSD', undefined);
+    setSearchResults([]);
+
+    if (itemForm.game === 'other') return;
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (text.trim().length < 2) return;
+
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      const results = await searchCards(itemForm.game, text.trim());
+      setSearchResults(results);
+      setSearching(false);
+    }, 400);
+  };
+
+  const selectCard = (card: CardResult) => {
+    setItemForm(p => ({
+      ...p,
+      cardName:      card.name,
+      cardSet:       card.set,
+      cardNumber:    card.number,
+      marketPriceUSD: card.marketPriceUSD,
+    }));
+    setSearchResults([]);
+  };
+
+  const changeGame = (game: GameType) => {
+    setItemForm(p => ({ ...p, game, cardName: '', cardSet: '', cardNumber: '', marketPriceUSD: undefined }));
+    setSearchResults([]);
+  };
+
+  const addItem = async () => {
     const price = Math.round(parseFloat(itemForm.startingPrice) * 100);
     if (!itemForm.cardName.trim()) {
       Alert.alert('Error', 'El nombre de la carta es obligatorio');
@@ -69,21 +223,31 @@ export default function CreateAuctionScreen({ navigation }: Props) {
       ? Math.round(parseFloat(itemForm.reservePrice) * 100)
       : undefined;
 
-    const newItem: CreateAuctionItemPayload = {
-      cardName: itemForm.cardName.trim(),
-      cardSet: itemForm.cardSet.trim() || undefined,
-      cardNumber: itemForm.cardNumber.trim() || undefined,
-      condition: itemForm.condition,
-      startingPrice: price,
-      reservePrice: reserveCents && !isNaN(reserveCents) ? reserveCents : undefined,
-    };
-    setItems((prev) => [...prev, newItem]);
-    setItemForm(EMPTY_ITEM);
-    setShowItemForm(false);
-  };
+    let imageUrls: string[] | undefined;
+    if (itemForm.imageUris.length > 0) {
+      setUploading(true);
+      try {
+        imageUrls = await Promise.all(itemForm.imageUris.map(uploadImage));
+      } catch {
+        Alert.alert('Error', 'No se pudieron subir las fotos. Intenta de nuevo.');
+        setUploading(false);
+        return;
+      }
+      setUploading(false);
+    }
 
-  const removeItem = (index: number) => {
-    setItems((prev) => prev.filter((_, i) => i !== index));
+    setItems(prev => [...prev, {
+      cardName:      itemForm.cardName.trim(),
+      cardSet:       itemForm.cardSet.trim() || undefined,
+      cardNumber:    itemForm.cardNumber.trim() || undefined,
+      condition:     itemForm.condition,
+      startingPrice: price,
+      reservePrice:  reserveCents && !isNaN(reserveCents) ? reserveCents : undefined,
+      imageUrls,
+    }]);
+    setItemForm(EMPTY_ITEM);
+    setSearchResults([]);
+    setShowItemForm(false);
   };
 
   const handleSubmit = async () => {
@@ -91,21 +255,13 @@ export default function CreateAuctionScreen({ navigation }: Props) {
       Alert.alert('Error', 'El título es obligatorio');
       return;
     }
-    let parsedDate: string | undefined;
-    if (scheduledAt.trim()) {
-      const d = new Date(scheduledAt.trim());
-      if (isNaN(d.getTime())) {
-        Alert.alert('Error', 'Fecha inválida. Usa el formato: 2026-04-26T20:00');
-        return;
-      }
-      parsedDate = d.toISOString();
-    }
     setSubmitting(true);
     try {
       const { data } = await auctionsApi.create({
         title: title.trim(),
+        game: auctionGame,
         description: description.trim() || undefined,
-        scheduledAt: parsedDate,
+        scheduledAt: scheduledAt ? scheduledAt.toISOString() : undefined,
         items: items.length > 0 ? items : undefined,
       });
       navigation.replace('ManageAuction', { auctionId: data.id });
@@ -119,8 +275,11 @@ export default function CreateAuctionScreen({ navigation }: Props) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.sectionTitle}>Información</Text>
 
         <TextInput
@@ -131,6 +290,26 @@ export default function CreateAuctionScreen({ navigation }: Props) {
           onChangeText={setTitle}
         />
         <View style={styles.gap} />
+
+        {/* Auction-level game category */}
+        <Text style={styles.fieldLabel}>Juego</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
+          <View style={styles.gameRow}>
+            {AUCTION_GAMES.map(g => (
+              <TouchableOpacity
+                key={g.value}
+                style={[styles.gameBtn, auctionGame === g.value && styles.gameBtnActive]}
+                onPress={() => setAuctionGame(g.value)}
+              >
+                <Text style={styles.gameBtnEmoji}>{g.emoji}</Text>
+                <Text style={[styles.gameBtnText, auctionGame === g.value && styles.gameBtnTextActive]}>
+                  {g.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+
         <TextInput
           style={[authStyles.input, styles.multiline]}
           placeholder="Descripción (opcional)"
@@ -141,15 +320,24 @@ export default function CreateAuctionScreen({ navigation }: Props) {
           numberOfLines={3}
         />
         <View style={styles.gap} />
-        <TextInput
-          style={authStyles.input}
-          placeholder="Fecha/hora programada (ej. 2026-04-26T20:00)"
-          placeholderTextColor={colors.textMuted}
-          value={scheduledAt}
-          onChangeText={setScheduledAt}
-          autoCapitalize="none"
-        />
 
+        {/* Date picker */}
+        <TouchableOpacity style={styles.dateBtn} onPress={() => setShowDatePicker(true)}>
+          <Ionicons name="calendar-outline" size={18} color={scheduledAt ? colors.primaryLight : colors.textMuted} />
+          <Text style={[styles.dateBtnText, !scheduledAt && styles.datePlaceholder]}>
+            {scheduledAt ? formatDate(scheduledAt) : 'Sin fecha programada'}
+          </Text>
+          {scheduledAt && (
+            <TouchableOpacity
+              onPress={() => setScheduledAt(null)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
+
+        {/* Cards section */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Cartas ({items.length})</Text>
           {!showItemForm && (
@@ -169,7 +357,7 @@ export default function CreateAuctionScreen({ navigation }: Props) {
                 {item.cardSet ? ` · ${item.cardSet}` : ''}
               </Text>
             </View>
-            <TouchableOpacity onPress={() => removeItem(i)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity onPress={() => setItems(p => p.filter((_, j) => j !== i))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close-circle" size={20} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
@@ -177,37 +365,132 @@ export default function CreateAuctionScreen({ navigation }: Props) {
 
         {showItemForm && (
           <View style={styles.itemForm}>
-            <TextInput
-              style={authStyles.input}
-              placeholder="Nombre de la carta *"
-              placeholderTextColor={colors.textMuted}
-              value={itemForm.cardName}
-              onChangeText={(v) => setItemForm((p) => ({ ...p, cardName: v }))}
-            />
+            {/* Game selector */}
+            <View style={styles.gameRow}>
+              {GAMES.map(({ value, label }) => (
+                <TouchableOpacity
+                  key={value}
+                  style={[styles.gameBtn, itemForm.game === value && styles.gameBtnActive]}
+                  onPress={() => changeGame(value)}
+                >
+                  <Text style={[styles.gameBtnText, itemForm.game === value && styles.gameBtnTextActive]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Card name / search */}
+            <View>
+              <View style={styles.searchInputRow}>
+                <TextInput
+                  style={[authStyles.input, { flex: 1, marginBottom: 0 }]}
+                  placeholder={itemForm.game !== 'other' ? 'Buscar carta...' : 'Nombre de la carta *'}
+                  placeholderTextColor={colors.textMuted}
+                  value={itemForm.cardName}
+                  onChangeText={handleCardNameChange}
+                />
+                {searching && <ActivityIndicator size="small" color={colors.primary} style={styles.searchSpinner} />}
+                <TouchableOpacity
+                  style={styles.scanBtn}
+                  onPress={scanCard}
+                  disabled={scanning}
+                >
+                  {scanning
+                    ? <ActivityIndicator size="small" color={colors.primaryLight} />
+                    : <Ionicons name="scan-outline" size={22} color={colors.primaryLight} />
+                  }
+                </TouchableOpacity>
+              </View>
+
+              {searchResults.length > 0 && (
+                <View style={styles.dropdown}>
+                  {searchResults.map(card => (
+                    <TouchableOpacity
+                      key={card.id}
+                      style={styles.dropdownItem}
+                      onPress={() => selectCard(card)}
+                    >
+                      {card.imageUrl ? (
+                        <Image source={{ uri: card.imageUrl }} style={styles.cardThumb} resizeMode="contain" />
+                      ) : (
+                        <View style={[styles.cardThumb, styles.cardThumbEmpty]}>
+                          <Ionicons name="image-outline" size={16} color={colors.textMuted} />
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.dropdownName}>{card.name}</Text>
+                        <Text style={styles.dropdownMeta}>
+                          {card.set}{card.number ? ` · #${card.number}` : ''}
+                        </Text>
+                      </View>
+                      {card.marketPriceUSD != null && (
+                        <Text style={styles.dropdownPrice}>US${card.marketPriceUSD.toFixed(2)}</Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* Set & Number */}
             <View style={styles.row}>
               <TextInput
                 style={[authStyles.input, { flex: 1 }]}
                 placeholder="Set (opcional)"
                 placeholderTextColor={colors.textMuted}
                 value={itemForm.cardSet}
-                onChangeText={(v) => setItemForm((p) => ({ ...p, cardSet: v }))}
+                onChangeText={v => updateItemField('cardSet', v)}
               />
               <TextInput
                 style={[authStyles.input, styles.numberInput]}
                 placeholder="#"
                 placeholderTextColor={colors.textMuted}
                 value={itemForm.cardNumber}
-                onChangeText={(v) => setItemForm((p) => ({ ...p, cardNumber: v }))}
+                onChangeText={v => updateItemField('cardNumber', v)}
               />
             </View>
 
+            {/* Market price reference */}
+            {itemForm.marketPriceUSD != null && (
+              <View style={styles.priceHint}>
+                <Ionicons name="trending-up-outline" size={14} color={colors.accent} />
+                <Text style={styles.priceHintText}>
+                  Precio de mercado: US${itemForm.marketPriceUSD.toFixed(2)}
+                  {' '}(~{formatMXN(Math.round(itemForm.marketPriceUSD * MXN_PER_USD * 100))})
+                </Text>
+              </View>
+            )}
+
+            {/* Images */}
+            <Text style={styles.label}>Fotos de la carta (máx. 5)</Text>
+            <View style={styles.imageRow}>
+              {itemForm.imageUris.map((uri, i) => (
+                <View key={i} style={styles.thumbWrap}>
+                  <Image source={{ uri }} style={styles.thumb} resizeMode="cover" />
+                  <TouchableOpacity
+                    style={styles.thumbRemove}
+                    onPress={() => setItemForm(p => ({ ...p, imageUris: p.imageUris.filter((_, j) => j !== i) }))}
+                  >
+                    <Ionicons name="close-circle" size={18} color={colors.error} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {itemForm.imageUris.length < 5 && (
+                <TouchableOpacity style={styles.thumbAdd} onPress={promptImageSource}>
+                  <Ionicons name="camera-outline" size={22} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Condition */}
             <Text style={styles.label}>Condición</Text>
             <View style={styles.conditionRow}>
               {CONDITIONS.map(({ value, label }) => (
                 <TouchableOpacity
                   key={value}
                   style={[styles.conditionBtn, itemForm.condition === value && styles.conditionBtnActive]}
-                  onPress={() => setItemForm((p) => ({ ...p, condition: value }))}
+                  onPress={() => updateItemField('condition', value)}
                 >
                   <Text style={[styles.conditionText, itemForm.condition === value && styles.conditionTextActive]}>
                     {label}
@@ -216,6 +499,7 @@ export default function CreateAuctionScreen({ navigation }: Props) {
               ))}
             </View>
 
+            {/* Prices */}
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Precio inicial (MXN) *</Text>
@@ -224,7 +508,7 @@ export default function CreateAuctionScreen({ navigation }: Props) {
                   placeholder="0.00"
                   placeholderTextColor={colors.textMuted}
                   value={itemForm.startingPrice}
-                  onChangeText={(v) => setItemForm((p) => ({ ...p, startingPrice: v }))}
+                  onChangeText={v => updateItemField('startingPrice', v)}
                   keyboardType="decimal-pad"
                 />
               </View>
@@ -235,7 +519,7 @@ export default function CreateAuctionScreen({ navigation }: Props) {
                   placeholder="0.00"
                   placeholderTextColor={colors.textMuted}
                   value={itemForm.reservePrice}
-                  onChangeText={(v) => setItemForm((p) => ({ ...p, reservePrice: v }))}
+                  onChangeText={v => updateItemField('reservePrice', v)}
                   keyboardType="decimal-pad"
                 />
               </View>
@@ -243,13 +527,16 @@ export default function CreateAuctionScreen({ navigation }: Props) {
 
             <View style={styles.row}>
               <TouchableOpacity
-                style={[styles.formBtn, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, flex: 1 }]}
-                onPress={() => { setShowItemForm(false); setItemForm(EMPTY_ITEM); }}
+                style={[styles.formBtn, styles.formBtnCancel]}
+                onPress={() => { setShowItemForm(false); setItemForm(EMPTY_ITEM); setSearchResults([]); setUploading(false); }}
               >
                 <Text style={{ color: colors.textMuted, fontWeight: '600' }}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.formBtn, { backgroundColor: colors.primary, flex: 1 }]} onPress={addItem}>
-                <Text style={{ color: colors.white, fontWeight: '700' }}>Agregar</Text>
+              <TouchableOpacity style={[styles.formBtn, styles.formBtnConfirm, uploading && { opacity: 0.6 }]} onPress={addItem} disabled={uploading}>
+                {uploading
+                  ? <ActivityIndicator color={colors.white} size="small" />
+                  : <Text style={{ color: colors.white, fontWeight: '700' }}>Agregar</Text>
+                }
               </TouchableOpacity>
             </View>
           </View>
@@ -260,14 +547,19 @@ export default function CreateAuctionScreen({ navigation }: Props) {
           onPress={handleSubmit}
           disabled={submitting}
         >
-          {submitting ? (
-            <ActivityIndicator color={colors.white} />
-          ) : (
-            <Text style={authStyles.buttonText}>Crear Subasta</Text>
-          )}
+          {submitting
+            ? <ActivityIndicator color={colors.white} />
+            : <Text style={authStyles.buttonText}>Crear Subasta</Text>
+          }
         </TouchableOpacity>
-
       </ScrollView>
+
+      <DateTimePicker
+        visible={showDatePicker}
+        value={scheduledAt}
+        onConfirm={date => { setScheduledAt(date); setShowDatePicker(false); }}
+        onCancel={() => setShowDatePicker(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -279,6 +571,13 @@ const styles = StyleSheet.create({
   sectionTitle: { color: colors.text, fontSize: font.lg, fontWeight: '700', marginTop: spacing.xl, marginBottom: spacing.sm },
   gap: { height: spacing.sm },
   multiline: { height: 88, textAlignVertical: 'top', paddingTop: spacing.sm },
+  dateBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2,
+  },
+  dateBtnText: { flex: 1, color: colors.text, fontSize: font.base },
+  datePlaceholder: { color: colors.textMuted },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   addBtnText: { color: colors.primaryLight, fontSize: font.sm, fontWeight: '600' },
   itemChip: {
@@ -294,6 +593,39 @@ const styles = StyleSheet.create({
     padding: spacing.md, borderWidth: 1, borderColor: colors.border,
     gap: spacing.sm, marginBottom: spacing.sm,
   },
+  gameRow: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap' },
+  fieldLabel: { color: colors.textMuted, fontSize: font.sm, fontWeight: '700', marginBottom: spacing.xs },
+  gameBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: spacing.sm, paddingVertical: 6,
+    borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border,
+  },
+  gameBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  gameBtnEmoji: { fontSize: 13 },
+  gameBtnText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
+  gameBtnTextActive: { color: colors.white },
+  searchInputRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  searchSpinner: { position: 'absolute', right: 48 },
+  scanBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  dropdown: {
+    backgroundColor: colors.surfaceAlt, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, marginTop: 2, overflow: 'hidden',
+  },
+  dropdownItem: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    padding: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  cardThumb: { width: 36, height: 50, borderRadius: 4 },
+  cardThumbEmpty: { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' },
+  dropdownName: { color: colors.text, fontSize: font.md, fontWeight: '600' },
+  dropdownMeta: { color: colors.textMuted, fontSize: font.sm },
+  dropdownPrice: { color: colors.accent, fontSize: font.sm, fontWeight: '700' },
+  priceHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.surfaceAlt, borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm, paddingVertical: 6,
+  },
+  priceHintText: { color: colors.accent, fontSize: font.sm, flex: 1 },
   row: { flexDirection: 'row', gap: spacing.sm },
   numberInput: { width: 72 },
   label: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600', marginBottom: 4 },
@@ -305,9 +637,17 @@ const styles = StyleSheet.create({
   conditionBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   conditionText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
   conditionTextActive: { color: colors.white },
-  formBtn: {
-    paddingVertical: spacing.sm, borderRadius: radius.md,
-    alignItems: 'center', justifyContent: 'center',
+  imageRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  thumbWrap: { position: 'relative' },
+  thumb: { width: 64, height: 64, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt },
+  thumbRemove: { position: 'absolute', top: -6, right: -6 },
+  thumbAdd: {
+    width: 64, height: 64, borderRadius: radius.sm,
+    backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border,
+    borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center',
   },
+  formBtn: { flex: 1, paddingVertical: spacing.sm, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  formBtnCancel: { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+  formBtnConfirm: { backgroundColor: colors.primary },
   submitBtn: { marginTop: spacing.xxl },
 });

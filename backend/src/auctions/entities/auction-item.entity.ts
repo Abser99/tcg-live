@@ -79,6 +79,9 @@ export class AuctionItem {
   @OneToMany(() => Bid, (bid) => bid.auctionItem)
   bids: Bid[];
 
+  @Column({ type: 'timestamp', nullable: true })
+  closesAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

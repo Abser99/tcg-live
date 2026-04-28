@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AuctionsService } from './auctions.service';
 import { CreateAuctionDto } from './dto/create-auction.dto';
 import { PlaceBidDto } from './dto/place-bid.dto';
+import { SetMaxBidDto } from './dto/set-max-bid.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -24,14 +25,19 @@ export class AuctionsController {
   }
 
   @Get()
-  findAll() {
-    return this.auctionsService.findAll();
+  findAll(@Query('q') q?: string, @Query('game') game?: string) {
+    return this.auctionsService.findAll(q, game);
   }
 
   @Get('my')
   @Roles(UserRole.SELLER, UserRole.ADMIN)
   findMy(@CurrentUser() user: User) {
     return this.auctionsService.findMy(user.id);
+  }
+
+  @Get('seller/:sellerId')
+  findBySeller(@Param('sellerId') sellerId: string) {
+    return this.auctionsService.findBySeller(sellerId);
   }
 
   @Get(':id/livekit-token')
@@ -71,6 +77,15 @@ export class AuctionsController {
   @Patch('items/:itemId/close')
   closeItem(@Param('itemId') itemId: string, @CurrentUser() user: User) {
     return this.auctionsService.closeItem(itemId, user.id);
+  }
+
+  @Post('items/:itemId/max-bid')
+  setMaxBid(
+    @Param('itemId') itemId: string,
+    @CurrentUser() user: User,
+    @Body() dto: SetMaxBidDto,
+  ) {
+    return this.auctionsService.setMaxBid(itemId, user.id, dto);
   }
 
   @Get('items/:itemId/bids')

@@ -1,8 +1,16 @@
 import { api } from './client';
-import { Auction, AuctionItem, Bid, CreateAuctionPayload } from '../types';
+import { Auction, AuctionGame, AuctionItem, Bid, CreateAuctionPayload } from '../types';
 
 export const auctionsApi = {
-  list: () => api.get<Auction[]>('/auctions'),
+  list: (q?: string, game?: AuctionGame) => {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (game) params.set('game', game);
+    const qs = params.toString();
+    return api.get<Auction[]>(qs ? `/auctions?${qs}` : '/auctions');
+  },
+
+  listBySeller: (sellerId: string) => api.get<Auction[]>(`/auctions/seller/${sellerId}`),
 
   myAuctions: () => api.get<Auction[]>('/auctions/my'),
 
@@ -23,4 +31,7 @@ export const auctionsApi = {
     api.post<Bid>(`/auctions/items/${itemId}/bids`, { amount }),
 
   getItemBids: (itemId: string) => api.get<Bid[]>(`/auctions/items/${itemId}/bids`),
+
+  setMaxBid: (itemId: string, maxAmount: number) =>
+    api.post(`/auctions/items/${itemId}/max-bid`, { maxAmount }),
 };

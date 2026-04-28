@@ -12,6 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { CardCondition } from '../entities/auction-item.entity';
+import { AuctionGame } from '../entities/auction.entity';
 
 export class CreateAuctionItemDto {
   @IsString()
@@ -49,6 +50,10 @@ export class CreateAuctionDto {
   @IsString()
   @IsNotEmpty()
   title: string;
+
+  @IsEnum(AuctionGame)
+  @IsOptional()
+  game?: AuctionGame;
 
   @IsString()
   @IsOptional()

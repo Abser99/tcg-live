@@ -53,6 +53,49 @@ export class AuctionsGateway implements OnGatewayConnection {
     return { event: 'left', data: auctionId };
   }
 
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('chat:send')
+  handleChat(@MessageBody() text: string, @ConnectedSocket() client: Socket) {
+    const user = client.data.user;
+    const auctionId = this.getAuctionRoom(client);
+    if (!auctionId) return;
+
+    const message = String(text ?? '').trim().slice(0, 200);
+    if (!message) return;
+
+    this.server.to(`auction:${auctionId}`).emit('chat:message', {
+      userId: user.id,
+      username: user.username,
+      message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('reaction:send')
+  handleReaction(@MessageBody() emoji: string, @ConnectedSocket() client: Socket) {
+    const ALLOWED = ['🔥', '❤️', '💎', '🎯', '😮'];
+    if (!ALLOWED.includes(emoji)) return;
+
+    const user = client.data.user;
+    const auctionId = this.getAuctionRoom(client);
+    if (!auctionId) return;
+
+    this.server.to(`auction:${auctionId}`).emit('reaction', {
+      id: `${Date.now()}-${Math.random()}`,
+      userId: user.id,
+      username: user.username,
+      emoji,
+    });
+  }
+
+  private getAuctionRoom(client: Socket): string | null {
+    const rooms = Array.from(client.rooms).filter((r) => r.startsWith('auction:'));
+    return rooms[0]?.replace('auction:', '') ?? null;
+  }
+
+  // ── server → client emitters ──────────────────────────────────────────────
+
   emitBidPlaced(auctionId: string, payload: BidPlacedPayload) {
     this.server.to(`auction:${auctionId}`).emit('bid:placed', payload);
   }
@@ -78,6 +121,7 @@ export interface BidPlacedPayload {
   bidderUsername: string;
   amount: number;
   timestamp: string;
+  closesAt: string | null;
 }
 
 export interface ItemClosedPayload {
@@ -87,6 +131,7 @@ export interface ItemClosedPayload {
   winnerId: string | null;
   finalPrice: number;
   nextItemId: string | null;
+  nextClosesAt: string | null;
 }
 
 export interface AuctionStartedPayload {

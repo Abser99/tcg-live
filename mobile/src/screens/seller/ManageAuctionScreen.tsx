@@ -255,6 +255,14 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
           )}
 
           <TouchableOpacity
+            style={styles.ordersLink}
+            onPress={() => navigation.navigate('AuctionOrders', { auctionId, title: auction.title })}
+          >
+            <Ionicons name="receipt-outline" size={16} color={colors.textMuted} />
+            <Text style={styles.ordersLinkText}>Ver pedidos</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={[styles.endBtn, acting && styles.btnDisabled]}
             onPress={handleEnd}
             disabled={acting}
@@ -269,6 +277,13 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
         <View style={[styles.actionCard, { borderColor: colors.textMuted }]}>
           <Ionicons name="checkmark-done-outline" size={32} color={colors.textMuted} style={{ marginBottom: spacing.xs }} />
           <Text style={styles.actionHint}>Esta subasta ha terminado.</Text>
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: colors.primary }]}
+            onPress={() => navigation.navigate('AuctionOrders', { auctionId, title: auction.title })}
+          >
+            <Ionicons name="receipt-outline" size={18} color={colors.white} />
+            <Text style={styles.actionBtnText}>Ver Pedidos</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -341,6 +356,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md, borderRadius: radius.md,
   },
   goLiveBtnText: { color: colors.white, fontWeight: '700', fontSize: font.base },
+  ordersLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.sm, marginBottom: spacing.xs },
+  ordersLinkText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
   endBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: spacing.sm, padding: spacing.md, marginBottom: spacing.md,

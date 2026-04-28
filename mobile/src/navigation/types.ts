@@ -6,6 +6,7 @@ export type AuthStackParamList = {
 export type AppStackParamList = {
   AuctionList: undefined;
   AuctionDetail: { auctionId: string };
+  SellerProfile: { sellerId: string };
 };
 
 export type ProfileStackParamList = {
@@ -15,6 +16,11 @@ export type ProfileStackParamList = {
   SellerDashboard: undefined;
   CreateAuction: undefined;
   ManageAuction: { auctionId: string };
+  MyOrders: undefined;
+  ShippingSettings: undefined;
+  AddressSettings: undefined;
+  PaymentMethods: undefined;
+  AuctionOrders: { auctionId: string; title: string };
 };
 
 export type TabParamList = {

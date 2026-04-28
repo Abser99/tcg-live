@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import { authApi } from '../api/auth';
 import { User } from '../types';
+import { registerForPushNotifications, sendTokenToBackend } from '../services/pushNotifications';
 
 interface AuthState {
   user: User | null;
@@ -12,6 +13,7 @@ interface AuthState {
   register: (email: string, username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   initialize: () => Promise<void>;
+  setUser: (user: User) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -27,9 +29,13 @@ export const useAuthStore = create<AuthState>((set) => ({
         const { data: user } = await authApi.me();
         set({ user, token });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('Session restore failed:', err);
-      await SecureStore.deleteItemAsync('token');
+      // Only clear the token if the server explicitly rejects it (401)
+      // Network errors or backend cold-start should not wipe the session
+      if (err?.response?.status === 401) {
+        await SecureStore.deleteItemAsync('token');
+      }
     } finally {
       set({ isInitialized: true });
     }
@@ -41,6 +47,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const { data } = await authApi.login(email, password);
       await SecureStore.setItemAsync('token', data.token);
       set({ user: data.user, token: data.token });
+      registerForPushNotifications().then(t => { if (t) sendTokenToBackend(t); });
     } finally {
       set({ isLoading: false });
     }
@@ -52,6 +59,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const { data } = await authApi.register(email, username, password);
       await SecureStore.setItemAsync('token', data.token);
       set({ user: data.user, token: data.token });
+      registerForPushNotifications().then(t => { if (t) sendTokenToBackend(t); });
     } finally {
       set({ isLoading: false });
     }
@@ -61,4 +69,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     await SecureStore.deleteItemAsync('token');
     set({ user: null, token: null });
   },
+
+  setUser: (user) => set({ user }),
 }));

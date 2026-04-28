@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CacheModule } from '@nestjs/cache-manager';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { createKeyv } from '@keyv/redis';
 import { CacheableMemory } from 'cacheable';
 import { Keyv } from 'keyv';
@@ -12,11 +14,22 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { AuctionsModule } from './auctions/auctions.module';
 import { SellerApplicationsModule } from './seller-applications/seller-applications.module';
+import { CardsModule } from './cards/cards.module';
+import { OrdersModule } from './orders/orders.module';
+import { ShippingModule } from './shipping/shipping.module';
+import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { PaymentsModule } from './payments/payments.module';
 import { User } from './users/user.entity';
 import { Auction } from './auctions/entities/auction.entity';
 import { AuctionItem } from './auctions/entities/auction-item.entity';
 import { Bid } from './auctions/entities/bid.entity';
 import { SellerApplication } from './seller-applications/seller-application.entity';
+import { MaxBid } from './auctions/entities/max-bid.entity';
+import { Order } from './orders/entities/order.entity';
+import { OrderItem } from './orders/entities/order-item.entity';
+import { PaymentMethod } from './payment-methods/entities/payment-method.entity';
+import { PushToken } from './notifications/entities/push-token.entity';
 
 @Module({
   imports: [
@@ -24,6 +37,7 @@ import { SellerApplication } from './seller-applications/seller-application.enti
       isGlobal: true,
       load: [databaseConfig, jwtConfig, redisConfig],
     }),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]), // 120 req/min globally
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -33,8 +47,8 @@ import { SellerApplication } from './seller-applications/seller-application.enti
         database: config.get('database.name'),
         username: config.get('database.user'),
         password: config.get('database.password'),
-        entities: [User, Auction, AuctionItem, Bid, SellerApplication],
-        synchronize: true, // dev only — swap for migrations before production
+        entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, Order, OrderItem, PaymentMethod, PushToken],
+        synchronize: true, // dev only — use migrations in production
         logging: process.env.NODE_ENV === 'development',
       }),
     }),
@@ -52,6 +66,15 @@ import { SellerApplication } from './seller-applications/seller-application.enti
     AuthModule,
     AuctionsModule,
     SellerApplicationsModule,
+    CardsModule,
+    OrdersModule,
+    ShippingModule,
+    PaymentMethodsModule,
+    NotificationsModule,
+    PaymentsModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

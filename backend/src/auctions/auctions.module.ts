@@ -5,18 +5,21 @@ import { ConfigService } from '@nestjs/config';
 import { Auction } from './entities/auction.entity';
 import { AuctionItem } from './entities/auction-item.entity';
 import { Bid } from './entities/bid.entity';
+import { MaxBid } from './entities/max-bid.entity';
 import { AuctionsService } from './auctions.service';
 import { AuctionsController } from './auctions.controller';
 import { AuctionsGateway } from './auctions.gateway';
 import { UsersModule } from '../users/users.module';
 import { LivekitModule } from '../livekit/livekit.module';
+import { OrdersModule } from '../orders/orders.module';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Auction, AuctionItem, Bid]),
+    TypeOrmModule.forFeature([Auction, AuctionItem, Bid, MaxBid]),
     UsersModule,
     LivekitModule,
+    OrdersModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
