@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Order, OrderStatus } from './entities/order.entity';
+import { Order, OrderStatus, PaymentStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -92,6 +92,9 @@ export class OrdersService {
     if (!allowed[order.status].includes(status)) {
       throw new BadRequestException(`Cannot transition from ${order.status} to ${status}`);
     }
+    if (status === OrderStatus.CONFIRMED && order.paymentStatus !== PaymentStatus.PAID) {
+      throw new BadRequestException('El comprador aún no ha realizado el pago');
+    }
     order.status = status;
     const saved = await this.ordersRepo.save(order);
     // Push notifications on status transitions
@@ -142,5 +145,35 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
     Object.assign(order, data);
     return this.ordersRepo.save(order);
+  }
+
+  async getOrderForCheckout(orderId: string, buyerId: string): Promise<Order> {
+    const order = await this.ordersRepo.findOne({ where: { id: orderId, buyerId } });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.paymentStatus === PaymentStatus.PAID) throw new BadRequestException('Order already paid');
+    return order;
+  }
+
+  async storePreference(orderId: string, mpPreferenceId: string, autoApprove: boolean): Promise<Order> {
+    const order = await this.ordersRepo.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+    order.mpPreferenceId = mpPreferenceId;
+    if (autoApprove) {
+      order.paymentStatus = PaymentStatus.PAID;
+    }
+    const saved = await this.ordersRepo.save(order);
+    if (autoApprove) {
+      this.notificationsService.notifyPaymentReceived(order.sellerId, order.id).catch(() => {});
+    }
+    return saved;
+  }
+
+  async markPaidByOrderId(orderId: string, mpPaymentId: string): Promise<void> {
+    const order = await this.ordersRepo.findOne({ where: { id: orderId } });
+    if (!order || order.paymentStatus === PaymentStatus.PAID) return;
+    order.paymentStatus = PaymentStatus.PAID;
+    order.mpPaymentId = mpPaymentId;
+    await this.ordersRepo.save(order);
+    this.notificationsService.notifyPaymentReceived(order.sellerId, order.id).catch(() => {});
   }
 }

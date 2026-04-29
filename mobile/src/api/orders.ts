@@ -1,6 +1,12 @@
 import { api } from './client';
 import { Order, OrderStatus, ShippingQuote } from '../types';
 
+export interface CheckoutResult {
+  order: Order;
+  initPoint: string;
+  sandboxInitPoint: string;
+}
+
 export const ordersApi = {
   myOrders: () => api.get<Order[]>('/orders/my'),
 
@@ -24,6 +30,9 @@ export const ordersApi = {
     destinationZip: string;
     weightKg: number;
   }) => api.post<Order>(`/orders/${orderId}/label`, params),
+
+  checkout: (orderId: string) =>
+    api.post<CheckoutResult>('/payments/checkout', { orderId }),
 };
 
 export const shippingApi = {

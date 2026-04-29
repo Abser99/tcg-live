@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Image, RefreshControl, Alert, Modal, TextInput,
+  ActivityIndicator, Image, RefreshControl, Alert, Modal, TextInput, Linking,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,6 +36,7 @@ export default function MyOrdersScreen({ navigation }: Props) {
   const [selectedRating, setSelectedRating] = useState(0);
   const [ratingNote, setRatingNote] = useState('');
   const [submittingRating, setSubmittingRating] = useState(false);
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -88,6 +89,23 @@ export default function MyOrdersScreen({ navigation }: Props) {
     }
   };
 
+  const handlePay = async (order: Order) => {
+    setPayingOrderId(order.id);
+    try {
+      const { data } = await ordersApi.checkout(order.id);
+      setOrders(prev => prev.map(o => o.id === data.order.id ? data.order : o));
+      if (data.order.paymentStatus === 'paid') {
+        Alert.alert('¡Pago completado!', 'Tu pago fue registrado. El vendedor preparará tu pedido.');
+      } else {
+        await Linking.openURL(data.sandboxInitPoint);
+      }
+    } catch {
+      Alert.alert('Error', 'No se pudo iniciar el pago. Intenta de nuevo.');
+    } finally {
+      setPayingOrderId(null);
+    }
+  };
+
   const handleShippingChoice = async (order: Order, choice: 'combined' | 'individual') => {
     try {
       const { data } = await ordersApi.setShippingChoice(order.id, choice);
@@ -124,7 +142,15 @@ export default function MyOrdersScreen({ navigation }: Props) {
               <Text style={styles.cardDate}>
                 {new Date(order.createdAt).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
               </Text>
-              <Text style={[styles.statusBadge, { color: st.color }]}>{st.label}</Text>
+              <View style={styles.badgesRow}>
+                {order.paymentStatus === 'paid' && (
+                  <View style={styles.paidBadge}>
+                    <Ionicons name="checkmark-circle" size={12} color="#fff" />
+                    <Text style={styles.paidBadgeText}>Pagado</Text>
+                  </View>
+                )}
+                <Text style={[styles.statusBadge, { color: st.color }]}>{st.label}</Text>
+              </View>
             </View>
 
             {order.items.map(item => (
@@ -162,6 +188,22 @@ export default function MyOrdersScreen({ navigation }: Props) {
                 <Text style={styles.trackingText}>Guía: {order.trackingNumber}</Text>
               </View>
             ) : null}
+
+            {(!order.paymentStatus || order.paymentStatus === 'unpaid') && (
+              <TouchableOpacity
+                style={styles.payBtn}
+                onPress={() => handlePay(order)}
+                disabled={payingOrderId === order.id}
+              >
+                {payingOrderId === order.id
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <>
+                      <Ionicons name="card-outline" size={16} color="#fff" />
+                      <Text style={styles.payBtnText}>Pagar ahora</Text>
+                    </>
+                }
+              </TouchableOpacity>
+            )}
 
             {order.status === 'shipped' && (
               <TouchableOpacity style={styles.receivedBtn} onPress={() => handleConfirmReceived(order)}>
@@ -261,7 +303,12 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
   cardDate: { color: colors.textMuted, fontSize: font.sm },
+  badgesRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   statusBadge: { fontSize: font.sm, fontWeight: '700' },
+  paidBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#22c55e', borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2 },
+  paidBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  payBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.sm, backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.sm },
+  payBtnText: { color: '#fff', fontWeight: '700', fontSize: font.sm },
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
   thumb: { width: 48, height: 67, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt },
   thumbEmpty: { justifyContent: 'center', alignItems: 'center' },

@@ -107,4 +107,12 @@ export class NotificationsService {
       data: { type: 'order_delivered' },
     });
   }
+
+  async notifyPaymentReceived(sellerId: string, orderId: string): Promise<void> {
+    await this.sendToUser(sellerId, {
+      title: '💳 Pago recibido',
+      body: 'Un comprador completó su pago. Ya puedes preparar el envío.',
+      data: { type: 'payment_received', orderId },
+    });
+  }
 }

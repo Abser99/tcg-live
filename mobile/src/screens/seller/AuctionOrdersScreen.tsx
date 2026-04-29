@@ -141,7 +141,13 @@ export default function AuctionOrdersScreen({ route }: Props) {
             <View style={styles.card}>
               <View style={styles.cardHeader}>
                 <Text style={styles.buyerNum}>Comprador #{index + 1}</Text>
-                <Text style={[styles.statusChip, { color: st.color }]}>{st.label}</Text>
+                <View style={styles.chipRow}>
+                  {order.paymentStatus === 'paid'
+                    ? <View style={styles.paidChip}><Text style={styles.paidChipText}>💳 Pagado</Text></View>
+                    : <View style={styles.unpaidChip}><Text style={styles.unpaidChipText}>⏳ Sin pagar</Text></View>
+                  }
+                  <Text style={[styles.statusChip, { color: st.color }]}>{st.label}</Text>
+                </View>
               </View>
 
               <View style={styles.shippingRow}>
@@ -186,8 +192,14 @@ export default function AuctionOrdersScreen({ route }: Props) {
                 )}
                 {nextStatus && (
                   <TouchableOpacity
-                    style={styles.btnPrimary}
-                    onPress={() => handleStatusUpdate(order, nextStatus)}
+                    style={[styles.btnPrimary, nextStatus === 'confirmed' && order.paymentStatus !== 'paid' && styles.btnDisabled]}
+                    onPress={() => {
+                      if (nextStatus === 'confirmed' && order.paymentStatus !== 'paid') {
+                        Alert.alert('Pago pendiente', 'El comprador aún no ha realizado el pago.');
+                        return;
+                      }
+                      handleStatusUpdate(order, nextStatus);
+                    }}
                   >
                     <Text style={styles.btnPrimaryText}>
                       {nextStatus === 'confirmed' ? 'Confirmar' : 'Marcar enviado'}
@@ -243,7 +255,13 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.xs },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   buyerNum: { color: colors.text, fontSize: font.md, fontWeight: '700' },
+  chipRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   statusChip: { fontSize: font.sm, fontWeight: '700' },
+  paidChip: { backgroundColor: '#14532d', borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2 },
+  paidChipText: { color: '#86efac', fontSize: font.xs, fontWeight: '700' },
+  unpaidChip: { backgroundColor: '#431407', borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2 },
+  unpaidChipText: { color: '#fdba74', fontSize: font.xs, fontWeight: '700' },
+  btnDisabled: { backgroundColor: colors.textMuted },
   shippingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   shippingMeta: { color: colors.textMuted, fontSize: font.sm },
   tracking: { color: colors.primary, fontSize: font.sm, fontWeight: '600' },

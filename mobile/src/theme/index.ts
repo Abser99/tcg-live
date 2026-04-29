@@ -27,10 +27,12 @@ export const radius = {
   sm: 6,
   md: 12,
   lg: 16,
+  xl: 24,
   full: 9999,
 };
 
 export const font = {
+  xs: 10,
   sm: 12,
   md: 14,
   base: 16,

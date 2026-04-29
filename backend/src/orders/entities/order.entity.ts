@@ -11,6 +11,12 @@ export enum OrderStatus {
   DELIVERED = 'delivered',
 }
 
+export enum PaymentStatus {
+  UNPAID = 'unpaid',
+  PAID   = 'paid',
+  FAILED = 'failed',
+}
+
 @Entity('orders')
 export class Order {
   @PrimaryGeneratedColumn('uuid')
@@ -47,6 +53,15 @@ export class Order {
 
   @Column({ nullable: true })
   labelUrl: string;
+
+  @Column({ type: 'enum', enum: PaymentStatus, default: PaymentStatus.UNPAID })
+  paymentStatus: PaymentStatus;
+
+  @Column({ nullable: true })
+  mpPreferenceId: string;
+
+  @Column({ nullable: true })
+  mpPaymentId: string;
 
   @Column({ type: 'int', nullable: true })
   sellerRating: number; // 1–5, set by buyer after delivery

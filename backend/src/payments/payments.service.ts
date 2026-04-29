@@ -12,6 +12,7 @@ export interface PaymentStatus {
   status: 'pending' | 'approved' | 'rejected' | 'cancelled';
   statusDetail: string;
   amount: number; // MXN cents
+  orderId: string | null; // external_reference from MP
 }
 
 @Injectable()
@@ -106,6 +107,7 @@ export class PaymentsService {
       status: 'approved',
       statusDetail: 'accredited',
       amount: 0,
+      orderId: null,
     };
   }
 }

@@ -103,6 +103,7 @@ export interface OrderItem {
 }
 
 export type OrderStatus = 'pending' | 'confirmed' | 'shipped' | 'delivered';
+export type PaymentStatus = 'unpaid' | 'paid' | 'failed';
 
 export interface Order {
   id: string;
@@ -110,6 +111,8 @@ export interface Order {
   buyerId: string;
   sellerId: string;
   status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  mpPreferenceId: string | null;
   buyerZip: string | null;
   shippingChoice: 'combined' | 'individual' | null;
   shippingCost: number | null;
