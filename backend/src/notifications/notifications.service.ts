@@ -124,6 +124,14 @@ export class NotificationsService {
     });
   }
 
+  async notifyNewMessage(recipientId: string, senderUsername: string, orderId: string): Promise<void> {
+    await this.sendToUser(recipientId, {
+      title: `💬 Nuevo mensaje de @${senderUsername}`,
+      body: 'Toca para ver la conversación',
+      data: { type: 'new_message', orderId },
+    });
+  }
+
   async notifyDisputeOpened(sellerId: string, orderId: string): Promise<void> {
     await this.sendToUser(sellerId, {
       title: '⚠️ Disputa abierta',

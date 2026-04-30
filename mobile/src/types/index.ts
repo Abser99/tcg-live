@@ -193,3 +193,12 @@ export interface Dispute {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface Message {
+  id: string;
+  orderId: string;
+  senderId: string;
+  senderUsername: string;
+  body: string;
+  createdAt: string;
+}

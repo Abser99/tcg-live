@@ -7,6 +7,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { ordersApi } from '../../api/orders';
 import { disputesApi } from '../../api/disputes';
+import { useAuthStore } from '../../store/auth.store';
 import { useNavigation } from '@react-navigation/native';
 import { Dispute, DisputeReason, Order } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
@@ -45,6 +46,7 @@ const DISPUTE_STATUS: Record<string, { label: string; color: string }> = {
 };
 
 export default function MyOrdersScreen({ navigation }: Props) {
+  const user = useAuthStore(s => s.user);
   const [orders, setOrders] = useState<Order[]>([]);
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [loading, setLoading] = useState(true);
@@ -304,6 +306,17 @@ export default function MyOrdersScreen({ navigation }: Props) {
               </TouchableOpacity>
             )}
 
+            <TouchableOpacity
+              style={styles.msgBtn}
+              onPress={() => navigation.navigate('OrderMessages', {
+                orderId: order.id,
+                otherUsername: 'vendedor',
+              })}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.accent} />
+              <Text style={styles.msgBtnText}>Mensajes</Text>
+            </TouchableOpacity>
+
             {order.status === 'pending' && !order.shippingChoice && (
               <View style={styles.shippingSection}>
                 <Text style={styles.shippingTitle}>¿Cómo quieres tu envío?</Text>
@@ -466,6 +479,8 @@ const styles = StyleSheet.create({
   ratedText: { color: colors.textMuted, fontSize: font.sm },
   disputeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.error ?? '#ef4444', borderRadius: radius.md, padding: spacing.sm },
   disputeBtnText: { color: colors.error ?? '#ef4444', fontWeight: '700', fontSize: font.sm },
+  msgBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.accent, borderRadius: radius.md, padding: spacing.sm },
+  msgBtnText: { color: colors.accent, fontWeight: '700', fontSize: font.sm },
   disputeBadge: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.sm, borderWidth: 1, borderRadius: radius.md, padding: spacing.sm },
   disputeBadgeText: { fontWeight: '700', fontSize: font.sm },
   disputeNote: { color: colors.textMuted, fontSize: font.sm, flex: 1 },

@@ -26,6 +26,7 @@ import AddressSettingsScreen from '../screens/profile/AddressSettingsScreen';
 import PaymentMethodsScreen from '../screens/profile/PaymentMethodsScreen';
 import AuctionOrdersScreen from '../screens/seller/AuctionOrdersScreen';
 import ShippingSettingsScreen from '../screens/seller/ShippingSettingsScreen';
+import MessageThreadScreen from '../screens/profile/MessageThreadScreen';
 
 import { AuthStackParamList, AppStackParamList, ProfileStackParamList, TabParamList } from './types';
 
@@ -66,6 +67,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="ShippingSettings" component={ShippingSettingsScreen} options={{ title: 'Configurar Envíos' }} />
       <ProfileStack.Screen name="AddressSettings" component={AddressSettingsScreen} options={{ title: 'Mi Dirección' }} />
       <ProfileStack.Screen name="PaymentMethods" component={PaymentMethodsScreen} options={{ title: 'Formas de Pago' }} />
+      <ProfileStack.Screen name="OrderMessages" component={MessageThreadScreen} options={{ title: 'Mensajes' }} />
     </ProfileStack.Navigator>
   );
 }

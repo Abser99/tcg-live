@@ -14,6 +14,8 @@ import { useAuthStore } from '../../store/auth.store';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'AuctionOrders'>;
 
+const BUYER_LABEL = 'comprador';
+
 const STATUS_LABEL: Record<OrderStatus, { label: string; color: string }> = {
   pending:   { label: 'Pendiente',  color: colors.textMuted },
   confirmed: { label: 'Confirmado', color: colors.accent },
@@ -26,7 +28,7 @@ const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   confirmed: 'shipped',
 };
 
-export default function AuctionOrdersScreen({ route }: Props) {
+export default function AuctionOrdersScreen({ route, navigation }: Props) {
   const { auctionId } = route.params;
   const user = useAuthStore(s => s.user);
 
@@ -184,6 +186,16 @@ export default function AuctionOrdersScreen({ route }: Props) {
               </Text>
 
               <View style={styles.actions}>
+                <TouchableOpacity
+                  style={styles.btnMsg}
+                  onPress={() => navigation.navigate('OrderMessages', {
+                    orderId: order.id,
+                    otherUsername: BUYER_LABEL,
+                  })}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.accent} />
+                  <Text style={styles.btnMsgText}>Mensajes</Text>
+                </TouchableOpacity>
                 {!order.trackingNumber && order.shippingChoice && (
                   <TouchableOpacity style={styles.btnSecondary} onPress={() => openShippingQuote(order)}>
                     <Ionicons name="barcode-outline" size={14} color={colors.primary} />
@@ -272,7 +284,9 @@ const styles = StyleSheet.create({
   itemMeta: { color: colors.textMuted, fontSize: font.sm },
   itemPrice: { color: colors.text, fontSize: font.md, fontWeight: '700' },
   orderTotal: { color: colors.primaryLight, fontSize: font.md, fontWeight: '700', textAlign: 'right', marginTop: spacing.xs },
-  actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm, justifyContent: 'flex-end' },
+  actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm, justifyContent: 'flex-end', flexWrap: 'wrap' },
+  btnMsg: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: colors.accent, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
+  btnMsgText: { color: colors.accent, fontWeight: '600', fontSize: font.sm },
   btnPrimary: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
   btnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: font.sm },
   btnSecondary: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },

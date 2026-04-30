@@ -22,6 +22,7 @@ export type ProfileStackParamList = {
   AddressSettings: undefined;
   PaymentMethods: undefined;
   AuctionOrders: { auctionId: string; title: string };
+  OrderMessages: { orderId: string; otherUsername: string };
 };
 
 export type TabParamList = {
