@@ -2,10 +2,19 @@ import { api } from './client';
 import { Auction, AuctionGame, AuctionItem, Bid, CreateAuctionPayload, MyBidEntry } from '../types';
 
 export const auctionsApi = {
-  list: (q?: string, game?: AuctionGame) => {
+  list: (filters: {
+    q?: string;
+    game?: AuctionGame;
+    condition?: string;
+    minPrice?: number;
+    maxPrice?: number;
+  } = {}) => {
     const params = new URLSearchParams();
-    if (q) params.set('q', q);
-    if (game) params.set('game', game);
+    if (filters.q) params.set('q', filters.q);
+    if (filters.game) params.set('game', filters.game);
+    if (filters.condition) params.set('condition', filters.condition);
+    if (filters.minPrice) params.set('minPrice', String(filters.minPrice));
+    if (filters.maxPrice) params.set('maxPrice', String(filters.maxPrice));
     const qs = params.toString();
     return api.get<Auction[]>(qs ? `/auctions?${qs}` : '/auctions');
   },

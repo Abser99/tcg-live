@@ -71,17 +71,55 @@ export class AuctionsService {
     });
   }
 
-  async findAll(query?: string, game?: string): Promise<Auction[]> {
+  async findAll(params: {
+    query?: string;
+    game?: string;
+    condition?: string;
+    minPrice?: number;
+    maxPrice?: number;
+  } = {}): Promise<Auction[]> {
+    const { query, game, condition, minPrice, maxPrice } = params;
+
     const qb = this.auctionsRepo.createQueryBuilder('a')
       .leftJoinAndSelect('a.seller', 'seller')
       .leftJoinAndSelect('a.items', 'items')
       .where('a.status IN (:...statuses)', { statuses: [AuctionStatus.SCHEDULED, AuctionStatus.LIVE] });
 
     if (query?.trim()) {
-      qb.andWhere('LOWER(a.title) LIKE :q', { q: `%${query.toLowerCase().trim()}%` });
+      const q = `%${query.toLowerCase().trim()}%`;
+      qb.andWhere(
+        `(LOWER(a.title) LIKE :q OR EXISTS (` +
+        `SELECT 1 FROM auction_items ai ` +
+        `WHERE ai."auctionId" = a.id ` +
+        `AND (LOWER(ai."cardName") LIKE :q OR LOWER(ai."cardSet") LIKE :q)` +
+        `))`,
+        { q },
+      );
     }
+
     if (game?.trim()) {
       qb.andWhere('a.game = :game', { game: game.trim() });
+    }
+
+    if (condition?.trim()) {
+      qb.andWhere(
+        `EXISTS (SELECT 1 FROM auction_items ai WHERE ai."auctionId" = a.id AND ai.condition = :condition)`,
+        { condition: condition.trim() },
+      );
+    }
+
+    if (minPrice != null && minPrice > 0) {
+      qb.andWhere(
+        `EXISTS (SELECT 1 FROM auction_items ai WHERE ai."auctionId" = a.id AND ai."startingPrice" >= :minPrice)`,
+        { minPrice: minPrice * 100 },
+      );
+    }
+
+    if (maxPrice != null && maxPrice > 0) {
+      qb.andWhere(
+        `EXISTS (SELECT 1 FROM auction_items ai WHERE ai."auctionId" = a.id AND ai."startingPrice" <= :maxPrice)`,
+        { maxPrice: maxPrice * 100 },
+      );
     }
 
     return qb.orderBy('a.status', 'DESC').addOrderBy('a.scheduledAt', 'ASC').getMany();

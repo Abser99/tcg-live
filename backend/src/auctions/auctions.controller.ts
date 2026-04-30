@@ -25,8 +25,20 @@ export class AuctionsController {
   }
 
   @Get()
-  findAll(@Query('q') q?: string, @Query('game') game?: string) {
-    return this.auctionsService.findAll(q, game);
+  findAll(
+    @Query('q') q?: string,
+    @Query('game') game?: string,
+    @Query('condition') condition?: string,
+    @Query('minPrice') minPrice?: string,
+    @Query('maxPrice') maxPrice?: string,
+  ) {
+    return this.auctionsService.findAll({
+      query: q,
+      game,
+      condition,
+      minPrice: minPrice ? parseInt(minPrice, 10) : undefined,
+      maxPrice: maxPrice ? parseInt(maxPrice, 10) : undefined,
+    });
   }
 
   @Get('my')
