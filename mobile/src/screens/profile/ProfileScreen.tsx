@@ -115,6 +115,12 @@ export default function ProfileScreen({ navigation }: Props) {
           <Text style={styles.sellerBtnText}>Mis Compras</Text>
           <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
         </TouchableOpacity>
+        <View style={styles.sectionDivider} />
+        <TouchableOpacity style={styles.sellerBtn} onPress={() => navigation.navigate('MyBids')}>
+          <Ionicons name="pricetag-outline" size={18} color={colors.primaryLight} />
+          <Text style={styles.sellerBtnText}>Mis Pujas</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.section}>

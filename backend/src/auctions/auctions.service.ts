@@ -324,6 +324,32 @@ export class AuctionsService {
     });
   }
 
+  async getMyBids(userId: string) {
+    const bids = await this.bidsRepo.find({
+      where: { bidderId: userId },
+      relations: ['auctionItem', 'auctionItem.auction'],
+      order: { createdAt: 'DESC' },
+    });
+
+    // One entry per item — keep highest bid
+    const seen = new Map<string, typeof bids[0]>();
+    for (const bid of bids) {
+      if (!bid.auctionItem) continue;
+      const prev = seen.get(bid.auctionItemId);
+      if (!prev || bid.amount > prev.amount) seen.set(bid.auctionItemId, bid);
+    }
+
+    return Array.from(seen.values())
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map(bid => ({
+        auctionItemId: bid.auctionItemId,
+        myTopBid: bid.amount,
+        lastBidAt: bid.createdAt,
+        item: bid.auctionItem,
+        auction: bid.auctionItem.auction,
+      }));
+  }
+
   private assertOwner(ownerId: string, requesterId: string): void {
     if (ownerId !== requesterId) throw new ForbiddenException();
   }

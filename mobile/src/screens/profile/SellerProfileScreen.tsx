@@ -48,6 +48,9 @@ export default function SellerProfileScreen({ route, navigation }: Props) {
   const live = auctions.filter(a => a.status === 'live');
   const upcoming = auctions.filter(a => a.status === 'scheduled');
   const ended = auctions.filter(a => a.status === 'ended');
+  const itemsSold = ended.reduce(
+    (sum, a) => sum + (a.items?.filter(i => i.status === 'sold').length ?? 0), 0,
+  );
 
   return (
     <ScrollView
@@ -78,8 +81,8 @@ export default function SellerProfileScreen({ route, navigation }: Props) {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.stat}>
-            <Text style={styles.statValue}>{ended.length}</Text>
-            <Text style={styles.statLabel}>Subastas completadas</Text>
+            <Text style={styles.statValue}>{itemsSold}</Text>
+            <Text style={styles.statLabel}>Cartas vendidas</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.stat}>

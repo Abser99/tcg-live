@@ -40,6 +40,11 @@ export class AuctionsController {
     return this.auctionsService.findBySeller(sellerId);
   }
 
+  @Get('my-bids')
+  getMyBids(@CurrentUser() user: User) {
+    return this.auctionsService.getMyBids(user.id);
+  }
+
   @Get(':id/livekit-token')
   async getLivekitToken(@Param('id') id: string, @CurrentUser() user: User) {
     const auction = await this.auctionsService.findOne(id);

@@ -21,6 +21,7 @@ import SellerDashboardScreen from '../screens/seller/SellerDashboardScreen';
 import CreateAuctionScreen from '../screens/seller/CreateAuctionScreen';
 import ManageAuctionScreen from '../screens/seller/ManageAuctionScreen';
 import MyOrdersScreen from '../screens/profile/MyOrdersScreen';
+import MyBidsScreen from '../screens/profile/MyBidsScreen';
 import AddressSettingsScreen from '../screens/profile/AddressSettingsScreen';
 import PaymentMethodsScreen from '../screens/profile/PaymentMethodsScreen';
 import AuctionOrdersScreen from '../screens/seller/AuctionOrdersScreen';
@@ -60,6 +61,7 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="CreateAuction" component={CreateAuctionScreen} options={{ title: 'Nueva Subasta' }} />
       <ProfileStack.Screen name="ManageAuction" component={ManageAuctionScreen} options={{ title: 'Gestionar Subasta' }} />
       <ProfileStack.Screen name="MyOrders" component={MyOrdersScreen} options={{ title: 'Mis Compras' }} />
+      <ProfileStack.Screen name="MyBids" component={MyBidsScreen} options={{ title: 'Mis Pujas' }} />
       <ProfileStack.Screen name="AuctionOrders" component={AuctionOrdersScreen} options={({ route }) => ({ title: route.params.title })} />
       <ProfileStack.Screen name="ShippingSettings" component={ShippingSettingsScreen} options={{ title: 'Configurar Envíos' }} />
       <ProfileStack.Screen name="AddressSettings" component={AddressSettingsScreen} options={{ title: 'Mi Dirección' }} />

@@ -1,5 +1,5 @@
 import { api } from './client';
-import { Auction, AuctionGame, AuctionItem, Bid, CreateAuctionPayload } from '../types';
+import { Auction, AuctionGame, AuctionItem, Bid, CreateAuctionPayload, MyBidEntry } from '../types';
 
 export const auctionsApi = {
   list: (q?: string, game?: AuctionGame) => {
@@ -34,4 +34,6 @@ export const auctionsApi = {
 
   setMaxBid: (itemId: string, maxAmount: number) =>
     api.post(`/auctions/items/${itemId}/max-bid`, { maxAmount }),
+
+  myBids: () => api.get<MyBidEntry[]>('/auctions/my-bids'),
 };

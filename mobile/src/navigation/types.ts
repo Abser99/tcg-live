@@ -17,6 +17,7 @@ export type ProfileStackParamList = {
   CreateAuction: undefined;
   ManageAuction: { auctionId: string };
   MyOrders: undefined;
+  MyBids: undefined;
   ShippingSettings: undefined;
   AddressSettings: undefined;
   PaymentMethods: undefined;

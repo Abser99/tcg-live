@@ -161,6 +161,18 @@ export interface Reaction {
   emoji: string;
 }
 
+export interface MyBidEntry {
+  auctionItemId: string;
+  myTopBid: number;
+  lastBidAt: string;
+  item: AuctionItem;
+  auction: {
+    id: string;
+    title: string;
+    status: 'scheduled' | 'live' | 'ended' | 'cancelled';
+  };
+}
+
 export type DisputeStatus = 'open' | 'under_review' | 'resolved' | 'rejected';
 export type DisputeReason =
   | 'not_received'
