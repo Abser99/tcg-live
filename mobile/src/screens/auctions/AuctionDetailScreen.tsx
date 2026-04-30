@@ -70,6 +70,9 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
   // Reactions
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
 
+  // Viewer count
+  const [viewerCount, setViewerCount] = useState(0);
+
   const socketRef = useRef<Socket | null>(null);
 
   const load = useCallback(async () => {
@@ -185,6 +188,7 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
     });
 
     socket.on('reaction', (r: Reaction) => spawnFloatingReaction(r));
+    socket.on('viewer:count', ({ count }: { count: number }) => setViewerCount(count));
 
     return () => {
       socket.emit('leave-auction', auctionId);
@@ -246,6 +250,12 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
             {isLive && <View style={styles.liveDot} />}
             <Text style={styles.badgeText}>{isLive ? 'EN VIVO' : auction.status.toUpperCase()}</Text>
           </View>
+          {isLive && viewerCount > 0 && (
+            <View style={styles.viewerBadge}>
+              <Ionicons name="eye-outline" size={12} color={colors.textMuted} />
+              <Text style={styles.viewerText}>{viewerCount}</Text>
+            </View>
+          )}
           <View style={[styles.wsIndicator, { backgroundColor: connected ? colors.success : colors.textMuted }]} />
         </View>
 
@@ -468,6 +478,8 @@ const styles = StyleSheet.create({
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.white },
   badgeText: { color: colors.white, fontSize: font.sm, fontWeight: '700' },
   wsIndicator: { width: 8, height: 8, borderRadius: 4 },
+  viewerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceAlt, borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 3, borderWidth: 1, borderColor: colors.border },
+  viewerText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
   streamWrap: { position: 'relative', marginBottom: spacing.xs },
   reactionsOverlay: { position: 'absolute', bottom: 8, right: 12, width: 50, height: 120, justifyContent: 'flex-end', alignItems: 'center' },
   floatingEmoji: { position: 'absolute', fontSize: 28 },

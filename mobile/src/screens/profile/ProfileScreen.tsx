@@ -64,8 +64,17 @@ export default function ProfileScreen({ navigation }: Props) {
       {/* Stats */}
       <View style={styles.stats}>
         <View style={styles.stat}>
-          <Text style={styles.statValue}>${((user?.balance ?? 0) / 100).toFixed(2)}</Text>
-          <Text style={styles.statLabel}>Saldo MXN</Text>
+          {user?.averageRating != null ? (
+            <View style={styles.ratingRow}>
+              <Text style={styles.statValue}>{user.averageRating.toFixed(1)}</Text>
+              <Text style={styles.starIcon}>★</Text>
+            </View>
+          ) : (
+            <Text style={styles.statValue}>—</Text>
+          )}
+          <Text style={styles.statLabel}>
+            {user?.totalRatings ? `${user.totalRatings} cal.` : 'Sin calificaciones'}
+          </Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.stat}>
@@ -100,15 +109,13 @@ export default function ProfileScreen({ navigation }: Props) {
         </View>
       )}
 
-      {user?.role === 'buyer' && (
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.sellerBtn} onPress={() => navigation.navigate('MyOrders')}>
-            <Ionicons name="receipt-outline" size={18} color={colors.primaryLight} />
-            <Text style={styles.sellerBtnText}>Mis Compras</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-          </TouchableOpacity>
-        </View>
-      )}
+      <View style={styles.section}>
+        <TouchableOpacity style={styles.sellerBtn} onPress={() => navigation.navigate('MyOrders')}>
+          <Ionicons name="receipt-outline" size={18} color={colors.primaryLight} />
+          <Text style={styles.sellerBtnText}>Mis Compras</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.section}>
         <TouchableOpacity style={styles.sellerBtn} onPress={() => navigation.navigate('PaymentMethods')}>
@@ -171,7 +178,9 @@ const styles = StyleSheet.create({
   email: { color: colors.textMuted, fontSize: font.md, marginBottom: spacing.xl },
   stats: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.lg, paddingVertical: spacing.lg, paddingHorizontal: spacing.xxl, gap: spacing.xl, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.xl },
   stat: { alignItems: 'center' },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   statValue: { color: colors.text, fontSize: font.xl, fontWeight: '800' },
+  starIcon: { color: colors.warning, fontSize: font.md, marginTop: 3 },
   statLabel: { color: colors.textMuted, fontSize: font.sm, marginTop: 2 },
   divider: { width: 1, backgroundColor: colors.border },
   section: { width: '100%', backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', marginBottom: spacing.md },

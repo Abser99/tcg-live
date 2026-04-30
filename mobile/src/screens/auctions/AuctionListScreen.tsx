@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, SectionList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, RefreshControl, TextInput, ScrollView,
+  ActivityIndicator, RefreshControl, TextInput, ScrollView, Image,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -60,6 +60,11 @@ function AuctionCard({ auction, onPress }: { auction: Auction; onPress: () => vo
   const itemCount = auction.items?.length ?? 0;
   const isLive = auction.status === 'live';
   const gameMeta = GAMES.find(g => g.value === auction.game);
+  const firstImage = auction.items
+    ?.slice()
+    .sort((a, b) => a.position - b.position)
+    .find(i => i.imageUrls?.length)
+    ?.imageUrls?.[0];
 
   return (
     <TouchableOpacity
@@ -76,27 +81,31 @@ function AuctionCard({ auction, onPress }: { auction: Auction; onPress: () => vo
         <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
       </View>
 
-      <Text style={styles.cardTitle} numberOfLines={2}>{auction.title}</Text>
-
-      <View style={styles.cardMeta}>
-        <Text style={styles.metaText}>
-          <Ionicons name="person-outline" size={12} /> @{auction.seller?.username}
-        </Text>
-        {itemCount > 0 && (
-          <Text style={styles.metaText}>
-            <Ionicons name="layers-outline" size={12} /> {itemCount} {itemCount === 1 ? 'carta' : 'cartas'}
-          </Text>
+      <View style={styles.cardBody}>
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle} numberOfLines={2}>{auction.title}</Text>
+          <View style={styles.cardMeta}>
+            <Text style={styles.metaText}>@{auction.seller?.username}</Text>
+            {itemCount > 0 && (
+              <Text style={styles.metaText}>{itemCount} {itemCount === 1 ? 'carta' : 'cartas'}</Text>
+            )}
+          </View>
+          {auction.scheduledAt && auction.status === 'scheduled' && (
+            <Text style={styles.scheduleText}>
+              {new Date(auction.scheduledAt).toLocaleString('es-MX', {
+                weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+              })}
+            </Text>
+          )}
+        </View>
+        {firstImage ? (
+          <Image source={{ uri: firstImage }} style={styles.thumbnail} resizeMode="contain" />
+        ) : (
+          <View style={styles.thumbnailEmpty}>
+            <Ionicons name="layers-outline" size={22} color={colors.border} />
+          </View>
         )}
       </View>
-
-      {auction.scheduledAt && auction.status === 'scheduled' && (
-        <Text style={styles.scheduleText}>
-          <Ionicons name="time-outline" size={12} />{' '}
-          {new Date(auction.scheduledAt).toLocaleString('es-MX', {
-            weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-          })}
-        </Text>
-      )}
     </TouchableOpacity>
   );
 }
@@ -231,11 +240,15 @@ const styles = StyleSheet.create({
   badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.full, gap: 4 },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.white },
   badgeText: { color: colors.white, fontSize: font.sm, fontWeight: '700' },
-  gameTag: { color: colors.textMuted, fontSize: font.xs ?? 11, flex: 1 },
-  cardTitle: { color: colors.text, fontSize: font.lg, fontWeight: '700', marginBottom: spacing.sm },
+  gameTag: { color: colors.textMuted, fontSize: font.xs, flex: 1 },
+  cardBody: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  cardInfo: { flex: 1, gap: 4 },
+  cardTitle: { color: colors.text, fontSize: font.lg, fontWeight: '700' },
   cardMeta: { flexDirection: 'row', gap: spacing.md },
   metaText: { color: colors.textMuted, fontSize: font.sm },
-  scheduleText: { color: colors.accent, fontSize: font.sm, marginTop: spacing.xs },
+  scheduleText: { color: colors.accent, fontSize: font.sm },
+  thumbnail: { width: 56, height: 78, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt },
+  thumbnailEmpty: { width: 56, height: 78, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: colors.textMuted, fontSize: font.md, marginTop: spacing.md, textAlign: 'center' },
   searchBar: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,

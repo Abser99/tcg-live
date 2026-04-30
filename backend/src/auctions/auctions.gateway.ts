@@ -2,6 +2,7 @@ import {
   ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
+  OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -15,9 +16,12 @@ import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 import { extractWsToken } from '../common/utils/ws.utils';
 
 @WebSocketGateway({ cors: { origin: '*' }, namespace: '/auctions' })
-export class AuctionsGateway implements OnGatewayConnection {
+export class AuctionsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
+
+  /** auctionId → Set of socket IDs currently viewing */
+  private readonly viewers = new Map<string, Set<string>>();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -39,10 +43,21 @@ export class AuctionsGateway implements OnGatewayConnection {
     }
   }
 
+  handleDisconnect(client: Socket) {
+    for (const [auctionId, set] of this.viewers.entries()) {
+      if (set.delete(client.id)) {
+        this.emitViewerCount(auctionId);
+      }
+    }
+  }
+
   @UseGuards(WsJwtGuard)
   @SubscribeMessage('join-auction')
   handleJoin(@MessageBody() auctionId: string, @ConnectedSocket() client: Socket) {
     client.join(`auction:${auctionId}`);
+    if (!this.viewers.has(auctionId)) this.viewers.set(auctionId, new Set());
+    this.viewers.get(auctionId)!.add(client.id);
+    this.emitViewerCount(auctionId);
     return { event: 'joined', data: auctionId };
   }
 
@@ -50,6 +65,8 @@ export class AuctionsGateway implements OnGatewayConnection {
   @SubscribeMessage('leave-auction')
   handleLeave(@MessageBody() auctionId: string, @ConnectedSocket() client: Socket) {
     client.leave(`auction:${auctionId}`);
+    this.viewers.get(auctionId)?.delete(client.id);
+    this.emitViewerCount(auctionId);
     return { event: 'left', data: auctionId };
   }
 
@@ -110,6 +127,11 @@ export class AuctionsGateway implements OnGatewayConnection {
 
   emitAuctionEnded(auctionId: string) {
     this.server.to(`auction:${auctionId}`).emit('auction:ended', { auctionId });
+  }
+
+  private emitViewerCount(auctionId: string) {
+    const count = this.viewers.get(auctionId)?.size ?? 0;
+    this.server.to(`auction:${auctionId}`).emit('viewer:count', { count });
   }
 }
 
