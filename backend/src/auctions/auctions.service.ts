@@ -16,6 +16,7 @@ import { SetMaxBidDto } from './dto/set-max-bid.dto';
 import { AuctionsGateway } from './auctions.gateway';
 import { UsersService } from '../users/users.service';
 import { OrdersService } from '../orders/orders.service';
+import { WatchlistService } from '../watchlist/watchlist.service';
 
 const MIN_BID_INCREMENT = 100; // 1 MXN in cents
 const ITEM_TIMER_MS = 60_000;   // 60s per item
@@ -36,6 +37,7 @@ export class AuctionsService {
     private readonly gateway: AuctionsGateway,
     private readonly usersService: UsersService,
     private readonly ordersService: OrdersService,
+    private readonly watchlistService: WatchlistService,
   ) {}
 
   async create(sellerId: string, dto: CreateAuctionDto): Promise<Auction> {
@@ -116,6 +118,8 @@ export class AuctionsService {
     if (firstItem) {
       this.gateway.emitAuctionStarted(id, { auctionId: id, firstItemId: firstItem.id });
     }
+
+    this.watchlistService.notifyWatchers(id, auction.title).catch(() => {});
 
     return saved;
   }

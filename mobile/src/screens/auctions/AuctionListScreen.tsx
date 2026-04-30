@@ -6,6 +6,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { auctionsApi } from '../../api/auctions';
+import { watchlistApi } from '../../api/watchlist';
 import { Auction, AuctionGame } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
 import { auctionStatusBadge } from '../../utils/auction';
@@ -55,7 +56,7 @@ function GameChips({
   );
 }
 
-function AuctionCard({ auction, onPress }: { auction: Auction; onPress: () => void }) {
+function AuctionCard({ auction, onPress, watching }: { auction: Auction; onPress: () => void; watching?: boolean }) {
   const badge = auctionStatusBadge(auction.status);
   const itemCount = auction.items?.length ?? 0;
   const isLive = auction.status === 'live';
@@ -78,6 +79,7 @@ function AuctionCard({ auction, onPress }: { auction: Auction; onPress: () => vo
           <Text style={styles.badgeText}>{badge.label}</Text>
         </View>
         {gameMeta && <Text style={styles.gameTag}>{gameMeta.emoji} {gameMeta.label}</Text>}
+        {watching && <Ionicons name="bookmark" size={14} color={colors.primary} />}
         <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
       </View>
 
@@ -112,6 +114,7 @@ function AuctionCard({ auction, onPress }: { auction: Auction; onPress: () => vo
 
 export default function AuctionListScreen({ navigation }: Props) {
   const [auctions, setAuctions] = useState<Auction[]>([]);
+  const [watchedIds, setWatchedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,8 +126,12 @@ export default function AuctionListScreen({ navigation }: Props) {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const { data } = await auctionsApi.list(q || undefined, game ?? undefined);
-      setAuctions(data);
+      const [auctionsRes, watchlistRes] = await Promise.all([
+        auctionsApi.list(q || undefined, game ?? undefined),
+        watchlistApi.mine().catch(() => ({ data: [] as Auction[] })),
+      ]);
+      setAuctions(auctionsRes.data);
+      setWatchedIds(new Set(watchlistRes.data.map(a => a.id)));
     } catch {
       setError('No se pudo cargar las subastas');
     } finally {
@@ -216,6 +223,7 @@ export default function AuctionListScreen({ navigation }: Props) {
         renderItem={({ item }) => (
           <AuctionCard
             auction={item}
+            watching={watchedIds.has(item.id)}
             onPress={() => navigation.navigate('AuctionDetail', { auctionId: item.id })}
           />
         )}

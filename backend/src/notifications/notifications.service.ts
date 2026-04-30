@@ -116,6 +116,14 @@ export class NotificationsService {
     });
   }
 
+  async notifyAuctionGoingLive(userId: string, auctionTitle: string, auctionId: string): Promise<void> {
+    await this.sendToUser(userId, {
+      title: '🔴 ¡Subasta en vivo!',
+      body: `"${auctionTitle}" acaba de comenzar`,
+      data: { type: 'auction_live', auctionId },
+    });
+  }
+
   async notifyDisputeOpened(sellerId: string, orderId: string): Promise<void> {
     await this.sendToUser(sellerId, {
       title: '⚠️ Disputa abierta',

@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { io, Socket } from 'socket.io-client';
 import { auctionsApi } from '../../api/auctions';
 import { paymentMethodsApi } from '../../api/paymentMethods';
+import { watchlistApi } from '../../api/watchlist';
 import { useAuthStore } from '../../store/auth.store';
 import { Auction, AuctionItem, Bid, ChatMessage, Reaction } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
@@ -73,15 +74,21 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
   // Viewer count
   const [viewerCount, setViewerCount] = useState(0);
 
+  // Watchlist
+  const [watching, setWatching] = useState(false);
+  const [watchingBusy, setWatchingBusy] = useState(false);
+
   const socketRef = useRef<Socket | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [auctionRes, tokenRes] = await Promise.all([
+      const [auctionRes, tokenRes, watchRes] = await Promise.all([
         auctionsApi.get(auctionId),
         auctionsApi.getLiveKitToken(auctionId).catch(() => null),
+        watchlistApi.status(auctionId).catch(() => ({ data: { watching: false } })),
       ]);
       setAuction(auctionRes.data);
+      setWatching(watchRes.data.watching);
       if (tokenRes) setStreamCreds(tokenRes.data);
       const active = auctionRes.data.items?.find((i) => i.status === 'active') ?? null;
       setActiveItem(active);
@@ -232,6 +239,24 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
     socketRef.current?.emit('reaction:send', emoji);
   };
 
+  const toggleWatch = async () => {
+    if (watchingBusy) return;
+    setWatchingBusy(true);
+    try {
+      if (watching) {
+        await watchlistApi.remove(auctionId);
+        setWatching(false);
+      } else {
+        await watchlistApi.add(auctionId);
+        setWatching(true);
+      }
+    } catch {
+      Alert.alert('Error', 'No se pudo actualizar la lista de guardados');
+    } finally {
+      setWatchingBusy(false);
+    }
+  };
+
   if (loading || !auction) {
     return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   }
@@ -255,6 +280,15 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
               <Ionicons name="eye-outline" size={12} color={colors.textMuted} />
               <Text style={styles.viewerText}>{viewerCount}</Text>
             </View>
+          )}
+          {!isSeller && auction.status !== 'ended' && auction.status !== 'cancelled' && (
+            <TouchableOpacity onPress={toggleWatch} disabled={watchingBusy} style={styles.bookmarkBtn}>
+              <Ionicons
+                name={watching ? 'bookmark' : 'bookmark-outline'}
+                size={20}
+                color={watching ? colors.primary : colors.textMuted}
+              />
+            </TouchableOpacity>
           )}
           <View style={[styles.wsIndicator, { backgroundColor: connected ? colors.success : colors.textMuted }]} />
         </View>
@@ -478,6 +512,7 @@ const styles = StyleSheet.create({
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.white },
   badgeText: { color: colors.white, fontSize: font.sm, fontWeight: '700' },
   wsIndicator: { width: 8, height: 8, borderRadius: 4 },
+  bookmarkBtn: { padding: 4 },
   viewerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceAlt, borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 3, borderWidth: 1, borderColor: colors.border },
   viewerText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
   streamWrap: { position: 'relative', marginBottom: spacing.xs },
