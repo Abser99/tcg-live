@@ -160,3 +160,24 @@ export interface Reaction {
   username: string;
   emoji: string;
 }
+
+export type DisputeStatus = 'open' | 'under_review' | 'resolved' | 'rejected';
+export type DisputeReason =
+  | 'not_received'
+  | 'wrong_item'
+  | 'damaged'
+  | 'not_as_described'
+  | 'other';
+
+export interface Dispute {
+  id: string;
+  orderId: string;
+  buyerId: string;
+  sellerId: string;
+  reason: DisputeReason;
+  description: string;
+  status: DisputeStatus;
+  resolutionNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

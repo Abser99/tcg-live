@@ -147,6 +147,10 @@ export class OrdersService {
     return this.ordersRepo.save(order);
   }
 
+  async findById(orderId: string): Promise<Order | null> {
+    return this.ordersRepo.findOne({ where: { id: orderId } });
+  }
+
   async getOrderForCheckout(orderId: string, buyerId: string): Promise<Order> {
     const order = await this.ordersRepo.findOne({ where: { id: orderId, buyerId } });
     if (!order) throw new NotFoundException('Order not found');

@@ -115,4 +115,21 @@ export class NotificationsService {
       data: { type: 'payment_received', orderId },
     });
   }
+
+  async notifyDisputeOpened(sellerId: string, orderId: string): Promise<void> {
+    await this.sendToUser(sellerId, {
+      title: '⚠️ Disputa abierta',
+      body: 'Un comprador abrió una disputa en una de tus órdenes.',
+      data: { type: 'dispute_opened', orderId },
+    });
+  }
+
+  async notifyDisputeResolved(buyerId: string, status: string, resolutionNote: string): Promise<void> {
+    const isResolved = status === 'resolved';
+    await this.sendToUser(buyerId, {
+      title: isResolved ? '✅ Disputa resuelta' : '❌ Disputa rechazada',
+      body: resolutionNote,
+      data: { type: 'dispute_resolved', status },
+    });
+  }
 }

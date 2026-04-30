@@ -6,8 +6,9 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { ordersApi } from '../../api/orders';
+import { disputesApi } from '../../api/disputes';
 import { useNavigation } from '@react-navigation/native';
-import { Order } from '../../types';
+import { Dispute, DisputeReason, Order } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
 import { formatMXN } from '../../utils/currency';
 import { ProfileStackParamList } from '../../navigation/types';
@@ -28,8 +29,24 @@ const SHIPPING_OPTIONS: { value: 'combined' | 'individual'; label: string; desc:
 
 const STARS = [1, 2, 3, 4, 5];
 
+const DISPUTE_REASONS: { value: DisputeReason; label: string }[] = [
+  { value: 'not_received',     label: 'No recibí mi pedido' },
+  { value: 'wrong_item',      label: 'Me enviaron algo incorrecto' },
+  { value: 'damaged',         label: 'El artículo llegó dañado' },
+  { value: 'not_as_described', label: 'No coincide con la descripción' },
+  { value: 'other',           label: 'Otro motivo' },
+];
+
+const DISPUTE_STATUS: Record<string, { label: string; color: string }> = {
+  open:         { label: 'Disputa abierta', color: '#f59e0b' },
+  under_review: { label: 'En revisión',    color: '#3b82f6' },
+  resolved:     { label: 'Resuelta',       color: '#22c55e' },
+  rejected:     { label: 'Rechazada',      color: '#ef4444' },
+};
+
 export default function MyOrdersScreen({ navigation }: Props) {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [ratingOrder, setRatingOrder] = useState<Order | null>(null);
@@ -37,12 +54,20 @@ export default function MyOrdersScreen({ navigation }: Props) {
   const [ratingNote, setRatingNote] = useState('');
   const [submittingRating, setSubmittingRating] = useState(false);
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
+  const [disputeOrder, setDisputeOrder] = useState<Order | null>(null);
+  const [disputeReason, setDisputeReason] = useState<DisputeReason | null>(null);
+  const [disputeDescription, setDisputeDescription] = useState('');
+  const [submittingDispute, setSubmittingDispute] = useState(false);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const { data } = await ordersApi.myOrders();
-      setOrders(data);
+      const [ordersRes, disputesRes] = await Promise.all([
+        ordersApi.myOrders(),
+        disputesApi.mine(),
+      ]);
+      setOrders(ordersRes.data);
+      setDisputes(disputesRes.data);
     } catch {
       Alert.alert('Error', 'No se pudieron cargar las compras');
     } finally {
@@ -106,6 +131,30 @@ export default function MyOrdersScreen({ navigation }: Props) {
     }
   };
 
+  const handleSubmitDispute = async () => {
+    if (!disputeOrder || !disputeReason) {
+      Alert.alert('Selecciona el motivo de la disputa');
+      return;
+    }
+    if (disputeDescription.trim().length < 10) {
+      Alert.alert('Describe el problema con al menos 10 caracteres');
+      return;
+    }
+    setSubmittingDispute(true);
+    try {
+      const { data } = await disputesApi.open(disputeOrder.id, disputeReason, disputeDescription.trim());
+      setDisputes(prev => [data, ...prev]);
+      setDisputeOrder(null);
+      setDisputeReason(null);
+      setDisputeDescription('');
+      Alert.alert('Disputa abierta', 'Tu caso fue registrado. Lo revisaremos en breve.');
+    } catch {
+      Alert.alert('Error', 'No se pudo abrir la disputa. Intenta de nuevo.');
+    } finally {
+      setSubmittingDispute(false);
+    }
+  };
+
   const handleShippingChoice = async (order: Order, choice: 'combined' | 'individual') => {
     try {
       const { data } = await ordersApi.setShippingChoice(order.id, choice);
@@ -136,6 +185,10 @@ export default function MyOrdersScreen({ navigation }: Props) {
       renderItem={({ item: order }) => {
         const st = STATUS_LABEL[order.status] ?? STATUS_LABEL.pending;
         const total = order.items.reduce((s, i) => s + i.finalPrice, 0);
+        const dispute = disputes.find(d => d.orderId === order.id);
+        const canDispute = !dispute &&
+          order.paymentStatus === 'paid' &&
+          order.status !== 'delivered';
         return (
           <View style={styles.card}>
             <View style={styles.cardHeader}>
@@ -225,6 +278,32 @@ export default function MyOrdersScreen({ navigation }: Props) {
               </View>
             ) : null}
 
+            {dispute && (
+              <View style={[styles.disputeBadge, { borderColor: DISPUTE_STATUS[dispute.status]?.color ?? colors.border }]}>
+                <Ionicons name="alert-circle-outline" size={14} color={DISPUTE_STATUS[dispute.status]?.color ?? colors.textMuted} />
+                <Text style={[styles.disputeBadgeText, { color: DISPUTE_STATUS[dispute.status]?.color ?? colors.textMuted }]}>
+                  {DISPUTE_STATUS[dispute.status]?.label ?? 'Disputa'}
+                </Text>
+                {dispute.resolutionNote ? (
+                  <Text style={styles.disputeNote} numberOfLines={2}>{dispute.resolutionNote}</Text>
+                ) : null}
+              </View>
+            )}
+
+            {canDispute && (
+              <TouchableOpacity
+                style={styles.disputeBtn}
+                onPress={() => {
+                  setDisputeOrder(order);
+                  setDisputeReason(null);
+                  setDisputeDescription('');
+                }}
+              >
+                <Ionicons name="alert-circle-outline" size={16} color={colors.error ?? '#ef4444'} />
+                <Text style={styles.disputeBtnText}>Abrir disputa</Text>
+              </TouchableOpacity>
+            )}
+
             {order.status === 'pending' && !order.shippingChoice && (
               <View style={styles.shippingSection}>
                 <Text style={styles.shippingTitle}>¿Cómo quieres tu envío?</Text>
@@ -256,6 +335,54 @@ export default function MyOrdersScreen({ navigation }: Props) {
         );
       }}
     />
+
+    {/* Dispute modal */}
+    <Modal visible={!!disputeOrder} transparent animationType="slide" onRequestClose={() => setDisputeOrder(null)}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <Text style={styles.modalTitle}>Abrir disputa</Text>
+          <Text style={styles.modalHint}>¿Cuál es el problema con tu pedido?</Text>
+          {DISPUTE_REASONS.map(r => (
+            <TouchableOpacity
+              key={r.value}
+              style={[styles.reasonOption, disputeReason === r.value && styles.reasonOptionActive]}
+              onPress={() => setDisputeReason(r.value)}
+            >
+              <Ionicons
+                name={disputeReason === r.value ? 'radio-button-on' : 'radio-button-off'}
+                size={18}
+                color={disputeReason === r.value ? colors.primary : colors.textMuted}
+              />
+              <Text style={[styles.reasonLabel, disputeReason === r.value && styles.reasonLabelActive]}>
+                {r.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          <TextInput
+            style={styles.ratingInput}
+            value={disputeDescription}
+            onChangeText={setDisputeDescription}
+            placeholder="Describe el problema con detalle..."
+            placeholderTextColor={colors.textMuted}
+            multiline
+            maxLength={1000}
+          />
+          <TouchableOpacity
+            style={[styles.submitRatingBtn, { backgroundColor: colors.error ?? '#ef4444' }]}
+            onPress={handleSubmitDispute}
+            disabled={submittingDispute || !disputeReason}
+          >
+            {submittingDispute
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.submitRatingText}>Enviar disputa</Text>
+            }
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.skipBtn} onPress={() => setDisputeOrder(null)}>
+            <Text style={styles.skipText}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
 
     {/* Rating modal */}
     <Modal visible={!!ratingOrder} transparent animationType="slide" onRequestClose={() => setRatingOrder(null)}>
@@ -337,6 +464,15 @@ const styles = StyleSheet.create({
   rateBtnText: { color: colors.warning, fontWeight: '700', fontSize: font.sm },
   ratedRow: { marginTop: spacing.xs },
   ratedText: { color: colors.textMuted, fontSize: font.sm },
+  disputeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.error ?? '#ef4444', borderRadius: radius.md, padding: spacing.sm },
+  disputeBtnText: { color: colors.error ?? '#ef4444', fontWeight: '700', fontSize: font.sm },
+  disputeBadge: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.sm, borderWidth: 1, borderRadius: radius.md, padding: spacing.sm },
+  disputeBadgeText: { fontWeight: '700', fontSize: font.sm },
+  disputeNote: { color: colors.textMuted, fontSize: font.sm, flex: 1 },
+  reasonOption: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  reasonOptionActive: { borderColor: colors.primary, backgroundColor: colors.surfaceAlt },
+  reasonLabel: { color: colors.textMuted, fontSize: font.md, flex: 1 },
+  reasonLabelActive: { color: colors.text, fontWeight: '600' },
   // rating modal
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   modalSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.xl, gap: spacing.md },
