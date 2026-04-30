@@ -70,6 +70,12 @@ export class AuctionsController {
     return this.auctionsService.end(id, user.id);
   }
 
+  @Post(':id/relist')
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  relist(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.auctionsService.relist(id, user.id);
+  }
+
   @Post('items/:itemId/bids')
   placeBid(
     @Param('itemId') itemId: string,

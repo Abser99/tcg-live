@@ -134,6 +134,30 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
     ]);
   };
 
+  const handleRelist = () => {
+    const unsoldCount = auction?.items?.filter(i => i.status === 'unsold').length ?? 0;
+    Alert.alert(
+      'Volver a subastar',
+      `Se creará una nueva subasta con ${unsoldCount} ${unsoldCount === 1 ? 'carta no vendida' : 'cartas no vendidas'}. Podrás editarla antes de iniciarla.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Crear subasta', onPress: async () => {
+            setActing(true);
+            try {
+              const { data } = await auctionsApi.relist(auctionId);
+              navigation.replace('ManageAuction', { auctionId: data.id });
+            } catch (err: any) {
+              Alert.alert('Error', err.response?.data?.message ?? 'No se pudo crear la subasta');
+            } finally {
+              setActing(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleEnd = () => {
     Alert.alert('Terminar subasta', '¿Seguro que quieres terminar la subasta ahora?', [
       { text: 'Cancelar', style: 'cancel' },
@@ -165,6 +189,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
   const isLive = auction.status === 'live';
   const isEnded = auction.status === 'ended';
   const sortedItems = [...(auction.items ?? [])].sort((a, b) => a.position - b.position);
+  const unsoldItems = sortedItems.filter(i => i.status === 'unsold');
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -284,6 +309,22 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
             <Ionicons name="receipt-outline" size={18} color={colors.white} />
             <Text style={styles.actionBtnText}>Ver Pedidos</Text>
           </TouchableOpacity>
+          {unsoldItems.length > 0 && (
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: colors.accent }, acting && styles.btnDisabled]}
+              onPress={handleRelist}
+              disabled={acting}
+            >
+              {acting ? <ActivityIndicator color={colors.white} /> : (
+                <>
+                  <Ionicons name="refresh-outline" size={18} color={colors.white} />
+                  <Text style={styles.actionBtnText}>
+                    Relist · {unsoldItems.length} {unsoldItems.length === 1 ? 'carta' : 'cartas'} no vendidas
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       )}
 

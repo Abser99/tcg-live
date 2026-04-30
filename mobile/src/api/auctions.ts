@@ -36,4 +36,6 @@ export const auctionsApi = {
     api.post(`/auctions/items/${itemId}/max-bid`, { maxAmount }),
 
   myBids: () => api.get<MyBidEntry[]>('/auctions/my-bids'),
+
+  relist: (id: string) => api.post<Auction>(`/auctions/${id}/relist`, {}),
 };

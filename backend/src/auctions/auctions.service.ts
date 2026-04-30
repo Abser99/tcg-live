@@ -350,6 +350,41 @@ export class AuctionsService {
       }));
   }
 
+  async relist(id: string, sellerId: string): Promise<Auction> {
+    const source = await this.findOne(id);
+    this.assertOwner(source.sellerId, sellerId);
+    if (source.status !== AuctionStatus.ENDED) {
+      throw new BadRequestException('Solo puedes volver a listar subastas terminadas');
+    }
+
+    const unsold = source.items.filter(i => i.status === AuctionItemStatus.UNSOLD);
+    if (!unsold.length) {
+      throw new BadRequestException('No hay items no vendidos en esta subasta');
+    }
+
+    const newAuction = this.auctionsRepo.create({
+      sellerId,
+      title: source.title,
+      game: source.game,
+      description: source.description ?? undefined,
+      items: unsold.map((item, index) =>
+        this.itemsRepo.create({
+          cardName: item.cardName,
+          cardSet: item.cardSet ?? undefined,
+          cardNumber: item.cardNumber ?? undefined,
+          condition: item.condition,
+          startingPrice: item.startingPrice,
+          currentPrice: item.startingPrice,
+          reservePrice: item.reservePrice ?? undefined,
+          imageUrls: item.imageUrls ?? undefined,
+          position: index,
+        }),
+      ),
+    });
+
+    return this.auctionsRepo.save(newAuction);
+  }
+
   private assertOwner(ownerId: string, requesterId: string): void {
     if (ownerId !== requesterId) throw new ForbiddenException();
   }
