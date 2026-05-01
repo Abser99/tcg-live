@@ -26,6 +26,8 @@ import { WatchlistModule } from './watchlist/watchlist.module';
 import { WatchlistItem } from './watchlist/entities/watchlist-item.entity';
 import { MessagesModule } from './messages/messages.module';
 import { Message } from './messages/entities/message.entity';
+import { FollowsModule } from './follows/follows.module';
+import { FollowedSeller } from './follows/entities/followed-seller.entity';
 import { User } from './users/user.entity';
 import { Auction } from './auctions/entities/auction.entity';
 import { AuctionItem } from './auctions/entities/auction-item.entity';
@@ -53,7 +55,7 @@ import { PushToken } from './notifications/entities/push-token.entity';
         database: config.get('database.name'),
         username: config.get('database.user'),
         password: config.get('database.password'),
-        entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, Order, OrderItem, PaymentMethod, PushToken, Dispute, WatchlistItem, Message],
+        entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, Order, OrderItem, PaymentMethod, PushToken, Dispute, WatchlistItem, Message, FollowedSeller],
         synchronize: true, // dev only — use migrations in production
         logging: process.env.NODE_ENV === 'development',
       }),
@@ -81,6 +83,7 @@ import { PushToken } from './notifications/entities/push-token.entity';
     DisputesModule,
     WatchlistModule,
     MessagesModule,
+    FollowsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

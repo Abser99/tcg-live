@@ -7,6 +7,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { usersApi } from '../../api/users';
 import { auctionsApi } from '../../api/auctions';
+import { followsApi } from '../../api/follows';
+import { useAuthStore } from '../../store/auth.store';
 import { Auction, User } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
 import { auctionStatusBadge } from '../../utils/auction';
@@ -16,20 +18,25 @@ type Props = NativeStackScreenProps<AppStackParamList, 'SellerProfile'>;
 
 export default function SellerProfileScreen({ route, navigation }: Props) {
   const { sellerId } = route.params;
+  const currentUserId = useAuthStore(s => s.user?.id);
   const [seller, setSeller]     = useState<Partial<User> | null>(null);
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [following, setFollowing]   = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [profileRes, auctionsRes] = await Promise.all([
+      const [profileRes, auctionsRes, followRes] = await Promise.all([
         usersApi.getProfile(sellerId),
         auctionsApi.listBySeller(sellerId),
+        followsApi.status(sellerId).catch(() => ({ data: { following: false } })),
       ]);
       setSeller(profileRes.data);
       setAuctions(auctionsRes.data);
+      setFollowing(followRes.data.following);
     } catch {
       Alert.alert('Error', 'No se pudo cargar el perfil');
       navigation.goBack();
@@ -38,6 +45,24 @@ export default function SellerProfileScreen({ route, navigation }: Props) {
       setRefreshing(false);
     }
   }, [sellerId]);
+
+  const toggleFollow = async () => {
+    if (followBusy) return;
+    setFollowBusy(true);
+    try {
+      if (following) {
+        await followsApi.unfollow(sellerId);
+        setFollowing(false);
+      } else {
+        await followsApi.follow(sellerId);
+        setFollowing(true);
+      }
+    } catch {
+      Alert.alert('Error', 'No se pudo actualizar el seguimiento');
+    } finally {
+      setFollowBusy(false);
+    }
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -90,6 +115,29 @@ export default function SellerProfileScreen({ route, navigation }: Props) {
             <Text style={styles.statLabel}>Activas</Text>
           </View>
         </View>
+        {currentUserId !== sellerId && (
+          <TouchableOpacity
+            style={[styles.followBtn, following && styles.followBtnActive]}
+            onPress={toggleFollow}
+            disabled={followBusy}
+          >
+            {followBusy ? (
+              <ActivityIndicator size="small" color={following ? colors.primary : '#fff'} />
+            ) : (
+              <>
+                <Ionicons
+                  name={following ? 'notifications' : 'notifications-outline'}
+                  size={16}
+                  color={following ? colors.primary : '#fff'}
+                />
+                <Text style={[styles.followBtnText, following && styles.followBtnTextActive]}>
+                  {following ? 'Siguiendo' : 'Seguir'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
         {(seller as any)?.shippingNote ? (
           <View style={styles.shippingNote}>
             <Ionicons name="cube-outline" size={14} color={colors.textMuted} />
@@ -169,6 +217,10 @@ const styles = StyleSheet.create({
   statValue: { color: colors.text, fontSize: font.xl, fontWeight: '800' },
   statLabel: { color: colors.textMuted, fontSize: font.xs ?? 11, marginTop: 2, textAlign: 'center' },
   statDivider: { width: 1, height: 32, backgroundColor: colors.border },
+  followBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.md, backgroundColor: colors.primary, borderRadius: radius.full, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  followBtnActive: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.primary },
+  followBtnText: { color: '#fff', fontWeight: '700', fontSize: font.sm },
+  followBtnTextActive: { color: colors.primary },
   shippingNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.md, backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, padding: spacing.sm, maxWidth: '100%' },
   shippingNoteText: { color: colors.textMuted, fontSize: font.sm, flex: 1 },
   section: { padding: spacing.md, gap: spacing.xs },

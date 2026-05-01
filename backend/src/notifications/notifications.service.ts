@@ -124,6 +124,14 @@ export class NotificationsService {
     });
   }
 
+  async notifySellerGoingLive(userId: string, sellerUsername: string, auctionTitle: string, auctionId: string): Promise<void> {
+    await this.sendToUser(userId, {
+      title: `🔴 @${sellerUsername} está en vivo`,
+      body: `"${auctionTitle}" acaba de comenzar`,
+      data: { type: 'seller_live', auctionId },
+    });
+  }
+
   async notifyNewMessage(recipientId: string, senderUsername: string, orderId: string): Promise<void> {
     await this.sendToUser(recipientId, {
       title: `💬 Nuevo mensaje de @${senderUsername}`,

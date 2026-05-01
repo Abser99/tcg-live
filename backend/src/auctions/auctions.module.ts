@@ -13,6 +13,7 @@ import { UsersModule } from '../users/users.module';
 import { LivekitModule } from '../livekit/livekit.module';
 import { OrdersModule } from '../orders/orders.module';
 import { WatchlistModule } from '../watchlist/watchlist.module';
+import { FollowsModule } from '../follows/follows.module';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 
 @Module({
@@ -22,6 +23,7 @@ import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
     LivekitModule,
     OrdersModule,
     WatchlistModule,
+    FollowsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

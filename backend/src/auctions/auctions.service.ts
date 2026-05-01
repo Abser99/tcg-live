@@ -17,6 +17,7 @@ import { AuctionsGateway } from './auctions.gateway';
 import { UsersService } from '../users/users.service';
 import { OrdersService } from '../orders/orders.service';
 import { WatchlistService } from '../watchlist/watchlist.service';
+import { FollowsService } from '../follows/follows.service';
 
 const MIN_BID_INCREMENT = 100; // 1 MXN in cents
 const ITEM_TIMER_MS = 60_000;   // 60s per item
@@ -38,6 +39,7 @@ export class AuctionsService {
     private readonly usersService: UsersService,
     private readonly ordersService: OrdersService,
     private readonly watchlistService: WatchlistService,
+    private readonly followsService: FollowsService,
   ) {}
 
   async create(sellerId: string, dto: CreateAuctionDto): Promise<Auction> {
@@ -158,6 +160,7 @@ export class AuctionsService {
     }
 
     this.watchlistService.notifyWatchers(id, auction.title).catch(() => {});
+    this.followsService.notifyFollowers(auction.sellerId, auction.title, id).catch(() => {});
 
     return saved;
   }
