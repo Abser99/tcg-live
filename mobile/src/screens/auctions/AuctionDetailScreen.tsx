@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, Alert, TextInput, Image, Animated, FlatList,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Share,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -290,6 +290,14 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
               />
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            style={styles.bookmarkBtn}
+            onPress={() => Share.share({
+              message: `Mira esta subasta en TCG Live: "${auction.title}"\ntcglive://auction/${auctionId}`,
+            })}
+          >
+            <Ionicons name="share-social-outline" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
           <View style={[styles.wsIndicator, { backgroundColor: connected ? colors.success : colors.textMuted }]} />
         </View>
 

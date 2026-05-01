@@ -30,6 +30,19 @@ import MessageThreadScreen from '../screens/profile/MessageThreadScreen';
 
 import { AuthStackParamList, AppStackParamList, ProfileStackParamList, TabParamList } from './types';
 
+const linking = {
+  prefixes: ['tcglive://'],
+  config: {
+    screens: {
+      Auctions: {
+        screens: {
+          AuctionDetail: 'auction/:auctionId',
+        },
+      },
+    },
+  },
+};
+
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const AppStack = createNativeStackNavigator<AppStackParamList>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
@@ -116,7 +129,7 @@ export default function Navigation() {
   }
 
   return (
-    <NavigationContainer ref={navRef}>
+    <NavigationContainer ref={navRef} linking={linking}>
       {token ? (
         <AppTabs />
       ) : (
