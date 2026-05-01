@@ -147,6 +147,41 @@ export class OrdersService {
     return this.ordersRepo.save(order);
   }
 
+  async getSellerStats(sellerId: string) {
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    const paidOrders = await this.ordersRepo.find({
+      where: { sellerId, paymentStatus: PaymentStatus.PAID },
+    });
+
+    const allItems = paidOrders.flatMap(o => o.items);
+    const weekItems = paidOrders
+      .filter(o => new Date(o.createdAt) >= weekAgo)
+      .flatMap(o => o.items);
+
+    const pendingShipments = paidOrders.filter(
+      o => o.status !== OrderStatus.DELIVERED,
+    ).length;
+
+    const bestCard = allItems.reduce<{ cardName: string; priceCents: number } | null>(
+      (best, item) =>
+        !best || item.finalPrice > best.priceCents
+          ? { cardName: item.cardName, priceCents: item.finalPrice }
+          : best,
+      null,
+    );
+
+    return {
+      totalRevenueCents: allItems.reduce((s, i) => s + i.finalPrice, 0),
+      weekRevenueCents:  weekItems.reduce((s, i) => s + i.finalPrice, 0),
+      totalSold:         allItems.length,
+      weekSold:          weekItems.length,
+      pendingShipments,
+      bestCard,
+    };
+  }
+
   async findById(orderId: string): Promise<Order | null> {
     return this.ordersRepo.findOne({ where: { id: orderId } });
   }

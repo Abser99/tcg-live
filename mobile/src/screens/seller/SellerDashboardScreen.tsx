@@ -11,8 +11,10 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { auctionsApi } from '../../api/auctions';
-import { Auction } from '../../types';
+import { ordersApi } from '../../api/orders';
+import { Auction, SellerStats } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
+import { formatMXN } from '../../utils/currency';
 import { auctionStatusBadge } from '../../utils/auction';
 import { ProfileStackParamList } from '../../navigation/types';
 
@@ -22,16 +24,31 @@ const STATUS_ORDER: Record<Auction['status'], number> = {
   live: 0, scheduled: 1, ended: 2, cancelled: 3,
 };
 
+function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <View style={styles.statCard}>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+      {sub ? <Text style={styles.statSub}>{sub}</Text> : null}
+    </View>
+  );
+}
+
 export default function SellerDashboardScreen({ navigation }: Props) {
   const [auctions, setAuctions] = useState<Auction[]>([]);
+  const [stats, setStats] = useState<SellerStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const { data } = await auctionsApi.myAuctions();
-      setAuctions([...data].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]));
+      const [auctionsRes, statsRes] = await Promise.all([
+        auctionsApi.myAuctions(),
+        ordersApi.sellerStats(),
+      ]);
+      setAuctions([...auctionsRes.data].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]));
+      setStats(statsRes.data);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -58,12 +75,45 @@ export default function SellerDashboardScreen({ navigation }: Props) {
     );
   }
 
+  const statsHeader = stats ? (
+    <View style={styles.statsSection}>
+      <View style={styles.statsRow}>
+        <StatCard
+          label="Ingresos totales"
+          value={formatMXN(stats.totalRevenueCents)}
+          sub={`+${formatMXN(stats.weekRevenueCents)} esta semana`}
+        />
+        <StatCard
+          label="Cartas vendidas"
+          value={String(stats.totalSold)}
+          sub={`+${stats.weekSold} esta semana`}
+        />
+      </View>
+      <View style={styles.statsRow}>
+        <StatCard
+          label="Envíos pendientes"
+          value={String(stats.pendingShipments)}
+        />
+        {stats.bestCard ? (
+          <StatCard
+            label="Mejor venta"
+            value={formatMXN(stats.bestCard.priceCents)}
+            sub={stats.bestCard.cardName}
+          />
+        ) : (
+          <StatCard label="Mejor venta" value="—" />
+        )}
+      </View>
+    </View>
+  ) : null;
+
   return (
     <View style={styles.container}>
       <FlatList
         data={auctions}
         keyExtractor={(a) => a.id}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={statsHeader}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -122,6 +172,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl, marginTop: spacing.xxl },
   list: { padding: spacing.md, gap: spacing.md },
+  statsSection: { gap: spacing.sm, marginBottom: spacing.md },
+  statsRow: { flexDirection: 'row', gap: spacing.sm },
+  statCard: {
+    flex: 1, backgroundColor: colors.surface, borderRadius: radius.lg,
+    padding: spacing.md, borderWidth: 1, borderColor: colors.border,
+  },
+  statValue: { color: colors.primaryLight, fontSize: font.xl, fontWeight: '800' },
+  statLabel: { color: colors.textMuted, fontSize: font.sm, marginTop: 2 },
+  statSub: { color: colors.success, fontSize: font.xs, marginTop: 4, fontWeight: '600' },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,

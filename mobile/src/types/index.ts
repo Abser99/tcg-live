@@ -194,6 +194,15 @@ export interface Dispute {
   updatedAt: string;
 }
 
+export interface SellerStats {
+  totalRevenueCents: number;
+  weekRevenueCents: number;
+  totalSold: number;
+  weekSold: number;
+  pendingShipments: number;
+  bestCard: { cardName: string; priceCents: number } | null;
+}
+
 export interface Message {
   id: string;
   orderId: string;

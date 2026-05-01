@@ -1,5 +1,5 @@
 import { api } from './client';
-import { Order, OrderStatus, ShippingQuote } from '../types';
+import { Order, OrderStatus, SellerStats, ShippingQuote } from '../types';
 
 export interface CheckoutResult {
   order: Order;
@@ -33,6 +33,8 @@ export const ordersApi = {
 
   checkout: (orderId: string) =>
     api.post<CheckoutResult>('/payments/checkout', { orderId }),
+
+  sellerStats: () => api.get<SellerStats>('/orders/seller-stats'),
 };
 
 export const shippingApi = {
