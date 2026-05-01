@@ -194,6 +194,25 @@ export interface Dispute {
   updatedAt: string;
 }
 
+export interface AuctionTemplate {
+  id: string;
+  sellerId: string;
+  name: string;
+  title: string;
+  game: AuctionGame;
+  description: string | null;
+  items: {
+    cardName: string;
+    cardSet?: string;
+    cardNumber?: string;
+    condition: string;
+    startingPrice: number;
+    reservePrice?: number;
+    imageUrls?: string[];
+  }[];
+  createdAt: string;
+}
+
 export interface SellerStats {
   totalRevenueCents: number;
   weekRevenueCents: number;

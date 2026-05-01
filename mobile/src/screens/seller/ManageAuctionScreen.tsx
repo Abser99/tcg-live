@@ -12,6 +12,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { io, Socket } from 'socket.io-client';
 import { auctionsApi } from '../../api/auctions';
+import { templatesApi } from '../../api/templates';
 import { useAuthStore } from '../../store/auth.store';
 import StreamPublisher from '../../components/streaming/StreamPublisher';
 import { Auction, AuctionItem } from '../../types';
@@ -132,6 +133,16 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
         },
       },
     ]);
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!auction) return;
+    try {
+      await templatesApi.fromAuction(auctionId);
+      Alert.alert('Template guardado', `"${auction.title}" guardado como template. Lo verás al crear tu próxima subasta.`);
+    } catch {
+      Alert.alert('Error', 'No se pudo guardar el template');
+    }
   };
 
   const handleRelist = () => {
@@ -325,6 +336,13 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
               )}
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border }]}
+            onPress={handleSaveTemplate}
+          >
+            <Ionicons name="bookmark-outline" size={18} color={colors.textMuted} />
+            <Text style={[styles.actionBtnText, { color: colors.textMuted }]}>Guardar como template</Text>
+          </TouchableOpacity>
         </View>
       )}
 

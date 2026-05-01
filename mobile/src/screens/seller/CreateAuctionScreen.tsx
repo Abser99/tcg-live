@@ -2,16 +2,17 @@ import React, { useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView,
-  Platform, Image, ActionSheetIOS,
+  Platform, Image, ActionSheetIOS, Modal, FlatList,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { auctionsApi } from '../../api/auctions';
+import { templatesApi } from '../../api/templates';
 import { scanCardImage } from '../../api/cards';
 import { searchCards, GameType, CardResult } from '../../services/cardSearch';
 import { uploadImage } from '../../services/cloudinary';
-import { AuctionGame, CreateAuctionItemPayload } from '../../types';
+import { AuctionGame, AuctionTemplate, CreateAuctionItemPayload } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
 import { authStyles } from '../../theme/authStyles';
 import { formatMXN } from '../../utils/currency';
@@ -90,7 +91,40 @@ export default function CreateAuctionScreen({ navigation }: Props) {
   const [searching, setSearching]         = useState(false);
   const [scanning, setScanning]           = useState(false);
   const [uploading, setUploading]         = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templates, setTemplates]         = useState<AuctionTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const openTemplates = async () => {
+    setShowTemplates(true);
+    setLoadingTemplates(true);
+    try {
+      const { data } = await templatesApi.mine();
+      setTemplates(data);
+    } catch {
+      Alert.alert('Error', 'No se pudieron cargar los templates');
+      setShowTemplates(false);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
+  const applyTemplate = (tpl: AuctionTemplate) => {
+    setAuctionGame(tpl.game);
+    if (tpl.description) setDescription(tpl.description);
+    setTitle(tpl.title);
+    setItems(tpl.items.map(i => ({
+      cardName:      i.cardName,
+      cardSet:       i.cardSet,
+      cardNumber:    i.cardNumber,
+      condition:     (i.condition as any) ?? 'near_mint',
+      startingPrice: i.startingPrice,
+      reservePrice:  i.reservePrice,
+      imageUrls:     i.imageUrls,
+    })));
+    setShowTemplates(false);
+  };
 
   const pickImages = async () => {
     const remaining = 5 - itemForm.imageUris.length;
@@ -280,7 +314,13 @@ export default function CreateAuctionScreen({ navigation }: Props) {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.sectionTitle}>Información</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Información</Text>
+          <TouchableOpacity style={styles.templateBtn} onPress={openTemplates}>
+            <Ionicons name="bookmark-outline" size={14} color={colors.primaryLight} />
+            <Text style={styles.templateBtnText}>Usar template</Text>
+          </TouchableOpacity>
+        </View>
 
         <TextInput
           style={authStyles.input}
@@ -560,6 +600,42 @@ export default function CreateAuctionScreen({ navigation }: Props) {
         onConfirm={date => { setScheduledAt(date); setShowDatePicker(false); }}
         onCancel={() => setShowDatePicker(false)}
       />
+
+      <Modal visible={showTemplates} transparent animationType="slide" onRequestClose={() => setShowTemplates(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Mis Templates</Text>
+              <TouchableOpacity onPress={() => setShowTemplates(false)}>
+                <Ionicons name="close" size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            {loadingTemplates ? (
+              <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.xl }} />
+            ) : templates.length === 0 ? (
+              <View style={styles.modalEmpty}>
+                <Text style={styles.modalEmptyText}>No tienes templates guardados aún.</Text>
+                <Text style={styles.modalEmptyHint}>Guarda uno desde una subasta terminada.</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={templates}
+                keyExtractor={t => t.id}
+                contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.xl }}
+                renderItem={({ item: tpl }) => (
+                  <TouchableOpacity style={styles.tplCard} onPress={() => applyTemplate(tpl)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.tplName}>{tpl.name}</Text>
+                      <Text style={styles.tplMeta}>{tpl.game} · {tpl.items.length} {tpl.items.length === 1 ? 'carta' : 'cartas'}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -650,4 +726,16 @@ const styles = StyleSheet.create({
   formBtnCancel: { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
   formBtnConfirm: { backgroundColor: colors.primary },
   submitBtn: { marginTop: spacing.xxl },
+  templateBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  templateBtnText: { color: colors.primaryLight, fontSize: font.sm, fontWeight: '600' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, maxHeight: '70%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
+  modalTitle: { color: colors.text, fontSize: font.lg, fontWeight: '700' },
+  modalEmpty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: spacing.sm },
+  modalEmptyText: { color: colors.text, fontSize: font.md, fontWeight: '600' },
+  modalEmptyHint: { color: colors.textMuted, fontSize: font.sm },
+  tplCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  tplName: { color: colors.text, fontSize: font.md, fontWeight: '600' },
+  tplMeta: { color: colors.textMuted, fontSize: font.sm, marginTop: 2 },
 });
