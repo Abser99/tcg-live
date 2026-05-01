@@ -59,13 +59,14 @@ interface ItemForm {
   reservePrice: string;
   marketPriceUSD?: number;
   imageUris: string[];
+  autoRelist: boolean;
 }
 
 const EMPTY_ITEM: ItemForm = {
   game: 'pokemon',
   cardName: '', cardSet: '', cardNumber: '',
   condition: 'near_mint', startingPrice: '', reservePrice: '',
-  imageUris: [],
+  imageUris: [], autoRelist: false,
 };
 
 function formatDate(d: Date): string {
@@ -278,6 +279,7 @@ export default function CreateAuctionScreen({ navigation }: Props) {
       startingPrice: price,
       reservePrice:  reserveCents && !isNaN(reserveCents) ? reserveCents : undefined,
       imageUrls,
+      autoRelist: itemForm.autoRelist,
     }]);
     setItemForm(EMPTY_ITEM);
     setSearchResults([]);
@@ -565,6 +567,16 @@ export default function CreateAuctionScreen({ navigation }: Props) {
               </View>
             </View>
 
+            <TouchableOpacity
+              style={styles.autoRelistRow}
+              onPress={() => updateItemField('autoRelist', !itemForm.autoRelist)}
+            >
+              <View style={[styles.toggle, itemForm.autoRelist && styles.toggleOn]}>
+                <View style={[styles.toggleThumb, itemForm.autoRelist && styles.toggleThumbOn]} />
+              </View>
+              <Text style={styles.autoRelistLabel}>Auto-relist si no se vende</Text>
+            </TouchableOpacity>
+
             <View style={styles.row}>
               <TouchableOpacity
                 style={[styles.formBtn, styles.formBtnCancel]}
@@ -738,4 +750,10 @@ const styles = StyleSheet.create({
   tplCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   tplName: { color: colors.text, fontSize: font.md, fontWeight: '600' },
   tplMeta: { color: colors.textMuted, fontSize: font.sm, marginTop: 2 },
+  autoRelistRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
+  autoRelistLabel: { color: colors.text, fontSize: font.md, flex: 1 },
+  toggle: { width: 44, height: 24, borderRadius: 12, backgroundColor: colors.border, justifyContent: 'center', paddingHorizontal: 2 },
+  toggleOn: { backgroundColor: colors.primary },
+  toggleThumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', alignSelf: 'flex-start' },
+  toggleThumbOn: { alignSelf: 'flex-end' },
 });

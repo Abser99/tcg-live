@@ -73,6 +73,7 @@ export interface CreateAuctionItemPayload {
   startingPrice: number;
   reservePrice?: number;
   imageUrls?: string[];
+  autoRelist?: boolean;
 }
 
 export interface CreateAuctionPayload {

@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -44,6 +45,10 @@ export class CreateAuctionItemDto {
   @IsUrl({}, { each: true })
   @IsOptional()
   imageUrls?: string[];
+
+  @IsBoolean()
+  @IsOptional()
+  autoRelist?: boolean;
 }
 
 export class CreateAuctionDto {

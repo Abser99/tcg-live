@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { Auction, AuctionStatus } from './entities/auction.entity';
+import { Auction, AuctionGame, AuctionStatus } from './entities/auction.entity';
 import { AuctionItem, AuctionItemStatus } from './entities/auction-item.entity';
 import { Bid } from './entities/bid.entity';
 import { MaxBid } from './entities/max-bid.entity';
@@ -354,7 +354,46 @@ export class AuctionsService {
       nextClosesAt: nextItem?.closesAt?.toISOString() ?? null,
     });
 
+    if (saved.status === AuctionItemStatus.UNSOLD && saved.autoRelist) {
+      this.scheduleAutoRelist(saved, item.auction.sellerId).catch(() => {});
+    }
+
     return saved;
+  }
+
+  private async scheduleAutoRelist(item: AuctionItem, sellerId: string): Promise<void> {
+    let target = await this.auctionsRepo.findOne({
+      where: { sellerId, status: AuctionStatus.SCHEDULED },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (!target) {
+      const sourceAuction = await this.auctionsRepo.findOne({ where: { id: item.auctionId } });
+      const newAuction = this.auctionsRepo.create({
+        sellerId,
+        title: 'Auto-relist',
+        game: sourceAuction?.game ?? AuctionGame.OTHER,
+        status: AuctionStatus.SCHEDULED,
+      });
+      target = await this.auctionsRepo.save(newAuction);
+    }
+
+    const existing = await this.itemsRepo.find({ where: { auctionId: target.id }, order: { position: 'DESC' } });
+    const nextPosition = (existing[0]?.position ?? -1) + 1;
+
+    await this.itemsRepo.save(this.itemsRepo.create({
+      auctionId:     target.id,
+      cardName:      item.cardName,
+      cardSet:       item.cardSet ?? undefined,
+      cardNumber:    item.cardNumber ?? undefined,
+      condition:     item.condition,
+      startingPrice: item.startingPrice,
+      currentPrice:  item.startingPrice,
+      reservePrice:  item.reservePrice ?? undefined,
+      imageUrls:     item.imageUrls ?? undefined,
+      position:      nextPosition,
+      autoRelist:    false,
+    }));
   }
 
   async getItemBids(itemId: string): Promise<Bid[]> {

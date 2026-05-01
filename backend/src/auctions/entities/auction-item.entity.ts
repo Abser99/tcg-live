@@ -82,6 +82,9 @@ export class AuctionItem {
   @Column({ type: 'timestamp', nullable: true })
   closesAt: Date | null;
 
+  @Column({ default: false })
+  autoRelist: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 
