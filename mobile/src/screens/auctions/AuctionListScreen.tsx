@@ -149,7 +149,8 @@ function AuctionCard({
   const price = getCardPrice(auction);
   const rating = sellerAvgRating(auction.seller);
   const totalRatings = auction.seller?.totalRatings ?? 0;
-  const activeBids = auction.items?.filter(i => i.status === 'active').length ?? 0;
+  const pendingCount = auction.items?.filter(i => i.status === 'pending').length ?? 0;
+  const soldCount = auction.items?.filter(i => i.status === 'sold').length ?? 0;
 
   const scale = useRef(new Animated.Value(1)).current;
   const pressIn  = () => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, friction: 10, tension: 200 }).start();
@@ -158,15 +159,16 @@ function AuctionCard({
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
-        style={[styles.card, isLive && styles.cardLive]}
+        style={[
+          styles.card,
+          isLive && styles.cardLive,
+          { borderLeftColor: gc.bg, borderLeftWidth: 4 },
+        ]}
         onPress={onPress}
         onPressIn={pressIn}
         onPressOut={pressOut}
         activeOpacity={1}
       >
-        {/* Left game color accent bar */}
-        <View style={[styles.gameAccentBar, { backgroundColor: gc.bg }]} />
-
         <View style={styles.cardInner}>
           {/* Row 1: status badge + game tag + heart */}
           <View style={styles.cardHeader}>
@@ -226,10 +228,16 @@ function AuctionCard({
 
             {/* Thumbnail */}
             {firstImage
-              ? <Image source={{ uri: firstImage }} style={styles.thumbnail} resizeMode="contain" />
+              ? (
+                <View style={styles.thumbnailWrap}>
+                  <Image source={{ uri: firstImage }} style={styles.thumbnail} resizeMode="cover" />
+                  {/* Gradient overlay at bottom of thumbnail */}
+                  <View style={[styles.thumbnailGradient, { backgroundColor: gc.bg + '28' }]} />
+                </View>
+              )
               : (
-                <View style={[styles.thumbnailEmpty, { backgroundColor: gc.bg + '14' }]}>
-                  <Text style={{ fontSize: 32 }}>{gameMeta?.emoji ?? '🃏'}</Text>
+                <View style={[styles.thumbnailEmpty, { backgroundColor: gc.bg + '14', borderColor: gc.bg + '33' }]}>
+                  <Text style={{ fontSize: 34 }}>{gameMeta?.emoji ?? '🃏'}</Text>
                 </View>
               )
             }
@@ -238,11 +246,20 @@ function AuctionCard({
           {/* Row 3: stats + price */}
           <View style={styles.cardFooter}>
             <View style={styles.footerLeft}>
-              <Text style={styles.itemCount}>{itemCount} {itemCount === 1 ? 'carta' : 'cartas'}</Text>
-              {isLive && activeBids > 0 && (
+              <View style={styles.countChip}>
+                <Ionicons name="albums-outline" size={10} color={colors.textMuted} />
+                <Text style={styles.itemCount}>{itemCount} {itemCount === 1 ? 'carta' : 'cartas'}</Text>
+              </View>
+              {isLive && pendingCount > 0 && (
                 <View style={styles.bidsBadge}>
                   <Ionicons name="flame" size={11} color={colors.warning} />
-                  <Text style={styles.bidsText}>En subasta</Text>
+                  <Text style={styles.bidsText}>{pendingCount} en cola</Text>
+                </View>
+              )}
+              {soldCount > 0 && !isLive && (
+                <View style={styles.soldBadge}>
+                  <Ionicons name="checkmark-circle" size={10} color={colors.success} />
+                  <Text style={styles.soldText}>{soldCount} vendidas</Text>
                 </View>
               )}
             </View>
@@ -701,7 +718,6 @@ const styles = StyleSheet.create({
   // Card layout
   list: { paddingHorizontal: spacing.md, paddingBottom: spacing.xxl, gap: 10 },
   card: {
-    flexDirection: 'row',
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -709,18 +725,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
     elevation: 4,
   },
   cardLive: {
-    borderColor: colors.error + 'AA',
+    borderColor: colors.error + 'BB',
     shadowColor: colors.error,
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 7,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  gameAccentBar: { width: 5, minHeight: 80 },
   cardInner: { flex: 1, padding: spacing.md, gap: spacing.sm },
 
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
@@ -729,7 +744,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm, paddingVertical: 4,
     borderRadius: radius.full, gap: 5,
   },
-  badgeText: { color: colors.white, fontSize: font.xs, fontWeight: '700', letterSpacing: 0.5 },
+  badgeText: { color: colors.white, fontSize: font.xs, fontWeight: '800', letterSpacing: 0.6 },
   gameTag: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 8, paddingVertical: 3,
@@ -740,38 +755,51 @@ const styles = StyleSheet.create({
 
   cardBody: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   cardInfo: { flex: 1, gap: 5 },
-  cardTitle: { color: colors.text, fontSize: font.base, fontWeight: '700', lineHeight: 22 },
+  cardTitle: { color: colors.text, fontSize: font.base, fontWeight: '800', lineHeight: 22, letterSpacing: -0.2 },
 
   sellerRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   sellerName: { color: colors.textMuted, fontSize: font.sm, flexShrink: 1 },
 
   scheduleRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  scheduleText: { color: colors.accent, fontSize: font.sm },
+  scheduleText: { color: colors.accent, fontSize: font.sm, fontWeight: '600' },
 
-  thumbnail: { width: 80, height: 110, borderRadius: radius.md, backgroundColor: colors.surfaceAlt },
+  thumbnailWrap: { position: 'relative' },
+  thumbnail: { width: 84, height: 114, borderRadius: radius.md, backgroundColor: colors.surfaceAlt },
+  thumbnailGradient: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    height: 32, borderBottomLeftRadius: radius.md, borderBottomRightRadius: radius.md,
+  },
   thumbnailEmpty: {
-    width: 80, height: 110, borderRadius: radius.md,
+    width: 84, height: 114, borderRadius: radius.md,
     justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: colors.border,
+    borderWidth: 1.5,
   },
 
   cardFooter: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border + '88',
   },
-  footerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  itemCount: { color: colors.textMuted, fontSize: font.sm },
+  footerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
+  countChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  itemCount: { color: colors.textMuted, fontSize: font.xs },
   bidsBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
     backgroundColor: colors.warning + '22', borderRadius: radius.full,
-    paddingHorizontal: 8, paddingVertical: 3,
+    paddingHorizontal: 7, paddingVertical: 3,
     borderWidth: 1, borderColor: colors.warning + '55',
   },
   bidsText: { color: colors.warning, fontSize: font.xs, fontWeight: '700' },
+  soldBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: colors.success + '18', borderRadius: radius.full,
+    paddingHorizontal: 7, paddingVertical: 3,
+    borderWidth: 1, borderColor: colors.success + '44',
+  },
+  soldText: { color: colors.success, fontSize: font.xs, fontWeight: '700' },
 
   priceBlock: { alignItems: 'flex-end' },
   priceLabel: { color: colors.textMuted, fontSize: 10, letterSpacing: 0.3 },
-  priceValue: { color: colors.gold, fontSize: font.xl, fontWeight: '900', letterSpacing: -0.3 },
+  priceValue: { color: colors.gold, fontSize: font.xl, fontWeight: '900', letterSpacing: -0.5 },
 
   // Live dot
   liveDotWrap: { width: 10, height: 10, alignItems: 'center', justifyContent: 'center' },

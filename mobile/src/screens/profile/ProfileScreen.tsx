@@ -205,7 +205,7 @@ export default function ProfileScreen({ navigation }: Props) {
                 <Ionicons
                   key={s}
                   name={s <= Math.round(user.averageRating ?? 0) ? 'star' : 'star-outline'}
-                  size={11}
+                  size={10}
                   color={colors.gold}
                 />
               ))}
@@ -217,7 +217,20 @@ export default function ProfileScreen({ navigation }: Props) {
           <Text style={[styles.statValue, { color: colors.gold }]}>{user?.reputationScore ?? 0}</Text>
           <Text style={styles.statLabel}>Reputación</Text>
           <View style={styles.xpBadge}>
+            <Ionicons name="diamond-outline" size={10} color={colors.gold} />
             <Text style={styles.xpText}>XP</Text>
+          </View>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.stat}>
+          <Ionicons
+            name={user?.role === 'seller' ? 'storefront' : user?.role === 'admin' ? 'shield' : 'person'}
+            size={22}
+            color={badge.color}
+          />
+          <Text style={[styles.statLabel, { marginTop: 2 }]}>Rol</Text>
+          <View style={[styles.roleSmBadge, { borderColor: badge.color + '55', backgroundColor: badge.color + '18' }]}>
+            <Text style={[styles.roleSmText, { color: badge.color }]}>{badge.label}</Text>
           </View>
         </View>
       </View>
@@ -355,10 +368,16 @@ const styles = StyleSheet.create({
   statLabel: { color: colors.textMuted, fontSize: font.xs },
   starsRow: { flexDirection: 'row', gap: 2 },
   xpBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
     backgroundColor: colors.gold + '22', borderRadius: radius.full,
     paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: colors.gold + '55',
   },
   xpText: { color: colors.gold, fontSize: font.xs, fontWeight: '800', letterSpacing: 0.5 },
+  roleSmBadge: {
+    borderRadius: radius.full, paddingHorizontal: 7, paddingVertical: 2,
+    borderWidth: 1, marginTop: 2,
+  },
+  roleSmText: { fontSize: font.xs, fontWeight: '800', letterSpacing: 0.3 },
 
   // Sections
   section: { width: '100%', marginBottom: spacing.sm, paddingHorizontal: spacing.lg },
@@ -383,22 +402,23 @@ const styles = StyleSheet.create({
   menuLabel: { flex: 1, color: colors.text, fontSize: font.md, fontWeight: '600' },
   divider: { height: 1, backgroundColor: colors.border, marginLeft: 72 },
 
-  // Seller CTA
+  // Seller CTA — bolder, more enticing
   sellerCta: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    backgroundColor: colors.gold + '12',
-    borderRadius: radius.xl, borderWidth: 1.5, borderColor: colors.gold + '44',
+    backgroundColor: colors.gold + '16',
+    borderRadius: radius.xl, borderWidth: 2, borderColor: colors.gold + '55',
     padding: spacing.md,
     shadowColor: colors.gold,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15, shadowRadius: 8, elevation: 3,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25, shadowRadius: 12, elevation: 5,
   },
   sellerCtaIcon: {
-    width: 44, height: 44, borderRadius: radius.md + 2,
-    backgroundColor: colors.gold + '1A',
+    width: 48, height: 48, borderRadius: radius.lg,
+    backgroundColor: colors.gold + '28',
     alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: colors.gold + '55',
   },
-  sellerCtaTitle: { color: colors.gold, fontWeight: '800', fontSize: font.md },
+  sellerCtaTitle: { color: colors.gold, fontWeight: '900', fontSize: font.base, letterSpacing: -0.2 },
   sellerCtaSub: { color: colors.textMuted, fontSize: font.sm, marginTop: 2 },
 
   // App status

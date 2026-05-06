@@ -22,13 +22,13 @@ function timeAgo(dateString: string): string {
   const secs = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
   if (secs < 60) return 'ahora';
   const mins = Math.floor(secs / 60);
-  if (mins < 60) return `hace ${mins}min`;
+  if (mins < 60) return `${mins}min`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `hace ${hrs}h`;
+  if (hrs < 24) return `${hrs}h`;
   const days = Math.floor(hrs / 24);
   if (days === 1) return 'ayer';
-  if (days < 7) return `hace ${days}d`;
-  return `hace ${Math.floor(days / 7)}sem`;
+  if (days < 7) return `${days}d`;
+  return `${Math.floor(days / 7)}sem`;
 }
 
 const GAMES = [
@@ -65,7 +65,7 @@ function ShopHeader({ searchValue, onSearch }: { searchValue: string; onSearch: 
         <View style={styles.brandDot} />
         <View style={{ flex: 1 }} />
         <View style={styles.storeBadge}>
-          <Ionicons name="storefront-outline" size={13} color={colors.primary} />
+          <Ionicons name="storefront" size={13} color={colors.accent} />
           <Text style={styles.storeBadgeText}>Tienda</Text>
         </View>
       </View>
@@ -120,26 +120,36 @@ function ListingCard({ listing, onPress }: { listing: Listing; onPress: () => vo
   const gc = listing.game ? (GAME_COLORS[listing.game as GameKey] ?? { bg: colors.border, text: '#fff' }) : { bg: colors.border, text: '#fff' };
   const condColor = listing.condition ? (CONDITION_COLORS[listing.condition] ?? colors.textMuted) : null;
   const scale = useRef(new Animated.Value(1)).current;
-  const pressIn  = () => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, friction: 8 }).start();
+  const pressIn  = () => Animated.spring(scale, { toValue: 0.94, useNativeDriver: true, friction: 8, tension: 160 }).start();
   const pressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 140 }).start();
 
   return (
     <Animated.View style={[{ transform: [{ scale }] }, { flex: 1 }]}>
       <TouchableOpacity style={styles.card} onPress={onPress} onPressIn={pressIn} onPressOut={pressOut} activeOpacity={1}>
-        {/* Top game color stripe */}
-        <View style={[styles.cardStripe, { backgroundColor: gc.bg }]} />
 
-        {/* Image / emoji area */}
-        <View style={[styles.cardImage, { backgroundColor: gc.bg + '12' }]}>
-          <View style={[styles.cardEmojiWrap, { backgroundColor: gc.bg + '22', borderWidth: 1, borderColor: gc.bg + '44' }]}>
+        {/* Image / art area with game gradient background */}
+        <View style={[styles.cardImageArea, { backgroundColor: gc.bg + '18' }]}>
+          {/* Bottom-left game stripe accent */}
+          <View style={[styles.cardImageStripe, { backgroundColor: gc.bg }]} />
+
+          {/* Central emoji art */}
+          <View style={[styles.cardEmojiWrap, { backgroundColor: gc.bg + '28', borderColor: gc.bg + '55' }]}>
             <Text style={styles.cardEmoji}>{gameMeta?.emoji ?? '🃏'}</Text>
           </View>
+
+          {/* Condition badge — top right */}
           {listing.condition && condColor && (
-            <View style={[styles.condBadge, { backgroundColor: condColor + '22', borderColor: condColor + '55' }]}>
+            <View style={[styles.condBadge, { backgroundColor: condColor + '28', borderColor: condColor + '66' }]}>
               <View style={[styles.condDot, { backgroundColor: condColor }]} />
               <Text style={[styles.condText, { color: condColor }]}>{CONDITIONS[listing.condition] ?? listing.condition}</Text>
             </View>
           )}
+
+          {/* "Comprar ahora" buy-now hint overlay */}
+          <View style={styles.buyNowHint}>
+            <Ionicons name="cart-outline" size={10} color={colors.accent} />
+            <Text style={styles.buyNowHintText}>Precio fijo</Text>
+          </View>
         </View>
 
         {/* Card body */}
@@ -157,7 +167,10 @@ function ListingCard({ listing, onPress }: { listing: Listing; onPress: () => vo
         {/* Price footer */}
         <View style={styles.cardFooter}>
           <Text style={styles.price}>{formatMXN(listing.price)}</Text>
-          <Text style={styles.timeAgo}>{timeAgo(listing.createdAt)}</Text>
+          <View style={styles.timeAgoWrap}>
+            <Ionicons name="time-outline" size={9} color={colors.textMuted + '88'} />
+            <Text style={styles.timeAgo}>{timeAgo(listing.createdAt)}</Text>
+          </View>
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -176,7 +189,6 @@ export default function ShopScreen({ navigation }: Props) {
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  // Make Offer state
   const [showOffer, setShowOffer] = useState(false);
   const [offerAmountText, setOfferAmountText] = useState('');
   const [offerMessage, setOfferMessage] = useState('');
@@ -270,7 +282,6 @@ export default function ShopScreen({ navigation }: Props) {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <ShopHeader searchValue={q} onSearch={handleSearch} />
-
       <GameChips selected={game} onSelect={setGame} />
 
       <FlatList
@@ -287,12 +298,15 @@ export default function ShopScreen({ navigation }: Props) {
           <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />
         }
         ListEmptyComponent={
-          <View style={styles.center}>
+          <View style={styles.emptyContainer}>
             <View style={styles.emptyIconWrap}>
-              <Ionicons name="cart-outline" size={44} color={colors.primary + '88'} />
+              <Ionicons name="cart-outline" size={44} color={colors.accent + '88'} />
             </View>
-            <Text style={styles.emptyTitle}>Sin artículos</Text>
-            <Text style={styles.emptyText}>No hay artículos para estos filtros</Text>
+            <Text style={styles.emptyTitle}>Tienda vacía</Text>
+            <Text style={styles.emptyText}>No hay artículos para estos filtros.</Text>
+            <Text style={styles.emptySubtext}>
+              {isSeller ? 'Publica tu primera carta con el botón +' : 'Vuelve pronto — los vendedores actualizan seguido'}
+            </Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -314,68 +328,82 @@ export default function ShopScreen({ navigation }: Props) {
             <TouchableOpacity style={styles.modalClose} onPress={() => setSelectedListing(null)}>
               <Ionicons name="close" size={20} color={colors.textMuted} />
             </TouchableOpacity>
-            {selectedListing && (
-              <>
-                <Text style={styles.modalTitle}>{selectedListing.title}</Text>
+            {selectedListing && (() => {
+              const gc2 = selectedListing.game
+                ? (GAME_COLORS[selectedListing.game as GameKey] ?? { bg: colors.border, text: '#fff' })
+                : { bg: colors.border, text: '#fff' };
+              const gameMeta2 = GAMES.find(g => g.value === selectedListing.game);
+              const condColor2 = selectedListing.condition ? (CONDITION_COLORS[selectedListing.condition] ?? colors.textMuted) : null;
+              return (
+                <>
+                  {/* Game color accent bar at top */}
+                  <View style={[styles.modalGameBar, { backgroundColor: gc2.bg }]} />
 
-                {/* Price + badges row */}
-                <View style={styles.modalPriceRow}>
-                  <Text style={styles.modalPrice}>{formatMXN(selectedListing.price)}</Text>
-                  <View style={styles.modalBadges}>
-                    {selectedListing.condition && (
-                      <View style={[styles.condBadgeLg, { backgroundColor: (CONDITION_COLORS[selectedListing.condition] ?? colors.textMuted) + '22', borderColor: (CONDITION_COLORS[selectedListing.condition] ?? colors.textMuted) + '55' }]}>
-                        <Text style={[styles.condTextLg, { color: CONDITION_COLORS[selectedListing.condition] ?? colors.textMuted }]}>
-                          {CONDITIONS[selectedListing.condition] ?? selectedListing.condition}
-                        </Text>
-                      </View>
-                    )}
-                    {selectedListing.game && (
-                      <View style={styles.gameBadgeLg}>
-                        <Text style={styles.gameBadgeLgText}>
-                          {GAMES.find(g => g.value === selectedListing.game)?.emoji} {GAMES.find(g => g.value === selectedListing.game)?.label}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
+                  <Text style={styles.modalTitle}>{selectedListing.title}</Text>
 
-                {selectedListing.description ? (
-                  <Text style={styles.modalDesc}>{selectedListing.description}</Text>
-                ) : null}
-
-                {/* Seller */}
-                <View style={styles.modalSellerRow}>
-                  <Ionicons name="person-circle-outline" size={16} color={colors.textMuted} />
-                  <Text style={styles.modalSeller}>@{selectedListing.seller?.username}</Text>
-                  {selectedListing.seller?.isVerified && (
-                    <View style={styles.verifiedBadge}>
-                      <Ionicons name="checkmark-circle" size={13} color="#3b82f6" />
-                      <Text style={styles.verifiedText}>Verificado</Text>
+                  {/* Price row */}
+                  <View style={styles.modalPriceRow}>
+                    <Text style={styles.modalPrice}>{formatMXN(selectedListing.price)}</Text>
+                    <View style={styles.modalBadges}>
+                      {condColor2 && selectedListing.condition && (
+                        <View style={[styles.condBadgeLg, { backgroundColor: condColor2 + '22', borderColor: condColor2 + '55' }]}>
+                          <View style={[styles.condDot, { backgroundColor: condColor2, width: 6, height: 6 }]} />
+                          <Text style={[styles.condTextLg, { color: condColor2 }]}>
+                            {CONDITIONS[selectedListing.condition] ?? selectedListing.condition}
+                          </Text>
+                        </View>
+                      )}
+                      {selectedListing.game && gameMeta2 && (
+                        <View style={[styles.gameBadgeLg, { backgroundColor: gc2.bg + '22', borderColor: gc2.bg + '55' }]}>
+                          <Text style={[styles.gameBadgeLgText, { color: gc2.bg }]}>
+                            {gameMeta2.emoji} {gameMeta2.label}
+                          </Text>
+                        </View>
+                      )}
                     </View>
+                  </View>
+
+                  {selectedListing.description ? (
+                    <Text style={styles.modalDesc}>{selectedListing.description}</Text>
+                  ) : null}
+
+                  {/* Seller */}
+                  <View style={styles.modalSellerRow}>
+                    <Ionicons name="person-circle-outline" size={16} color={colors.textMuted} />
+                    <Text style={styles.modalSeller}>@{selectedListing.seller?.username}</Text>
+                    {selectedListing.seller?.isVerified && (
+                      <View style={styles.verifiedBadge}>
+                        <Ionicons name="checkmark-circle" size={13} color="#3b82f6" />
+                        <Text style={styles.verifiedText}>Verificado</Text>
+                      </View>
+                    )}
+                    <Text style={styles.modalPosted}>· hace {timeAgo(selectedListing.createdAt)}</Text>
+                  </View>
+
+                  {/* Divider */}
+                  <View style={styles.modalDivider} />
+
+                  {/* Action buttons */}
+                  {user && selectedListing.sellerId !== user.id && (
+                    <TouchableOpacity style={styles.offerBtn} onPress={() => setShowOffer(true)}>
+                      <Ionicons name="pricetag-outline" size={18} color={colors.primaryLight} />
+                      <Text style={styles.offerBtnText}>Hacer oferta</Text>
+                    </TouchableOpacity>
                   )}
-                  <Text style={styles.modalPosted}>{timeAgo(selectedListing.createdAt)}</Text>
-                </View>
 
-                {/* Action buttons */}
-                {user && selectedListing.sellerId !== user.id && (
-                  <TouchableOpacity style={styles.offerBtn} onPress={() => setShowOffer(true)}>
-                    <Ionicons name="pricetag-outline" size={18} color={colors.primaryLight} />
-                    <Text style={styles.offerBtnText}>Hacer oferta</Text>
+                  <TouchableOpacity
+                    style={styles.contactBtn}
+                    onPress={() => {
+                      setSelectedListing(null);
+                      (navigation as any).navigate('SellerProfile', { sellerId: selectedListing.sellerId });
+                    }}
+                  >
+                    <Ionicons name="storefront-outline" size={18} color={colors.white} />
+                    <Text style={styles.contactBtnText}>Ver vendedor</Text>
                   </TouchableOpacity>
-                )}
-
-                <TouchableOpacity
-                  style={styles.contactBtn}
-                  onPress={() => {
-                    setSelectedListing(null);
-                    (navigation as any).navigate('SellerProfile', { sellerId: selectedListing.sellerId });
-                  }}
-                >
-                  <Ionicons name="storefront-outline" size={18} color={colors.white} />
-                  <Text style={styles.contactBtnText}>Ver vendedor</Text>
-                </TouchableOpacity>
-              </>
-            )}
+                </>
+              );
+            })()}
           </View>
         </View>
       </Modal>
@@ -390,9 +418,12 @@ export default function ShopScreen({ navigation }: Props) {
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Hacer oferta</Text>
             {selectedListing && (
-              <Text style={styles.modalDesc}>
-                Precio de venta: <Text style={{ color: colors.gold, fontWeight: '700' }}>{formatMXN(selectedListing.price)}</Text>
-              </Text>
+              <View style={styles.offerPriceHint}>
+                <Ionicons name="pricetag" size={14} color={colors.gold} />
+                <Text style={styles.offerPriceHintText}>
+                  Precio: <Text style={{ color: colors.gold, fontWeight: '800' }}>{formatMXN(selectedListing.price)}</Text>
+                </Text>
+              </View>
             )}
             <TextInput
               style={styles.input}
@@ -468,12 +499,13 @@ export default function ShopScreen({ navigation }: Props) {
               keyboardType="decimal-pad"
             />
 
-            {/* Fee calculator */}
             {takeHome > 0 && (
               <View style={styles.feeBox}>
                 <Ionicons name="cash-outline" size={14} color={colors.success} />
                 <Text style={styles.feeText}>
-                  Recibirás aprox. <Text style={{ fontWeight: '800', color: colors.success }}>{formatMXN(takeHome)}</Text> (comisión del {(PLATFORM_FEE * 100).toFixed(0)}%)
+                  Recibirás aprox.{' '}
+                  <Text style={{ fontWeight: '800', color: colors.success }}>{formatMXN(takeHome)}</Text>
+                  {' '}(comisión del {(PLATFORM_FEE * 100).toFixed(0)}%)
                 </Text>
               </View>
             )}
@@ -506,7 +538,13 @@ export default function ShopScreen({ navigation }: Props) {
             </ScrollView>
 
             <TouchableOpacity style={[styles.contactBtn, creating && { opacity: 0.6 }]} onPress={handleCreate} disabled={creating}>
-              {creating ? <ActivityIndicator color={colors.white} /> : <Text style={styles.contactBtnText}>Publicar</Text>}
+              {creating
+                ? <ActivityIndicator color={colors.white} />
+                : <>
+                    <Ionicons name="cloud-upload-outline" size={18} color={colors.white} />
+                    <Text style={styles.contactBtnText}>Publicar</Text>
+                  </>
+              }
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -523,8 +561,8 @@ const styles = StyleSheet.create({
   appHeader: {
     backgroundColor: colors.surface, paddingHorizontal: spacing.md, paddingBottom: spacing.sm,
     borderBottomWidth: 1, borderBottomColor: colors.border,
-    shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
+    shadowColor: colors.accent, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06, shadowRadius: 12, elevation: 4,
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', paddingTop: spacing.md, paddingBottom: spacing.sm, gap: 6 },
   brandGlow: {
@@ -533,14 +571,14 @@ const styles = StyleSheet.create({
   },
   brandText: { color: colors.text, fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
   brandAccent: { color: colors.primaryLight },
-  brandDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.error },
+  brandDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.accent },
   storeBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: colors.primary + '18', borderRadius: radius.full,
+    backgroundColor: colors.accent + '18', borderRadius: radius.full,
     paddingHorizontal: spacing.sm, paddingVertical: 4,
-    borderWidth: 1, borderColor: colors.primary + '44',
+    borderWidth: 1, borderColor: colors.accent + '44',
   },
-  storeBadgeText: { color: colors.primary, fontSize: font.xs, fontWeight: '700' },
+  storeBadgeText: { color: colors.accent, fontSize: font.xs, fontWeight: '700' },
 
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
@@ -550,7 +588,7 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, color: colors.text, fontSize: font.md, paddingVertical: 0 },
 
-  chipsScroll: { maxHeight: 46 },
+  chipsScroll: { maxHeight: 48, borderBottomWidth: 1, borderBottomColor: colors.border },
   chipsContent: { paddingHorizontal: spacing.md, gap: 6, paddingVertical: 8 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -566,54 +604,92 @@ const styles = StyleSheet.create({
   list: { padding: spacing.md, paddingBottom: 100 },
   row: { gap: spacing.sm, marginBottom: spacing.sm },
 
+  // Premium 2-col listing card
   card: {
-    flex: 1, backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden',
-    borderWidth: 1, borderColor: colors.border,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18, shadowRadius: 8, elevation: 4,
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  cardStripe: { height: 4 },
-  cardImage: { height: 114, alignItems: 'center', justifyContent: 'center' },
-  cardEmojiWrap: { width: 68, height: 68, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center' },
-  cardEmoji: { fontSize: 36 },
-  cardContent: { paddingHorizontal: spacing.sm, paddingTop: spacing.sm, gap: 4 },
-  cardFooter: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.sm, paddingVertical: spacing.sm,
-    borderTopWidth: 1, borderTopColor: colors.border + '88', marginTop: spacing.xs,
+  cardImageArea: {
+    height: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
-  cardTitle: { fontSize: font.sm, fontWeight: '700', color: colors.text, lineHeight: 18 },
+  cardImageStripe: {
+    position: 'absolute',
+    bottom: 0, left: 0,
+    width: 4, height: '100%',
+  },
+  cardEmojiWrap: {
+    width: 72, height: 72,
+    borderRadius: radius.xl,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5,
+  },
+  cardEmoji: { fontSize: 38 },
   condBadge: {
     position: 'absolute', top: spacing.xs, right: spacing.xs,
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2.5,
+    borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 3,
     borderWidth: 1,
   },
   condDot: { width: 5, height: 5, borderRadius: 3 },
-  condText: { fontSize: 10, fontWeight: '700' },
+  condText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.3 },
+  buyNowHint: {
+    position: 'absolute', bottom: spacing.xs, right: spacing.xs,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: colors.surfaceAlt + 'CC',
+    borderRadius: radius.sm, paddingHorizontal: 5, paddingVertical: 2,
+    borderWidth: 1, borderColor: colors.accent + '33',
+  },
+  buyNowHintText: { fontSize: 9, color: colors.accent, fontWeight: '700' },
+
+  cardContent: { paddingHorizontal: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.xs, gap: 3 },
+  cardFooter: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm, paddingVertical: 8,
+    borderTopWidth: 1, borderTopColor: colors.border + '66',
+  },
+  cardTitle: { fontSize: font.sm, fontWeight: '700', color: colors.text, lineHeight: 18 },
   sellerRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   sellerText: { fontSize: font.xs, color: colors.textMuted, flexShrink: 1 },
   price: { fontSize: font.md, fontWeight: '900', color: colors.gold },
-  timeAgo: { fontSize: 10, color: colors.textMuted },
+  timeAgoWrap: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  timeAgo: { fontSize: 9, color: colors.textMuted + 'AA' },
 
+  // Empty state
+  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, paddingHorizontal: spacing.xl },
   emptyIconWrap: {
     width: 88, height: 88, borderRadius: 44,
     backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg,
-    shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+    shadowColor: colors.accent, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2, shadowRadius: 12, elevation: 4,
   },
-  emptyTitle: { color: colors.text, fontSize: font.lg, fontWeight: '700', marginBottom: spacing.xs },
-  emptyText: { color: colors.textMuted, fontSize: font.sm },
+  emptyTitle: { color: colors.text, fontSize: font.lg, fontWeight: '800', marginBottom: spacing.xs },
+  emptyText: { color: colors.textMuted, fontSize: font.md, textAlign: 'center' },
+  emptySubtext: { color: colors.textMuted + '88', fontSize: font.sm, textAlign: 'center', marginTop: spacing.xs, lineHeight: 20 },
 
   fab: {
     position: 'absolute', bottom: 24, right: 24,
     width: 58, height: 58, borderRadius: 29,
-    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
-    shadowColor: colors.primary, shadowOffset: { width: 0, height: 6 },
+    backgroundColor: colors.accent,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: colors.accent, shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.5, shadowRadius: 12, elevation: 8,
   },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.65)' },
+
+  // Modals
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.7)' },
   modalSheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
@@ -631,24 +707,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
   },
-  modalTitle: { fontSize: font.xl, fontWeight: '800', color: colors.text, lineHeight: 28 },
+  modalGameBar: { height: 3, borderRadius: 2, marginBottom: spacing.xs },
+  modalTitle: { fontSize: font.xl, fontWeight: '900', color: colors.text, lineHeight: 28, letterSpacing: -0.3 },
   modalPriceRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     flexWrap: 'wrap', gap: spacing.sm,
   },
   modalPrice: { fontSize: font.xxl, fontWeight: '900', color: colors.gold },
   modalBadges: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', alignItems: 'center' },
-  condBadgeLg: { borderRadius: radius.sm, paddingHorizontal: 9, paddingVertical: 4, borderWidth: 1 },
-  condTextLg: { fontSize: font.xs, fontWeight: '700' },
+  condBadgeLg: { borderRadius: radius.sm, paddingHorizontal: 9, paddingVertical: 4, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  condTextLg: { fontSize: font.xs, fontWeight: '800' },
   gameBadgeLg: {
-    backgroundColor: colors.surfaceAlt, borderRadius: radius.sm,
-    paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1,
   },
-  gameBadgeLgText: { fontSize: font.xs, color: colors.textMuted, fontWeight: '600' },
+  gameBadgeLgText: { fontSize: font.xs, fontWeight: '700' },
   modalDesc: { fontSize: font.md, color: colors.textMuted, lineHeight: 22 },
   modalSellerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
   modalSeller: { fontSize: font.sm, color: colors.textMuted, fontWeight: '600' },
-  modalPosted: { fontSize: font.xs, color: colors.textMuted, marginLeft: 'auto' },
+  modalPosted: { fontSize: font.xs, color: colors.textMuted + '88' },
+  modalDivider: { height: 1, backgroundColor: colors.border },
   verifiedBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     backgroundColor: '#eff6ff', borderRadius: radius.full,
@@ -660,15 +738,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderRadius: radius.md,
     paddingVertical: spacing.md, borderWidth: 1.5, borderColor: colors.primary,
   },
-  offerBtnText: { color: colors.primaryLight, fontWeight: '700', fontSize: font.base },
+  offerBtnText: { color: colors.primaryLight, fontWeight: '800', fontSize: font.base },
+  offerPriceHint: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    backgroundColor: colors.gold + '14', borderRadius: radius.md,
+    padding: spacing.sm, borderWidth: 1, borderColor: colors.gold + '33',
+  },
+  offerPriceHintText: { color: colors.textMuted, fontSize: font.sm },
   contactBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
     backgroundColor: colors.primary, borderRadius: radius.md,
-    paddingVertical: spacing.md, marginTop: spacing.xs,
+    paddingVertical: spacing.md + 2, marginTop: spacing.xs,
     shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35, shadowRadius: 8, elevation: 4,
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 5,
   },
-  contactBtnText: { color: colors.white, fontWeight: '800', fontSize: font.base, letterSpacing: 0.3 },
+  contactBtnText: { color: colors.white, fontWeight: '900', fontSize: font.base, letterSpacing: 0.5 },
   feeBox: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
     backgroundColor: colors.success + '15', borderRadius: radius.md,
@@ -682,5 +766,5 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
   },
   inputMulti: { textAlignVertical: 'top', minHeight: 70 },
-  inputLabel: { fontSize: font.sm, color: colors.textMuted, fontWeight: '700', letterSpacing: 0.3 },
+  inputLabel: { fontSize: font.sm, color: colors.textMuted, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
 });

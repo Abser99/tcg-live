@@ -250,7 +250,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
         <View style={styles.actionCard}>
           <Text style={styles.actionHint}>La subasta está lista. Iníciala cuando estés en vivo.</Text>
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: colors.success }, acting && styles.btnDisabled]}
+            style={[styles.actionBtn, { backgroundColor: colors.success, shadowColor: colors.success }, acting && styles.btnDisabled]}
             onPress={handleStart}
             disabled={acting}
           >
@@ -290,7 +290,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
                 )}
               </View>
               <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: colors.warning }, acting && styles.btnDisabled]}
+                style={[styles.actionBtn, { backgroundColor: colors.warning, shadowColor: colors.warning }, acting && styles.btnDisabled]}
                 onPress={handleCloseItem}
                 disabled={acting}
               >
@@ -333,7 +333,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
           <Ionicons name="checkmark-done-outline" size={32} color={colors.textMuted} style={{ marginBottom: spacing.xs }} />
           <Text style={styles.actionHint}>Esta subasta ha terminado.</Text>
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: colors.primary }]}
+            style={[styles.actionBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
             onPress={() => navigation.navigate('AuctionOrders', { auctionId, title: auction.title })}
           >
             <Ionicons name="receipt-outline" size={18} color={colors.white} />
@@ -341,7 +341,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
           </TouchableOpacity>
           {unsoldItems.length > 0 && (
             <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.accent }, acting && styles.btnDisabled]}
+              style={[styles.actionBtn, { backgroundColor: colors.accent, shadowColor: colors.accent }, acting && styles.btnDisabled]}
               onPress={handleRelist}
               disabled={acting}
             >
@@ -427,7 +427,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
                   <Ionicons name="person-circle-outline" size={14} color={colors.success} />
                   <Text style={styles.buyerLabel}>{buyer.buyerLabel}</Text>
                   <View style={[styles.payChip, buyer.paymentStatus === 'paid' ? styles.payChipPaid : styles.payChipUnpaid]}>
-                    <Text style={styles.payChipText}>
+                    <Text style={buyer.paymentStatus === 'paid' ? styles.payChipTextPaid : styles.payChipTextUnpaid}>
                       {buyer.paymentStatus === 'paid' ? '💳 Pagado' : '⏳ Sin pagar'}
                     </Text>
                   </View>
@@ -463,56 +463,133 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.md, paddingBottom: spacing.xxl },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: spacing.md },
-  title: { color: colors.text, fontSize: font.xl, fontWeight: '800', flex: 1, marginRight: spacing.sm },
-  wsIndicator: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
-  actionCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md, alignItems: 'center', gap: spacing.md },
-  actionHint: { color: colors.textMuted, fontSize: font.md, textAlign: 'center' },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.lg, borderRadius: radius.md, width: '100%', justifyContent: 'center' },
-  actionBtnText: { color: colors.white, fontWeight: '700', fontSize: font.base },
-  btnDisabled: { opacity: 0.6 },
-  activeCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.primary, marginBottom: spacing.md, gap: spacing.xs },
-  sectionLabel: { color: colors.textMuted, fontSize: font.sm, fontWeight: '700', letterSpacing: 1 },
+
+  titleRow: {
+    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  title: { color: colors.text, fontSize: font.xl, fontWeight: '900', flex: 1, marginRight: spacing.sm, letterSpacing: -0.3 },
+  wsIndicator: { width: 8, height: 8, borderRadius: 4, marginTop: 8 },
+
+  actionCard: {
+    backgroundColor: colors.surface, borderRadius: radius.xl,
+    padding: spacing.lg, borderWidth: 1, borderColor: colors.border,
+    marginBottom: spacing.md, alignItems: 'center', gap: spacing.md,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
+  },
+  actionHint: { color: colors.textMuted, fontSize: font.md, textAlign: 'center', lineHeight: 22 },
+  actionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.lg,
+    borderRadius: radius.md, width: '100%', justifyContent: 'center',
+    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.35,
+    shadowRadius: 6, elevation: 4,
+  },
+  actionBtnText: { color: colors.white, fontWeight: '900', fontSize: font.base, letterSpacing: 0.3 },
+  btnDisabled: { opacity: 0.55 },
+
+  // Active card with glow border
+  activeCard: {
+    backgroundColor: colors.surface, borderRadius: radius.xl,
+    padding: spacing.md, borderWidth: 1.5, borderColor: colors.primary,
+    marginBottom: spacing.md, gap: spacing.sm,
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25, shadowRadius: 12, elevation: 6,
+  },
+  sectionLabel: {
+    color: colors.textMuted, fontSize: font.xs, fontWeight: '800',
+    letterSpacing: 1.5, textTransform: 'uppercase',
+  },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
-  revenueLabel: { color: colors.success, fontSize: font.sm, fontWeight: '700' },
-  cardName: { color: colors.text, fontSize: font.xl, fontWeight: '800' },
+  revenueLabel: {
+    color: colors.success, fontSize: font.sm, fontWeight: '800',
+    backgroundColor: colors.success + '18', paddingHorizontal: spacing.sm,
+    paddingVertical: 3, borderRadius: radius.full, borderWidth: 1, borderColor: colors.success + '44',
+  },
+  cardName: { color: colors.text, fontSize: font.xl, fontWeight: '900', letterSpacing: -0.3 },
   cardMeta: { color: colors.textMuted, fontSize: font.md },
-  priceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: spacing.sm },
-  priceLabel: { color: colors.textMuted, fontSize: font.sm },
-  price: { color: colors.primaryLight, fontSize: font.xxl, fontWeight: '800' },
-  winnerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceAlt, paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.sm },
-  winnerText: { color: colors.warning, fontSize: font.sm },
+  priceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
+  priceLabel: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
+  price: { color: colors.gold, fontSize: font.xxl, fontWeight: '900', letterSpacing: -0.5 },
+  winnerBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: colors.warning + '22', paddingHorizontal: spacing.sm, paddingVertical: 5,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.warning + '55',
+  },
+  winnerText: { color: colors.warning, fontSize: font.sm, fontWeight: '700' },
+
   streamSection: { marginBottom: spacing.md },
-  goLiveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: colors.error, paddingVertical: spacing.md, borderRadius: radius.md },
-  goLiveBtnText: { color: colors.white, fontWeight: '700', fontSize: font.base },
-  ordersLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.sm, marginBottom: spacing.xs },
-  ordersLinkText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
-  endBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, padding: spacing.md, marginBottom: spacing.md },
-  endBtnText: { color: colors.error, fontWeight: '600', fontSize: font.base },
-  section: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
-  // Item cards
-  itemCard: { borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.md, gap: spacing.xs },
-  itemCardActive: { backgroundColor: colors.surfaceAlt, marginHorizontal: -spacing.sm, paddingHorizontal: spacing.sm, borderRadius: radius.sm, borderBottomWidth: 0, marginBottom: spacing.xs },
+  goLiveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.sm, backgroundColor: colors.error,
+    paddingVertical: spacing.md + 2, borderRadius: radius.md,
+    shadowColor: colors.error, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.45, shadowRadius: 10, elevation: 6,
+  },
+  goLiveBtnText: { color: colors.white, fontWeight: '900', fontSize: font.base, letterSpacing: 0.5 },
+
+  ordersLink: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.xs, paddingVertical: spacing.sm, marginBottom: spacing.xs,
+  },
+  ordersLinkText: { color: colors.accent, fontSize: font.sm, fontWeight: '700' },
+  endBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.sm, padding: spacing.md, marginBottom: spacing.md,
+    borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.error + '44',
+    backgroundColor: colors.error + '0A',
+  },
+  endBtnText: { color: colors.error, fontWeight: '700', fontSize: font.base },
+
+  section: {
+    backgroundColor: colors.surface, borderRadius: radius.xl,
+    padding: spacing.md, borderWidth: 1, borderColor: colors.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 6, elevation: 2,
+  },
+
+  // Item cards — improved scannability
+  itemCard: {
+    borderBottomWidth: 1, borderBottomColor: colors.border + '88',
+    paddingVertical: spacing.md, gap: 6,
+  },
+  itemCardActive: {
+    backgroundColor: colors.primary + '12',
+    marginHorizontal: -spacing.md, paddingHorizontal: spacing.md,
+    borderRadius: radius.md, borderBottomWidth: 0, marginBottom: spacing.xs,
+    borderLeftWidth: 3, borderLeftColor: colors.primary,
+  },
   itemTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  positionBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center', marginTop: 1 },
-  positionBadgeActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  positionText: { color: colors.textMuted, fontSize: 11, fontWeight: '800' },
-  itemName: { color: colors.text, fontSize: font.md, fontWeight: '700' },
+  positionBadge: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: colors.surfaceAlt, borderWidth: 1.5, borderColor: colors.border,
+    justifyContent: 'center', alignItems: 'center', marginTop: 1,
+  },
+  positionBadgeActive: { backgroundColor: colors.primary, borderColor: colors.primaryLight },
+  positionText: { color: colors.textMuted, fontSize: 11, fontWeight: '900' },
+  itemName: { color: colors.text, fontSize: font.md, fontWeight: '700', lineHeight: 20 },
   itemMeta: { color: colors.textMuted, fontSize: font.sm, marginTop: 1 },
-  itemStatusBadge: { fontSize: font.sm, fontWeight: '700', marginTop: 2 },
-  itemDetailRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginLeft: 36 },
-  conditionTag: { backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: colors.border },
-  conditionText: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
-  priceGroup: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  itemStatusBadge: { fontSize: font.xs, fontWeight: '800', marginTop: 3, letterSpacing: 0.3 },
+  itemDetailRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginLeft: 38 },
+  conditionTag: {
+    backgroundColor: colors.surfaceAlt, borderRadius: radius.sm,
+    paddingHorizontal: 7, paddingVertical: 3,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  conditionText: { color: colors.textMuted, fontSize: 11, fontWeight: '700' },
+  priceGroup: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   startingPriceLabel: { color: colors.textMuted, fontSize: 11, marginRight: 2 },
   startingPrice: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
-  finalPrice: { color: colors.success, fontSize: font.sm, fontWeight: '800' },
-  buyerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginLeft: 36, flexWrap: 'wrap' },
+  finalPrice: { color: colors.success, fontSize: font.sm, fontWeight: '900' },
+  buyerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginLeft: 38, flexWrap: 'wrap' },
   buyerLabel: { color: colors.success, fontSize: font.sm, fontWeight: '700' },
-  payChip: { borderRadius: 99, paddingHorizontal: 6, paddingVertical: 2 },
-  payChipPaid: { backgroundColor: '#14532d' },
-  payChipUnpaid: { backgroundColor: '#431407' },
-  payChipText: { fontSize: 11, fontWeight: '700', color: colors.white },
-  orderStatusText: { fontSize: font.sm },
-  reserveNote: { color: colors.textMuted, fontSize: font.sm, marginLeft: 36, fontStyle: 'italic' },
+  payChip: { borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 3 },
+  payChipPaid: { backgroundColor: colors.success + '28', borderWidth: 1, borderColor: colors.success + '55' },
+  payChipUnpaid: { backgroundColor: colors.warning + '20', borderWidth: 1, borderColor: colors.warning + '44' },
+  payChipTextPaid: { fontSize: 11, fontWeight: '800', color: colors.success },
+  payChipTextUnpaid: { fontSize: 11, fontWeight: '800', color: colors.warning },
+  payChipText: { fontSize: 11, fontWeight: '800', color: colors.text },
+  orderStatusText: { fontSize: font.sm, color: colors.textMuted },
+  reserveNote: { color: colors.textMuted, fontSize: font.sm, marginLeft: 38, fontStyle: 'italic' },
 });
