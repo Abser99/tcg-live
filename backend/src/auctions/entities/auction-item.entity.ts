@@ -82,6 +82,15 @@ export class AuctionItem {
   @Column({ type: 'timestamp', nullable: true })
   closesAt: Date | null;
 
+  @Column({ type: 'int', nullable: true })
+  binPrice: number | null; // Buy It Now price in MXN cents
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  gradingCompany: string | null; // PSA, BGS, CGC, etc.
+
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  grade: string | null; // e.g. "9", "9.5", "10"
+
   @Column({ default: false })
   autoRelist: boolean;
 

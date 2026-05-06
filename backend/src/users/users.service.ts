@@ -73,6 +73,10 @@ export class UsersService {
     return Math.round((user.totalRatingPoints / user.totalRatings) * 10) / 10;
   }
 
+  async setVerified(id: string, isVerified: boolean): Promise<void> {
+    await this.usersRepo.update(id, { isVerified });
+  }
+
   async updateAddress(id: string, dto: UpdateAddressDto): Promise<User> {
     await this.usersRepo.update(id, {
       ...(dto.zipCode    !== undefined && { zipCode:  dto.zipCode }),

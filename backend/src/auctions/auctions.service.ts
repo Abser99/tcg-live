@@ -50,7 +50,14 @@ export class AuctionsService {
       description: dto.description,
       scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
       items: (dto.items ?? []).map((item, index) =>
-        this.itemsRepo.create({ ...item, position: index, currentPrice: item.startingPrice }),
+        this.itemsRepo.create({
+          ...item,
+          position: index,
+          currentPrice: item.startingPrice,
+          binPrice: item.binPrice ?? null,
+          gradingCompany: item.gradingCompany ?? null,
+          grade: item.grade ?? null,
+        }),
       ),
     });
     return this.auctionsRepo.save(auction);
@@ -182,7 +189,7 @@ export class AuctionsService {
   }
 
   async placeBid(itemId: string, bidderId: string, dto: PlaceBidDto): Promise<Bid> {
-    const { bid, auctionId, autoBid, closesAt } = await this.dataSource.transaction(async (manager) => {
+    const { bid, auctionId, autoBid, closesAt, binTriggered } = await this.dataSource.transaction(async (manager) => {
       const item = await manager.findOne(AuctionItem, {
         where: { id: itemId },
         lock: { mode: 'pessimistic_write' },
@@ -209,11 +216,19 @@ export class AuctionsService {
       const prevWinnerId = item.winnerId;
       item.currentPrice = dto.amount;
       item.winnerId = bidderId;
-      // Anti-snipe: extend timer if bid lands in last 10 seconds
-      if (item.closesAt) {
-        const msLeft = item.closesAt.getTime() - Date.now();
-        if (msLeft < ANTI_SNIPE_MS) {
-          item.closesAt = new Date(Date.now() + ANTI_SNIPE_MS);
+
+      // Buy It Now: if bid meets or exceeds BIN price, close immediately
+      const binTriggered = !!(item.binPrice && dto.amount >= item.binPrice);
+      if (binTriggered) {
+        item.status = AuctionItemStatus.SOLD;
+        item.closesAt = new Date();
+      } else {
+        // Anti-snipe: extend timer if bid lands in last 10 seconds
+        if (item.closesAt) {
+          const msLeft = item.closesAt.getTime() - Date.now();
+          if (msLeft < ANTI_SNIPE_MS) {
+            item.closesAt = new Date(Date.now() + ANTI_SNIPE_MS);
+          }
         }
       }
       await manager.save(AuctionItem, item);
@@ -221,9 +236,9 @@ export class AuctionsService {
       const newBid = manager.create(Bid, { auctionItemId: itemId, bidderId, amount: dto.amount });
       const savedBid = await manager.save(Bid, newBid);
 
-      // Auto-bid: if the displaced winner has a max bid that can still outbid
+      // Auto-bid only runs when BIN was not triggered
       let autoBid: { bidderId: string; amount: number; bidId: string } | null = null;
-      if (prevWinnerId && prevWinnerId !== bidderId) {
+      if (!binTriggered && prevWinnerId && prevWinnerId !== bidderId) {
         const maxBidRecord = await manager.findOne(MaxBid, {
           where: { auctionItemId: itemId, userId: prevWinnerId },
         });
@@ -244,7 +259,7 @@ export class AuctionsService {
         }
       }
 
-      return { bid: savedBid, auctionId: item.auctionId, autoBid, closesAt: item.closesAt };
+      return { bid: savedBid, auctionId: item.auctionId, autoBid, closesAt: item.closesAt, binTriggered };
     });
 
     const bidder = await this.usersService.findById(bidderId);
@@ -271,6 +286,12 @@ export class AuctionsService {
         timestamp: new Date().toISOString(),
         closesAt: closesAt?.toISOString() ?? null,
       });
+    }
+
+    // BIN: trigger item close sequence after emitting the winning bid
+    if (binTriggered) {
+      const soldItem = await this.itemsRepo.findOne({ where: { id: itemId } });
+      if (soldItem) await this.handleItemClosed(soldItem);
     }
 
     return bid;
@@ -312,7 +333,18 @@ export class AuctionsService {
     }
 
     item.status = item.winnerId ? AuctionItemStatus.SOLD : AuctionItemStatus.UNSOLD;
+    const saved = await this.itemsRepo.save(item);
 
+    await this.handleItemClosed(saved);
+
+    if (saved.status === AuctionItemStatus.UNSOLD && saved.autoRelist) {
+      this.scheduleAutoRelist(saved, item.auction.sellerId).catch(() => {});
+    }
+
+    return saved;
+  }
+
+  private async handleItemClosed(item: AuctionItem): Promise<void> {
     const nextItem = await this.itemsRepo.findOne({
       where: { auctionId: item.auctionId, status: AuctionItemStatus.PENDING },
       order: { position: 'ASC' },
@@ -324,41 +356,33 @@ export class AuctionsService {
       await this.itemsRepo.save(nextItem);
     }
 
-    const saved = await this.itemsRepo.save(item);
-
-    if (saved.winnerId) {
+    if (item.winnerId) {
       const [auction, buyer] = await Promise.all([
         this.auctionsRepo.findOne({ where: { id: item.auctionId } }),
-        this.usersService.findById(saved.winnerId),
+        this.usersService.findById(item.winnerId),
       ]);
       await this.ordersService.recordWin({
         auctionId: item.auctionId,
         sellerId: auction!.sellerId,
-        buyerId: saved.winnerId,
+        buyerId: item.winnerId,
         buyerZip: buyer?.zipCode ?? null,
-        auctionItemId: itemId,
-        cardName: saved.cardName,
-        cardSet: saved.cardSet,
-        finalPrice: saved.currentPrice,
-        imageUrls: saved.imageUrls,
+        auctionItemId: item.id,
+        cardName: item.cardName,
+        cardSet: item.cardSet,
+        finalPrice: item.currentPrice,
+        imageUrls: item.imageUrls,
       });
     }
 
     this.gateway.emitItemClosed(item.auctionId, {
       auctionId: item.auctionId,
-      itemId,
-      status: saved.status,
-      winnerId: saved.winnerId,
-      finalPrice: saved.currentPrice,
+      itemId: item.id,
+      status: item.status,
+      winnerId: item.winnerId ?? null,
+      finalPrice: item.currentPrice,
       nextItemId: nextItem?.id ?? null,
       nextClosesAt: nextItem?.closesAt?.toISOString() ?? null,
     });
-
-    if (saved.status === AuctionItemStatus.UNSOLD && saved.autoRelist) {
-      this.scheduleAutoRelist(saved, item.auction.sellerId).catch(() => {});
-    }
-
-    return saved;
   }
 
   private async scheduleAutoRelist(item: AuctionItem, sellerId: string): Promise<void> {
@@ -382,17 +406,20 @@ export class AuctionsService {
     const nextPosition = (existing[0]?.position ?? -1) + 1;
 
     await this.itemsRepo.save(this.itemsRepo.create({
-      auctionId:     target.id,
-      cardName:      item.cardName,
-      cardSet:       item.cardSet ?? undefined,
-      cardNumber:    item.cardNumber ?? undefined,
-      condition:     item.condition,
-      startingPrice: item.startingPrice,
-      currentPrice:  item.startingPrice,
-      reservePrice:  item.reservePrice ?? undefined,
-      imageUrls:     item.imageUrls ?? undefined,
-      position:      nextPosition,
-      autoRelist:    false,
+      auctionId:      target.id,
+      cardName:       item.cardName,
+      cardSet:        item.cardSet ?? undefined,
+      cardNumber:     item.cardNumber ?? undefined,
+      condition:      item.condition,
+      startingPrice:  item.startingPrice,
+      currentPrice:   item.startingPrice,
+      reservePrice:   item.reservePrice ?? undefined,
+      binPrice:       item.binPrice ?? undefined,
+      imageUrls:      item.imageUrls ?? undefined,
+      gradingCompany: item.gradingCompany ?? undefined,
+      grade:          item.grade ?? undefined,
+      position:       nextPosition,
+      autoRelist:     false,
     }));
   }
 
@@ -449,15 +476,18 @@ export class AuctionsService {
       description: source.description ?? undefined,
       items: unsold.map((item, index) =>
         this.itemsRepo.create({
-          cardName: item.cardName,
-          cardSet: item.cardSet ?? undefined,
-          cardNumber: item.cardNumber ?? undefined,
-          condition: item.condition,
-          startingPrice: item.startingPrice,
-          currentPrice: item.startingPrice,
-          reservePrice: item.reservePrice ?? undefined,
-          imageUrls: item.imageUrls ?? undefined,
-          position: index,
+          cardName:       item.cardName,
+          cardSet:        item.cardSet ?? undefined,
+          cardNumber:     item.cardNumber ?? undefined,
+          condition:      item.condition,
+          startingPrice:  item.startingPrice,
+          currentPrice:   item.startingPrice,
+          reservePrice:   item.reservePrice ?? undefined,
+          binPrice:       item.binPrice ?? undefined,
+          gradingCompany: item.gradingCompany ?? undefined,
+          grade:          item.grade ?? undefined,
+          imageUrls:      item.imageUrls ?? undefined,
+          position:       index,
         }),
       ),
     });

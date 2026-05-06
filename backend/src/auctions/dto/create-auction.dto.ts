@@ -46,6 +46,19 @@ export class CreateAuctionItemDto {
   @IsOptional()
   imageUrls?: string[];
 
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  binPrice?: number; // Buy It Now price in MXN cents
+
+  @IsString()
+  @IsOptional()
+  gradingCompany?: string; // PSA, BGS, CGC
+
+  @IsString()
+  @IsOptional()
+  grade?: string; // e.g. "9", "9.5", "10"
+
   @IsBoolean()
   @IsOptional()
   autoRelist?: boolean;

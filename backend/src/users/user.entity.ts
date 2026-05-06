@@ -50,6 +50,9 @@ export class User {
   @Column({ default: true })
   isActive: boolean;
 
+  @Column({ default: false })
+  isVerified: boolean; // set to true when seller documents are approved
+
   @Column({ nullable: true, length: 300 })
   shippingNote: string;
 
