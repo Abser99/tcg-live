@@ -12,10 +12,11 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { io, Socket } from 'socket.io-client';
 import { auctionsApi } from '../../api/auctions';
+import { ordersApi } from '../../api/orders';
 import { templatesApi } from '../../api/templates';
 import { useAuthStore } from '../../store/auth.store';
 import StreamPublisher from '../../components/streaming/StreamPublisher';
-import { Auction, AuctionItem } from '../../types';
+import { Auction, AuctionItem, Order } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
 import { formatMXN } from '../../utils/currency';
 import { ProfileStackParamList } from '../../navigation/types';
@@ -27,11 +28,33 @@ const CONDITIONS: Record<string, string> = {
   mint: 'Mint', near_mint: 'Near Mint', excellent: 'Excellent', good: 'Good', played: 'Played',
 };
 
+const STATUS_COLOR: Record<AuctionItem['status'], string> = {
+  active:  '#f59e0b',
+  sold:    '#22c55e',
+  unsold:  '#6b7280',
+  pending: '#6b7280',
+};
+
+const STATUS_LABEL: Record<AuctionItem['status'], string> = {
+  active:  '▶ En subasta',
+  sold:    '✓ Vendida',
+  unsold:  '✗ No vendida',
+  pending: '· Pendiente',
+};
+
+interface ItemBuyerInfo {
+  buyerLabel: string;
+  paymentStatus: string;
+  orderStatus: string;
+  orderId: string;
+}
+
 export default function ManageAuctionScreen({ route, navigation }: Props) {
   const { auctionId } = route.params;
   const { token } = useAuthStore();
 
   const [auction, setAuction] = useState<Auction | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeItem, setActiveItem] = useState<AuctionItem | null>(null);
   const [connected, setConnected] = useState(false);
@@ -43,9 +66,13 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
 
   const load = useCallback(async () => {
     try {
-      const { data } = await auctionsApi.get(auctionId);
-      setAuction(data);
-      setActiveItem(data.items?.find((i) => i.status === 'active') ?? null);
+      const [auctionRes, ordersRes] = await Promise.all([
+        auctionsApi.get(auctionId),
+        ordersApi.auctionOrders(auctionId).catch(() => ({ data: [] as Order[] })),
+      ]);
+      setAuction(auctionRes.data);
+      setOrders(ordersRes.data);
+      setActiveItem(auctionRes.data.items?.find((i) => i.status === 'active') ?? null);
     } catch {
       Alert.alert('Error', 'No se pudo cargar la subasta');
       navigation.goBack();
@@ -60,11 +87,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
     if (!token) return;
     const socket = io(`${WS_URL}/auctions`, { auth: { token }, transports: ['websocket'] });
     socketRef.current = socket;
-
-    socket.on('connect', () => {
-      setConnected(true);
-      socket.emit('join-auction', auctionId);
-    });
+    socket.on('connect', () => { setConnected(true); socket.emit('join-auction', auctionId); });
     socket.on('disconnect', () => setConnected(false));
     socket.on('bid:placed', (data) => {
       setActiveItem((prev) =>
@@ -75,12 +98,9 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
     socket.on('auction:started', () => load());
     socket.on('auction:ended', () => {
       setAuction((prev) => (prev ? { ...prev, status: 'ended' } : prev));
+      load();
     });
-
-    return () => {
-      socket.emit('leave-auction', auctionId);
-      socket.disconnect();
-    };
+    return () => { socket.emit('leave-auction', auctionId); socket.disconnect(); };
   }, [token, auctionId, load]);
 
   const handleGoLive = async () => {
@@ -88,9 +108,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
       const { data } = await auctionsApi.getLiveKitToken(auctionId);
       setStreamToken(data);
       setIsStreaming(true);
-    } catch {
-      Alert.alert('Error', 'No se pudo iniciar el stream');
-    }
+    } catch { Alert.alert('Error', 'No se pudo iniciar el stream'); }
   };
 
   const handleStart = () => {
@@ -103,11 +121,8 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
             const { data } = await auctionsApi.start(auctionId);
             setAuction(data);
             await load();
-          } catch (err: any) {
-            Alert.alert('Error', err.response?.data?.message ?? 'No se pudo iniciar');
-          } finally {
-            setActing(false);
-          }
+          } catch (err: any) { Alert.alert('Error', err.response?.data?.message ?? 'No se pudo iniciar'); }
+          finally { setActing(false); }
         },
       },
     ]);
@@ -123,13 +138,9 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
       {
         text: 'Cerrar', onPress: async () => {
           setActing(true);
-          try {
-            await auctionsApi.closeItem(activeItem.id);
-          } catch (err: any) {
-            Alert.alert('Error', err.response?.data?.message ?? 'No se pudo cerrar');
-          } finally {
-            setActing(false);
-          }
+          try { await auctionsApi.closeItem(activeItem.id); }
+          catch (err: any) { Alert.alert('Error', err.response?.data?.message ?? 'No se pudo cerrar'); }
+          finally { setActing(false); }
         },
       },
     ]);
@@ -139,17 +150,15 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
     if (!auction) return;
     try {
       await templatesApi.fromAuction(auctionId);
-      Alert.alert('Template guardado', `"${auction.title}" guardado como template. Lo verás al crear tu próxima subasta.`);
-    } catch {
-      Alert.alert('Error', 'No se pudo guardar el template');
-    }
+      Alert.alert('Template guardado', `"${auction.title}" guardado como template.`);
+    } catch { Alert.alert('Error', 'No se pudo guardar el template'); }
   };
 
   const handleRelist = () => {
     const unsoldCount = auction?.items?.filter(i => i.status === 'unsold').length ?? 0;
     Alert.alert(
       'Volver a subastar',
-      `Se creará una nueva subasta con ${unsoldCount} ${unsoldCount === 1 ? 'carta no vendida' : 'cartas no vendidas'}. Podrás editarla antes de iniciarla.`,
+      `Se creará una nueva subasta con ${unsoldCount} ${unsoldCount === 1 ? 'carta no vendida' : 'cartas no vendidas'}.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -158,11 +167,8 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
             try {
               const { data } = await auctionsApi.relist(auctionId);
               navigation.replace('ManageAuction', { auctionId: data.id });
-            } catch (err: any) {
-              Alert.alert('Error', err.response?.data?.message ?? 'No se pudo crear la subasta');
-            } finally {
-              setActing(false);
-            }
+            } catch (err: any) { Alert.alert('Error', err.response?.data?.message ?? 'No se pudo crear'); }
+            finally { setActing(false); }
           },
         },
       ],
@@ -178,22 +184,15 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
           try {
             const { data } = await auctionsApi.end(auctionId);
             setAuction(data);
-          } catch (err: any) {
-            Alert.alert('Error', err.response?.data?.message ?? 'No se pudo terminar');
-          } finally {
-            setActing(false);
-          }
+          } catch (err: any) { Alert.alert('Error', err.response?.data?.message ?? 'No se pudo terminar'); }
+          finally { setActing(false); }
         },
       },
     ]);
   };
 
   if (loading || !auction) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+    return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   }
 
   const isScheduled = auction.status === 'scheduled';
@@ -201,6 +200,24 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
   const isEnded = auction.status === 'ended';
   const sortedItems = [...(auction.items ?? [])].sort((a, b) => a.position - b.position);
   const unsoldItems = sortedItems.filter(i => i.status === 'unsold');
+
+  // Build auctionItemId → buyer info map
+  const buyerMap: Record<string, ItemBuyerInfo> = {};
+  orders.forEach((order, idx) => {
+    order.items.forEach(oi => {
+      buyerMap[oi.auctionItemId] = {
+        buyerLabel: `Comprador #${idx + 1}`,
+        paymentStatus: order.paymentStatus,
+        orderStatus: order.status,
+        orderId: order.id,
+      };
+    });
+  });
+
+  const soldCount = sortedItems.filter(i => i.status === 'sold').length;
+  const totalRevenue = sortedItems
+    .filter(i => i.status === 'sold')
+    .reduce((s, i) => s + i.currentPrice, 0);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -210,6 +227,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
         <View style={[styles.wsIndicator, { backgroundColor: connected ? colors.success : colors.textMuted }]} />
       </View>
 
+      {/* Stream section */}
       {isLive && (
         <View style={styles.streamSection}>
           {isStreaming && streamToken ? (
@@ -227,6 +245,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {/* Start action */}
       {isScheduled && (
         <View style={styles.actionCard}>
           <Text style={styles.actionHint}>La subasta está lista. Iníciala cuando estés en vivo.</Text>
@@ -245,6 +264,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {/* Live controls */}
       {isLive && (
         <>
           {activeItem ? (
@@ -257,7 +277,6 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
                 </Text>
               )}
               <Text style={styles.cardMeta}>{CONDITIONS[activeItem.condition]}</Text>
-
               <View style={styles.priceRow}>
                 <View>
                   <Text style={styles.priceLabel}>Precio actual</Text>
@@ -270,7 +289,6 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
                   </View>
                 )}
               </View>
-
               <TouchableOpacity
                 style={[styles.actionBtn, { backgroundColor: colors.warning }, acting && styles.btnDisabled]}
                 onPress={handleCloseItem}
@@ -309,6 +327,7 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
         </>
       )}
 
+      {/* Ended actions */}
       {isEnded && (
         <View style={[styles.actionCard, { borderColor: colors.textMuted }]}>
           <Ionicons name="checkmark-done-outline" size={32} color={colors.textMuted} style={{ marginBottom: spacing.xs }} />
@@ -346,25 +365,94 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {/* Items list — full info for seller */}
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>CARTAS ({sortedItems.length})</Text>
-        {sortedItems.map((item) => (
-          <View key={item.id} style={[styles.itemRow, item.status === 'active' && styles.itemActive]}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.itemName}>{item.cardName}</Text>
-              {item.cardSet && <Text style={styles.itemMeta}>{item.cardSet}</Text>}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionLabel}>CARTAS ({sortedItems.length})</Text>
+          {soldCount > 0 && (
+            <Text style={styles.revenueLabel}>{soldCount} vendidas · {formatMXN(totalRevenue)}</Text>
+          )}
+        </View>
+
+        {sortedItems.map((item) => {
+          const buyer = buyerMap[item.id];
+          const isSold = item.status === 'sold';
+          const isActive = item.status === 'active';
+          return (
+            <View key={item.id} style={[styles.itemCard, isActive && styles.itemCardActive]}>
+              {/* Row 1: number + name + status */}
+              <View style={styles.itemTopRow}>
+                <View style={[styles.positionBadge, isActive && styles.positionBadgeActive]}>
+                  <Text style={[styles.positionText, isActive && { color: colors.white }]}>#{item.position}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.itemName} numberOfLines={1}>{item.cardName}</Text>
+                  {(item.cardSet || item.cardNumber) && (
+                    <Text style={styles.itemMeta}>
+                      {[item.cardSet, item.cardNumber ? `#${item.cardNumber}` : null].filter(Boolean).join(' · ')}
+                    </Text>
+                  )}
+                </View>
+                <Text style={[styles.itemStatusBadge, { color: STATUS_COLOR[item.status] }]}>
+                  {STATUS_LABEL[item.status]}
+                </Text>
+              </View>
+
+              {/* Row 2: condition + price */}
+              <View style={styles.itemDetailRow}>
+                <View style={styles.conditionTag}>
+                  <Text style={styles.conditionText}>{CONDITIONS[item.condition]}</Text>
+                </View>
+                <View style={styles.priceGroup}>
+                  <Text style={styles.startingPriceLabel}>Inicio</Text>
+                  <Text style={styles.startingPrice}>{formatMXN(item.startingPrice)}</Text>
+                  {isSold && item.currentPrice !== item.startingPrice && (
+                    <>
+                      <Ionicons name="arrow-forward" size={12} color={colors.textMuted} style={{ marginHorizontal: 2 }} />
+                      <Text style={styles.finalPrice}>{formatMXN(item.currentPrice)}</Text>
+                    </>
+                  )}
+                  {!isSold && isActive && (
+                    <>
+                      <Ionicons name="arrow-forward" size={12} color={colors.textMuted} style={{ marginHorizontal: 2 }} />
+                      <Text style={[styles.finalPrice, { color: colors.warning }]}>{formatMXN(item.currentPrice)}</Text>
+                    </>
+                  )}
+                </View>
+              </View>
+
+              {/* Row 3: buyer info (if sold) */}
+              {isSold && buyer && (
+                <View style={styles.buyerRow}>
+                  <Ionicons name="person-circle-outline" size={14} color={colors.success} />
+                  <Text style={styles.buyerLabel}>{buyer.buyerLabel}</Text>
+                  <View style={[styles.payChip, buyer.paymentStatus === 'paid' ? styles.payChipPaid : styles.payChipUnpaid]}>
+                    <Text style={styles.payChipText}>
+                      {buyer.paymentStatus === 'paid' ? '💳 Pagado' : '⏳ Sin pagar'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.orderStatusText, { color: colors.textMuted }]}>
+                    {buyer.orderStatus === 'pending' ? 'Pendiente'
+                      : buyer.orderStatus === 'confirmed' ? 'Confirmado'
+                      : buyer.orderStatus === 'shipped' ? 'Enviado'
+                      : 'Entregado'}
+                  </Text>
+                </View>
+              )}
+
+              {isSold && !buyer && (
+                <View style={styles.buyerRow}>
+                  <Ionicons name="person-circle-outline" size={14} color={colors.textMuted} />
+                  <Text style={[styles.buyerLabel, { color: colors.textMuted }]}>Comprador no disponible</Text>
+                </View>
+              )}
+
+              {item.reservePrice && !isSold && (
+                <Text style={styles.reserveNote}>Reserva: {formatMXN(item.reservePrice)}</Text>
+              )}
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.itemPrice}>{formatMXN(item.currentPrice)}</Text>
-              <Text style={[
-                styles.itemStatus,
-                { color: item.status === 'sold' ? colors.success : item.status === 'active' ? colors.warning : colors.textMuted },
-              ]}>
-                {item.status === 'active' ? '▶ activa' : item.status === 'sold' ? 'vendida' : item.status === 'pending' ? 'pendiente' : 'no vendida'}
-              </Text>
-            </View>
-          </View>
-        ))}
+          );
+        })}
       </View>
 
     </ScrollView>
@@ -378,65 +466,53 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: spacing.md },
   title: { color: colors.text, fontSize: font.xl, fontWeight: '800', flex: 1, marginRight: spacing.sm },
   wsIndicator: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
-  actionCard: {
-    backgroundColor: colors.surface, borderRadius: radius.lg,
-    padding: spacing.md, borderWidth: 1, borderColor: colors.border,
-    marginBottom: spacing.md, alignItems: 'center', gap: spacing.md,
-  },
+  actionCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md, alignItems: 'center', gap: spacing.md },
   actionHint: { color: colors.textMuted, fontSize: font.md, textAlign: 'center' },
-  actionBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    paddingVertical: spacing.sm, paddingHorizontal: spacing.lg,
-    borderRadius: radius.md, width: '100%', justifyContent: 'center',
-  },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.lg, borderRadius: radius.md, width: '100%', justifyContent: 'center' },
   actionBtnText: { color: colors.white, fontWeight: '700', fontSize: font.base },
   btnDisabled: { opacity: 0.6 },
-  activeCard: {
-    backgroundColor: colors.surface, borderRadius: radius.lg,
-    padding: spacing.md, borderWidth: 1, borderColor: colors.primary,
-    marginBottom: spacing.md, gap: spacing.xs,
-  },
-  sectionLabel: { color: colors.textMuted, fontSize: font.sm, fontWeight: '700', letterSpacing: 1, marginBottom: spacing.sm },
+  activeCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.primary, marginBottom: spacing.md, gap: spacing.xs },
+  sectionLabel: { color: colors.textMuted, fontSize: font.sm, fontWeight: '700', letterSpacing: 1 },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  revenueLabel: { color: colors.success, fontSize: font.sm, fontWeight: '700' },
   cardName: { color: colors.text, fontSize: font.xl, fontWeight: '800' },
   cardMeta: { color: colors.textMuted, fontSize: font.md },
   priceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: spacing.sm },
   priceLabel: { color: colors.textMuted, fontSize: font.sm },
   price: { color: colors.primaryLight, fontSize: font.xxl, fontWeight: '800' },
-  winnerBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: colors.surfaceAlt, paddingHorizontal: spacing.sm,
-    paddingVertical: 4, borderRadius: radius.sm,
-  },
+  winnerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceAlt, paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.sm },
   winnerText: { color: colors.warning, fontSize: font.sm },
   streamSection: { marginBottom: spacing.md },
-  goLiveBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: spacing.sm, backgroundColor: colors.error,
-    paddingVertical: spacing.md, borderRadius: radius.md,
-  },
+  goLiveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: colors.error, paddingVertical: spacing.md, borderRadius: radius.md },
   goLiveBtnText: { color: colors.white, fontWeight: '700', fontSize: font.base },
   ordersLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.sm, marginBottom: spacing.xs },
   ordersLinkText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
-  endBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: spacing.sm, padding: spacing.md, marginBottom: spacing.md,
-  },
+  endBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, padding: spacing.md, marginBottom: spacing.md },
   endBtnText: { color: colors.error, fontWeight: '600', fontSize: font.base },
-  section: {
-    backgroundColor: colors.surface, borderRadius: radius.lg,
-    padding: spacing.md, borderWidth: 1, borderColor: colors.border,
-  },
-  itemRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  itemActive: {
-    backgroundColor: colors.surfaceAlt,
-    marginHorizontal: -spacing.sm, paddingHorizontal: spacing.sm,
-    borderRadius: radius.sm,
-  },
-  itemName: { color: colors.text, fontSize: font.md, fontWeight: '600' },
-  itemMeta: { color: colors.textMuted, fontSize: font.sm },
-  itemPrice: { color: colors.text, fontSize: font.md, fontWeight: '700' },
-  itemStatus: { fontSize: font.sm },
+  section: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  // Item cards
+  itemCard: { borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.md, gap: spacing.xs },
+  itemCardActive: { backgroundColor: colors.surfaceAlt, marginHorizontal: -spacing.sm, paddingHorizontal: spacing.sm, borderRadius: radius.sm, borderBottomWidth: 0, marginBottom: spacing.xs },
+  itemTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  positionBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center', marginTop: 1 },
+  positionBadgeActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  positionText: { color: colors.textMuted, fontSize: 11, fontWeight: '800' },
+  itemName: { color: colors.text, fontSize: font.md, fontWeight: '700' },
+  itemMeta: { color: colors.textMuted, fontSize: font.sm, marginTop: 1 },
+  itemStatusBadge: { fontSize: font.sm, fontWeight: '700', marginTop: 2 },
+  itemDetailRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginLeft: 36 },
+  conditionTag: { backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: colors.border },
+  conditionText: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
+  priceGroup: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  startingPriceLabel: { color: colors.textMuted, fontSize: 11, marginRight: 2 },
+  startingPrice: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
+  finalPrice: { color: colors.success, fontSize: font.sm, fontWeight: '800' },
+  buyerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginLeft: 36, flexWrap: 'wrap' },
+  buyerLabel: { color: colors.success, fontSize: font.sm, fontWeight: '700' },
+  payChip: { borderRadius: 99, paddingHorizontal: 6, paddingVertical: 2 },
+  payChipPaid: { backgroundColor: '#14532d' },
+  payChipUnpaid: { backgroundColor: '#431407' },
+  payChipText: { fontSize: 11, fontWeight: '700', color: colors.white },
+  orderStatusText: { fontSize: font.sm },
+  reserveNote: { color: colors.textMuted, fontSize: font.sm, marginLeft: 36, fontStyle: 'italic' },
 });

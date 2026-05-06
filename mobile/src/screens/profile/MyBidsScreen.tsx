@@ -93,7 +93,7 @@ export default function MyBidsScreen({ navigation }: Props) {
           <TouchableOpacity
             style={styles.card}
             activeOpacity={isNavigable ? 0.8 : 1}
-            onPress={() => isNavigable && nav.navigate('AuctionDetail', { auctionId: auction.id })}
+            onPress={() => isNavigable && nav.navigate('Auctions' as never, { screen: 'AuctionDetail', params: { auctionId: auction.id } } as never)}
           >
             {thumb ? (
               <Image source={{ uri: thumb }} style={styles.thumb} resizeMode="contain" />

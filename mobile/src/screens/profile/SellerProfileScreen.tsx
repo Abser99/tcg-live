@@ -39,7 +39,7 @@ export default function SellerProfileScreen({ route, navigation }: Props) {
       setFollowing(followRes.data.following);
     } catch {
       Alert.alert('Error', 'No se pudo cargar el perfil');
-      navigation.goBack();
+      if (navigation.canGoBack()) navigation.goBack();
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -88,20 +88,28 @@ export default function SellerProfileScreen({ route, navigation }: Props) {
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{seller?.username?.[0]?.toUpperCase() ?? '?'}</Text>
         </View>
-        <Text style={styles.username}>@{seller?.username}</Text>
+        <View style={styles.usernameRow}>
+          <Text style={styles.username}>@{seller?.username}</Text>
+          {seller?.isVerified && (
+            <View style={styles.verifiedBadge}>
+              <Ionicons name="checkmark-circle" size={18} color="#3b82f6" />
+              <Text style={styles.verifiedText}>Verificado</Text>
+            </View>
+          )}
+        </View>
         {seller?.displayName ? <Text style={styles.displayName}>{seller.displayName}</Text> : null}
         <View style={styles.statsRow}>
           <View style={styles.stat}>
-            {(seller as any)?.averageRating != null ? (
+            {seller?.averageRating != null ? (
               <View style={styles.ratingRow}>
-                <Text style={styles.statValue}>{(seller as any).averageRating.toFixed(1)}</Text>
+                <Text style={styles.statValue}>{seller.averageRating.toFixed(1)}</Text>
                 <Ionicons name="star" size={14} color={colors.warning} style={{ marginTop: 4 }} />
               </View>
             ) : (
               <Text style={styles.statValue}>{seller?.reputationScore ?? 0}</Text>
             )}
             <Text style={styles.statLabel}>
-              {(seller as any)?.totalRatings ? `${(seller as any).totalRatings} calificaciones` : 'Sin calificaciones'}
+              {seller?.totalRatings ? `${seller.totalRatings} calificaciones` : 'Sin calificaciones'}
             </Text>
           </View>
           <View style={styles.statDivider} />
@@ -138,12 +146,6 @@ export default function SellerProfileScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         )}
 
-        {(seller as any)?.shippingNote ? (
-          <View style={styles.shippingNote}>
-            <Ionicons name="cube-outline" size={14} color={colors.textMuted} />
-            <Text style={styles.shippingNoteText}>{(seller as any).shippingNote}</Text>
-          </View>
-        ) : null}
       </View>
 
       {/* Live auctions */}
@@ -209,7 +211,10 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', padding: spacing.xl, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.md },
   avatarText: { color: '#fff', fontSize: 28, fontWeight: '800' },
+  usernameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap', justifyContent: 'center' },
   username: { color: colors.text, fontSize: font.xl, fontWeight: '700' },
+  verifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#eff6ff', borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 2, borderWidth: 1, borderColor: '#bfdbfe' },
+  verifiedText: { color: '#3b82f6', fontSize: font.sm, fontWeight: '700' },
   displayName: { color: colors.textMuted, fontSize: font.md, marginTop: 2 },
   statsRow: { flexDirection: 'row', gap: spacing.xl, marginTop: spacing.lg, alignItems: 'center' },
   stat: { alignItems: 'center' },
@@ -221,8 +226,6 @@ const styles = StyleSheet.create({
   followBtnActive: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.primary },
   followBtnText: { color: '#fff', fontWeight: '700', fontSize: font.sm },
   followBtnTextActive: { color: colors.primary },
-  shippingNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.md, backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, padding: spacing.sm, maxWidth: '100%' },
-  shippingNoteText: { color: colors.textMuted, fontSize: font.sm, flex: 1 },
   section: { padding: spacing.md, gap: spacing.xs },
   sectionTitle: { color: colors.textMuted, fontSize: font.sm, fontWeight: '800', letterSpacing: 1, marginBottom: spacing.xs },
   auctionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border },

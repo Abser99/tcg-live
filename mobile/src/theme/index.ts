@@ -6,6 +6,8 @@ export const colors = {
   primary: '#7C3AED',
   primaryLight: '#A855F7',
   accent: '#06B6D4',
+  gold: '#FFD900',
+  goldDim: '#F5C518',
   success: '#10B981',
   warning: '#F59E0B',
   error: '#EF4444',

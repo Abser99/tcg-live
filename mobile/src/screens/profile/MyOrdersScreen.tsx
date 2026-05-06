@@ -238,10 +238,18 @@ export default function MyOrdersScreen({ navigation }: Props) {
             ) : null}
 
             {order.trackingNumber ? (
-              <View style={styles.trackingRow}>
+              <TouchableOpacity
+                style={styles.trackingRow}
+                onPress={() => {
+                  const url = order.labelUrl
+                    ?? `https://www.enviosperros.com/rastrea?guia=${encodeURIComponent(order.trackingNumber!)}`;
+                  Linking.openURL(url);
+                }}
+              >
                 <Ionicons name="bus-outline" size={14} color={colors.primary} />
                 <Text style={styles.trackingText}>Guía: {order.trackingNumber}</Text>
-              </View>
+                <Ionicons name="open-outline" size={12} color={colors.primary} />
+              </TouchableOpacity>
             ) : null}
 
             {(!order.paymentStatus || order.paymentStatus === 'unpaid') && (

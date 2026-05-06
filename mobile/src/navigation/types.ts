@@ -23,9 +23,17 @@ export type ProfileStackParamList = {
   PaymentMethods: undefined;
   AuctionOrders: { auctionId: string; title: string };
   OrderMessages: { orderId: string; otherUsername: string };
+  SellerDocuments: undefined;
+  Watchlist: undefined;
+  AdminDisputes: undefined;
+};
+
+export type ShopStackParamList = {
+  ShopList: undefined;
 };
 
 export type TabParamList = {
   Auctions: undefined;
+  Shop: undefined;
   Profile: undefined;
 };

@@ -27,8 +27,13 @@ import PaymentMethodsScreen from '../screens/profile/PaymentMethodsScreen';
 import AuctionOrdersScreen from '../screens/seller/AuctionOrdersScreen';
 import ShippingSettingsScreen from '../screens/seller/ShippingSettingsScreen';
 import MessageThreadScreen from '../screens/profile/MessageThreadScreen';
+import SellerDocumentsScreen from '../screens/profile/SellerDocumentsScreen';
+import WatchlistScreen from '../screens/profile/WatchlistScreen';
+import AdminDisputesScreen from '../screens/profile/AdminDisputesScreen';
+import ShopScreen from '../screens/shop/ShopScreen';
+import AnimatedTabBar from '../components/AnimatedTabBar';
 
-import { AuthStackParamList, AppStackParamList, ProfileStackParamList, TabParamList } from './types';
+import { AuthStackParamList, AppStackParamList, ProfileStackParamList, ShopStackParamList, TabParamList } from './types';
 
 const linking = {
   prefixes: ['tcglive://'],
@@ -46,6 +51,7 @@ const linking = {
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const AppStack = createNativeStackNavigator<AppStackParamList>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
+const ShopStack = createNativeStackNavigator<ShopStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
 const stackScreenOptions = {
@@ -58,10 +64,18 @@ const stackScreenOptions = {
 function AuctionsStack() {
   return (
     <AppStack.Navigator screenOptions={stackScreenOptions}>
-      <AppStack.Screen name="AuctionList" component={AuctionListScreen} options={{ title: 'Subastas' }} />
-      <AppStack.Screen name="AuctionDetail" component={AuctionDetailScreen} options={{ title: 'Detalle' }} />
+      <AppStack.Screen name="AuctionList" component={AuctionListScreen} options={{ headerShown: false }} />
+      <AppStack.Screen name="AuctionDetail" component={AuctionDetailScreen} options={{ title: '' }} />
       <AppStack.Screen name="SellerProfile" component={SellerProfileScreen} options={({ route }) => ({ title: 'Vendedor' })} />
     </AppStack.Navigator>
+  );
+}
+
+function ShopNavigator() {
+  return (
+    <ShopStack.Navigator screenOptions={stackScreenOptions}>
+      <ShopStack.Screen name="ShopList" component={ShopScreen} options={{ headerShown: false }} />
+    </ShopStack.Navigator>
   );
 }
 
@@ -81,6 +95,9 @@ function ProfileNavigator() {
       <ProfileStack.Screen name="AddressSettings" component={AddressSettingsScreen} options={{ title: 'Mi Dirección' }} />
       <ProfileStack.Screen name="PaymentMethods" component={PaymentMethodsScreen} options={{ title: 'Formas de Pago' }} />
       <ProfileStack.Screen name="OrderMessages" component={MessageThreadScreen} options={{ title: 'Mensajes' }} />
+      <ProfileStack.Screen name="SellerDocuments" component={SellerDocumentsScreen} options={{ title: 'Mis Documentos' }} />
+      <ProfileStack.Screen name="Watchlist" component={WatchlistScreen} options={{ title: 'Guardados' }} />
+      <ProfileStack.Screen name="AdminDisputes" component={AdminDisputesScreen} options={{ title: 'Disputas' }} />
     </ProfileStack.Navigator>
   );
 }
@@ -88,23 +105,12 @@ function ProfileNavigator() {
 function AppTabs() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
-        tabBarActiveTintColor: colors.primaryLight,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarIcon: ({ focused, color, size }) => {
-          const icons: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
-            Auctions: { active: 'storefront', inactive: 'storefront-outline' },
-            Profile: { active: 'person', inactive: 'person-outline' },
-          };
-          const icon = icons[route.name];
-          return <Ionicons name={focused ? icon.active : icon.inactive} size={size} color={color} />;
-        },
-      })}
+      tabBar={(props) => <AnimatedTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Auctions" component={AuctionsStack} options={{ title: 'Subastas' }} />
-      <Tab.Screen name="Profile" component={ProfileNavigator} options={{ title: 'Perfil', headerShown: false }} />
+      <Tab.Screen name="Shop" component={ShopNavigator} options={{ title: 'Tienda' }} />
+      <Tab.Screen name="Profile" component={ProfileNavigator} options={{ title: 'Perfil' }} />
     </Tab.Navigator>
   );
 }

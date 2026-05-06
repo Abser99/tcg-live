@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, TextInput, Image, Animated, FlatList,
-  KeyboardAvoidingView, Platform, Share,
+  ActivityIndicator, Alert, TextInput, Image, Animated,
+  KeyboardAvoidingView, Platform, Share, Modal, useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { io, Socket } from 'socket.io-client';
@@ -44,6 +45,9 @@ function FloatingEmoji({ item }: { item: FloatingReaction }) {
 export default function AuctionDetailScreen({ route, navigation }: Props) {
   const { auctionId } = route.params;
   const { token, user } = useAuthStore();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isLandscape = screenWidth > screenHeight;
 
   const [auction, setAuction] = useState<Auction | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,29 +60,25 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
   const [settingMaxBid, setSettingMaxBid] = useState(false);
   const [connected, setConnected] = useState(false);
   const [streamCreds, setStreamCreds] = useState<{ token: string; wsUrl: string } | null>(null);
-  const [hasPayment, setHasPayment] = useState(true); // optimistic: assume true until checked
+  const [hasPayment, setHasPayment] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [showStreamChat, setShowStreamChat] = useState(false);
 
-  // Countdown timer
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Chat
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatText, setChatText] = useState('');
-  const [showChat, setShowChat] = useState(false);
-  const chatListRef = useRef<FlatList>(null);
+  const chatListRef = useRef<ScrollView>(null);
 
-  // Reactions
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
-
-  // Viewer count
   const [viewerCount, setViewerCount] = useState(0);
-
-  // Watchlist
   const [watching, setWatching] = useState(false);
   const [watchingBusy, setWatchingBusy] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
+  const urgentPulse = useRef(new Animated.Value(1)).current;
+  const urgentAnim = useRef<Animated.CompositeAnimation | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -88,6 +88,7 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
         watchlistApi.status(auctionId).catch(() => ({ data: { watching: false } })),
       ]);
       setAuction(auctionRes.data);
+      navigation.setOptions({ title: auctionRes.data.title });
       setWatching(watchRes.data.watching);
       if (tokenRes) setStreamCreds(tokenRes.data);
       const active = auctionRes.data.items?.find((i) => i.status === 'active') ?? null;
@@ -96,14 +97,16 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
         const { data: bids } = await auctionsApi.getItemBids(active.id);
         setRecentBids(bids.slice(0, 10));
       }
-      // Check payment method if auction is live and user is a buyer
       if (auctionRes.data.status === 'live' && auctionRes.data.sellerId !== user?.id) {
         const { data } = await paymentMethodsApi.hasAny();
         setHasPayment(data.hasPaymentMethod);
       }
-    } catch {
-      Alert.alert('Error', 'No se pudo cargar la subasta');
-      navigation.goBack();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? err?.message ?? String(err);
+      console.error('[AuctionDetail] load error:', msg, err);
+      Alert.alert('Error', `No se pudo cargar la subasta\n${msg}`);
+      if (navigation.canGoBack()) navigation.goBack();
+      else navigation.navigate('AuctionList');
     } finally {
       setLoading(false);
     }
@@ -120,20 +123,33 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
     timerRef.current = setInterval(tick, 1000);
   }, []);
 
-  // Start/reset countdown when active item changes
   useEffect(() => {
     startCountdown(activeItem?.closesAt ?? null);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [activeItem?.id, activeItem?.closesAt, startCountdown]);
+
+  useEffect(() => {
+    if (secondsLeft !== null && secondsLeft <= 10) {
+      urgentAnim.current?.stop();
+      urgentAnim.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(urgentPulse, { toValue: 1.08, duration: 400, useNativeDriver: true }),
+          Animated.timing(urgentPulse, { toValue: 1, duration: 400, useNativeDriver: true }),
+        ]),
+      );
+      urgentAnim.current.start();
+    } else {
+      urgentAnim.current?.stop();
+      urgentPulse.setValue(1);
+    }
+  }, [secondsLeft]);
 
   const spawnFloatingReaction = useCallback((reaction: Reaction) => {
     const localId = `${Date.now()}-${Math.random()}`;
     const translateY = new Animated.Value(0);
     const opacity = new Animated.Value(1);
     const item: FloatingReaction = { ...reaction, localId, translateY, opacity };
-
     setFloatingReactions((prev) => [...prev.slice(-6), item]);
-
     Animated.parallel([
       Animated.timing(translateY, { toValue: -90, duration: 1800, useNativeDriver: true }),
       Animated.sequence([
@@ -145,19 +161,12 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
     });
   }, []);
 
-  // WebSocket
   useEffect(() => {
     if (!token) return;
-
     const socket = io(`${WS_URL}/auctions`, { auth: { token }, transports: ['websocket'] });
     socketRef.current = socket;
-
-    socket.on('connect', () => {
-      setConnected(true);
-      socket.emit('join-auction', auctionId);
-    });
+    socket.on('connect', () => { setConnected(true); socket.emit('join-auction', auctionId); });
     socket.on('disconnect', () => setConnected(false));
-
     socket.on('bid:placed', (data) => {
       setActiveItem((prev) => prev ? ({
         ...prev,
@@ -166,41 +175,23 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
         closesAt: (data.closesAt as string | null) ?? prev.closesAt,
       }) : null);
       if (data.closesAt) startCountdown(data.closesAt as string);
-      setRecentBids((prev) => [
-        {
-          id: data.bidId, auctionItemId: data.itemId, bidderId: data.bidderId,
-          bidder: { username: data.bidderUsername as string } as Bid['bidder'],
-          amount: data.amount, createdAt: data.timestamp,
-        },
-        ...prev.slice(0, 9),
-      ]);
+      setRecentBids((prev) => [{
+        id: data.bidId, auctionItemId: data.itemId, bidderId: data.bidderId,
+        bidder: { username: data.bidderUsername as string } as Bid['bidder'],
+        amount: data.amount, createdAt: data.timestamp,
+      }, ...prev.slice(0, 9)]);
     });
-
     socket.on('item:closed', (data) => {
       setActiveItem((prev) => prev?.id === data.itemId ? ({ ...prev, status: data.status as AuctionItem['status'] } as AuctionItem) : prev);
-      if (data.nextItemId) {
-        load();
-        if (data.nextClosesAt) startCountdown(data.nextClosesAt as string);
-      } else {
-        startCountdown(null);
-      }
+      if (data.nextItemId) { load(); if (data.nextClosesAt) startCountdown(data.nextClosesAt as string); }
+      else startCountdown(null);
     });
-
     socket.on('auction:started', () => load());
     socket.on('auction:ended', () => setAuction((prev) => prev ? { ...prev, status: 'ended' } : prev));
-
-    socket.on('chat:message', (msg: ChatMessage) => {
-      setChatMessages((prev) => [...prev.slice(-99), msg]);
-      setTimeout(() => chatListRef.current?.scrollToEnd({ animated: true }), 50);
-    });
-
+    socket.on('chat:message', (msg: ChatMessage) => setChatMessages((prev) => [...prev.slice(-99), msg]));
     socket.on('reaction', (r: Reaction) => spawnFloatingReaction(r));
     socket.on('viewer:count', ({ count }: { count: number }) => setViewerCount(count));
-
-    return () => {
-      socket.emit('leave-auction', auctionId);
-      socket.disconnect();
-    };
+    return () => { socket.emit('leave-auction', auctionId); socket.disconnect(); };
   }, [token, auctionId, load, spawnFloatingReaction, startCountdown]);
 
   useEffect(() => { load(); }, [load]);
@@ -213,6 +204,26 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
     try { await auctionsApi.placeBid(activeItem.id, amountCents); setBidAmount(''); }
     catch (err: any) { Alert.alert('Error', err.response?.data?.message ?? 'No se pudo realizar la oferta'); }
     finally { setBidding(false); }
+  };
+
+  const handleBuyNow = async () => {
+    if (!activeItem?.binPrice) return;
+    Alert.alert(
+      'Comprar ahora',
+      `¿Comprar "${activeItem.cardName}" por ${formatMXN(activeItem.binPrice)}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Confirmar',
+          onPress: async () => {
+            setBidding(true);
+            try { await auctionsApi.placeBid(activeItem.id, activeItem.binPrice!); }
+            catch (err: any) { Alert.alert('Error', err.response?.data?.message ?? 'No se pudo completar la compra'); }
+            finally { setBidding(false); }
+          },
+        },
+      ],
+    );
   };
 
   const handleSetMaxBid = async () => {
@@ -235,26 +246,16 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
     setChatText('');
   };
 
-  const sendReaction = (emoji: string) => {
-    socketRef.current?.emit('reaction:send', emoji);
-  };
+  const sendReaction = (emoji: string) => socketRef.current?.emit('reaction:send', emoji);
 
   const toggleWatch = async () => {
     if (watchingBusy) return;
     setWatchingBusy(true);
     try {
-      if (watching) {
-        await watchlistApi.remove(auctionId);
-        setWatching(false);
-      } else {
-        await watchlistApi.add(auctionId);
-        setWatching(true);
-      }
-    } catch {
-      Alert.alert('Error', 'No se pudo actualizar la lista de guardados');
-    } finally {
-      setWatchingBusy(false);
-    }
+      if (watching) { await watchlistApi.remove(auctionId); setWatching(false); }
+      else { await watchlistApi.add(auctionId); setWatching(true); }
+    } catch { Alert.alert('Error', 'No se pudo actualizar la lista de guardados'); }
+    finally { setWatchingBusy(false); }
   };
 
   if (loading || !auction) {
@@ -264,326 +265,464 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
   const isLive = auction.status === 'live';
   const isSeller = auction.sellerId === user?.id;
   const minBid = activeItem ? (activeItem.currentPrice / 100) + 1 : 0;
+  const cardImageWidth = Math.min(screenWidth * 0.33, 140);
+  const cardImageHeight = cardImageWidth * (196 / 140);
+  const isWinning = activeItem?.winnerId === user?.id;
+  const bottomPad = Math.max(insets.bottom, 4);
+
+  // ── Reusable inline JSX blocks (NOT components — avoids remount on every render) ──
+
+  const streamChatOverlayJsx = showStreamChat && (
+    <View style={[styles.streamChatOverlay, { zIndex: 2 }]} pointerEvents="none">
+      {chatMessages.slice(-8).map((msg, i) => (
+        <Text key={i} style={styles.streamChatLine} numberOfLines={1}>
+          <Text style={styles.streamChatUser}>@{msg.username} </Text>
+          {msg.message}
+        </Text>
+      ))}
+    </View>
+  );
+
+  const streamBlock = (fill?: boolean) => isLive && streamCreds ? (
+    <View style={[styles.streamWrap, fill && styles.streamWrapFill]}>
+      <StreamViewer wsUrl={streamCreds.wsUrl} token={streamCreds.token} fill={fill} />
+      <TouchableOpacity
+        style={[StyleSheet.absoluteFillObject, { zIndex: 1 }]}
+        onPress={() => setShowStreamChat(p => !p)}
+        activeOpacity={1}
+      />
+      {streamChatOverlayJsx}
+      <View style={[styles.reactionsOverlay, { zIndex: 3 }]} pointerEvents="none">
+        {floatingReactions.map((r) => <FloatingEmoji key={r.localId} item={r} />)}
+      </View>
+    </View>
+  ) : null;
+
+  const bidSectionJsx = isLive && !isSeller && activeItem ? (
+    <View style={styles.bidSection}>
+      <View style={styles.bidPriceRow}>
+        <Text style={styles.bidCurrentPrice}>{formatMXN(activeItem.currentPrice)}</Text>
+        {secondsLeft !== null && (
+          <Animated.View
+            style={[
+              styles.timerBadge,
+              secondsLeft <= 10 && styles.timerBadgeUrgent,
+              { transform: [{ scale: urgentPulse }] },
+            ]}
+          >
+            <Ionicons name="timer-outline" size={12} color={secondsLeft <= 10 ? colors.white : colors.textMuted} />
+            <Text style={[styles.timerText, secondsLeft <= 10 && styles.timerTextUrgent]}>
+              {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}
+            </Text>
+          </Animated.View>
+        )}
+        <TouchableOpacity
+          style={[styles.maxBidToggle, showMaxBid && styles.maxBidToggleActive]}
+          onPress={() => setShowMaxBid(p => !p)}
+        >
+          <Ionicons name="trending-up-outline" size={15} color={showMaxBid ? colors.white : colors.textMuted} />
+          <Text style={[styles.maxBidToggleText, showMaxBid && { color: colors.white }]}>Máx</Text>
+        </TouchableOpacity>
+      </View>
+      {activeItem.binPrice && activeItem.binPrice > activeItem.currentPrice && (
+        <TouchableOpacity style={styles.binBtn} onPress={handleBuyNow} disabled={bidding}>
+          <Ionicons name="flash" size={15} color="#fff" />
+          <Text style={styles.binBtnText}>Comprar ahora · {formatMXN(activeItem.binPrice)}</Text>
+        </TouchableOpacity>
+      )}
+      <TextInput
+        style={styles.bidInput}
+        placeholder={`Mín. $${minBid.toFixed(2)}`}
+        placeholderTextColor={colors.textMuted}
+        value={bidAmount}
+        onChangeText={setBidAmount}
+        keyboardType="decimal-pad"
+      />
+      <SliderButton label="Desliza para ofertar" onSlide={handleBid} disabled={!bidAmount.trim()} loading={bidding} />
+      {showMaxBid && (
+        <>
+          <TextInput
+            style={[styles.bidInput, { borderColor: colors.accent }]}
+            placeholder="Oferta máxima (MXN)"
+            placeholderTextColor={colors.textMuted}
+            value={maxBidAmount}
+            onChangeText={setMaxBidAmount}
+            keyboardType="decimal-pad"
+          />
+          <SliderButton
+            label="Desliza para activar oferta máxima"
+            onSlide={handleSetMaxBid}
+            disabled={!maxBidAmount.trim()}
+            loading={settingMaxBid}
+            color={colors.accent}
+          />
+        </>
+      )}
+    </View>
+  ) : null;
+
+  const chatMessagesJsx = (
+    <ScrollView
+      ref={chatListRef}
+      style={styles.chatMessages}
+      contentContainerStyle={styles.chatMessagesContent}
+      onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: false })}
+    >
+      {chatMessages.length === 0
+        ? <Text style={styles.chatEmpty}>Sé el primero 👋</Text>
+        : chatMessages.slice(-30).map((msg, i) => (
+            <Text key={i} style={styles.chatLine} numberOfLines={2}>
+              <Text style={[styles.chatUser, msg.userId === user?.id && styles.chatUserMe]}>
+                @{msg.username}{' '}
+              </Text>
+              {msg.message}
+            </Text>
+          ))
+      }
+    </ScrollView>
+  );
+
+  const chatBarJsx = (
+    <View style={[styles.chatBar, { paddingBottom: bottomPad }]}>
+      <View style={styles.emojiRow}>
+        {REACTION_EMOJIS.map((emoji) => (
+          <TouchableOpacity key={emoji} style={styles.emojiBtn} onPress={() => sendReaction(emoji)}>
+            <Text style={styles.emojiBtnText}>{emoji}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.chatInputRow}>
+        <TextInput
+          style={styles.chatInput}
+          placeholder="Mensaje..."
+          placeholderTextColor={colors.textMuted}
+          value={chatText}
+          onChangeText={setChatText}
+          onSubmitEditing={sendChat}
+          returnKeyType="send"
+          maxLength={200}
+          blurOnSubmit={false}
+        />
+        <TouchableOpacity style={[styles.chatSend, { opacity: chatText.trim() ? 1 : 0.4 }]} onPress={sendChat} disabled={!chatText.trim()}>
+          <Ionicons name="send" size={18} color={colors.white} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <View style={[styles.badge, { backgroundColor: isLive ? colors.error : colors.textMuted }]}>
-            {isLive && <View style={styles.liveDot} />}
-            <Text style={styles.badgeText}>{isLive ? 'EN VIVO' : auction.status.toUpperCase()}</Text>
-          </View>
-          {isLive && viewerCount > 0 && (
-            <View style={styles.viewerBadge}>
-              <Ionicons name="eye-outline" size={12} color={colors.textMuted} />
-              <Text style={styles.viewerText}>{viewerCount}</Text>
+    <>
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        {/* ── Scrollable upper content ── */}
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Header */}
+          <View style={styles.headerRow}>
+            <View style={[styles.badge, { backgroundColor: isLive ? colors.error : colors.textMuted }]}>
+              {isLive && <View style={styles.liveDot} />}
+              <Text style={styles.badgeText}>{isLive ? 'EN VIVO' : auction.status.toUpperCase()}</Text>
             </View>
-          )}
-          {!isSeller && auction.status !== 'ended' && auction.status !== 'cancelled' && (
-            <TouchableOpacity onPress={toggleWatch} disabled={watchingBusy} style={styles.bookmarkBtn}>
-              <Ionicons
-                name={watching ? 'bookmark' : 'bookmark-outline'}
-                size={20}
-                color={watching ? colors.primary : colors.textMuted}
-              />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.bookmarkBtn}
-            onPress={() => Share.share({
-              message: `Mira esta subasta en TCG Live: "${auction.title}"\ntcglive://auction/${auctionId}`,
-            })}
-          >
-            <Ionicons name="share-social-outline" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-          <View style={[styles.wsIndicator, { backgroundColor: connected ? colors.success : colors.textMuted }]} />
-        </View>
-
-        {/* No payment method warning */}
-        {isLive && !isSeller && !hasPayment && (
-          <TouchableOpacity
-            style={styles.paymentWarning}
-            onPress={() => navigation.navigate('Profile' as any)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="warning-outline" size={18} color="#92400e" />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.paymentWarningTitle}>Sin forma de pago</Text>
-              <Text style={styles.paymentWarningText}>Agrega una tarjeta u OXXO para poder ofertar · Toca aquí</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {/* Stream + floating reactions */}
-        {isLive && streamCreds && (
-          <View style={styles.streamWrap}>
-            <StreamViewer wsUrl={streamCreds.wsUrl} token={streamCreds.token} />
-            <View style={styles.reactionsOverlay} pointerEvents="none">
-              {floatingReactions.map((r) => <FloatingEmoji key={r.localId} item={r} />)}
-            </View>
-          </View>
-        )}
-
-        {/* Reaction bar */}
-        {isLive && (
-          <View style={styles.reactionBar}>
-            {REACTION_EMOJIS.map((emoji) => (
-              <TouchableOpacity key={emoji} style={styles.reactionBtn} onPress={() => sendReaction(emoji)}>
-                <Text style={styles.reactionEmoji}>{emoji}</Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              style={[styles.chatToggle, showChat && styles.chatToggleActive]}
-              onPress={() => setShowChat(p => !p)}
-            >
-              <Ionicons name="chatbubble-outline" size={16} color={showChat ? colors.white : colors.textMuted} />
-              {chatMessages.length > 0 && <Text style={[styles.chatCount, showChat && { color: colors.white }]}>{chatMessages.length > 99 ? '99+' : chatMessages.length}</Text>}
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Chat panel */}
-        {isLive && showChat && (
-          <View style={styles.chatPanel}>
-            <FlatList
-              ref={chatListRef}
-              data={chatMessages}
-              keyExtractor={(_, i) => String(i)}
-              style={styles.chatList}
-              contentContainerStyle={{ padding: spacing.xs }}
-              renderItem={({ item: msg }) => (
-                <View style={styles.chatMsgRow}>
-                  <Text style={[styles.chatUser, msg.userId === user?.id && styles.chatUserMe]}>@{msg.username}</Text>
-                  <Text style={styles.chatMsgText}>{msg.message}</Text>
-                </View>
-              )}
-              ListEmptyComponent={<Text style={styles.chatEmpty}>Sé el primero en escribir algo 👋</Text>}
-            />
-            <View style={styles.chatInputRow}>
-              <TextInput
-                style={styles.chatInput}
-                placeholder="Escribe un mensaje..."
-                placeholderTextColor={colors.textMuted}
-                value={chatText}
-                onChangeText={setChatText}
-                onSubmitEditing={sendChat}
-                returnKeyType="send"
-                maxLength={200}
-              />
-              <TouchableOpacity style={styles.chatSend} onPress={sendChat} disabled={!chatText.trim()}>
-                <Ionicons name="send" size={18} color={chatText.trim() ? colors.primaryLight : colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        <Text style={styles.title}>{auction.title}</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('SellerProfile', { sellerId: auction.sellerId })}>
-          <Text style={styles.seller}>@{auction.seller?.username} →</Text>
-        </TouchableOpacity>
-        {auction.description ? <Text style={styles.description}>{auction.description}</Text> : null}
-
-        {/* Active item card */}
-        {activeItem && (
-          <View style={styles.activeCard}>
-            {activeItem.imageUrls && activeItem.imageUrls.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll} contentContainerStyle={styles.imageScrollContent}>
-                {activeItem.imageUrls.map((url, i) => (
-                  <Image key={i} source={{ uri: url }} style={styles.cardImage} resizeMode="contain" />
-                ))}
-              </ScrollView>
+            {isLive && viewerCount > 0 && (
+              <View style={styles.viewerBadge}>
+                <Ionicons name="eye-outline" size={12} color={colors.textMuted} />
+                <Text style={styles.viewerText}>{viewerCount}</Text>
+              </View>
             )}
-            <View style={styles.activeCardBody}>
-              <View style={styles.itemLabelRow}>
-                <Text style={styles.sectionLabel}>SUBASTA ACTUAL</Text>
-                {secondsLeft !== null && (
-                  <View style={[styles.timerBadge, secondsLeft <= 10 && styles.timerBadgeUrgent]}>
-                    <Ionicons name="timer-outline" size={12} color={secondsLeft <= 10 ? colors.white : colors.textMuted} />
-                    <Text style={[styles.timerText, secondsLeft <= 10 && styles.timerTextUrgent]}>
-                      {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}
-                    </Text>
-                  </View>
-                )}
+            {!isSeller && auction.status !== 'ended' && auction.status !== 'cancelled' && (
+              <TouchableOpacity onPress={toggleWatch} disabled={watchingBusy} style={styles.bookmarkBtn}>
+                <Ionicons name={watching ? 'bookmark' : 'bookmark-outline'} size={20} color={watching ? colors.primary : colors.textMuted} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.bookmarkBtn}
+              onPress={() => Share.share({ message: `Mira esta subasta en TCG Live: "${auction.title}"\ntcglive://auction/${auctionId}` })}
+            >
+              <Ionicons name="share-social-outline" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+            {isLive && (
+              <TouchableOpacity style={styles.bookmarkBtn} onPress={() => setFullscreen(true)}>
+                <Ionicons name="expand-outline" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+            <View style={[styles.wsIndicator, { backgroundColor: connected ? colors.success : colors.textMuted }]} />
+          </View>
+
+          {/* Payment warning */}
+          {isLive && !isSeller && !hasPayment && (
+            <TouchableOpacity style={styles.paymentWarning} onPress={() => navigation.navigate('Profile' as any)} activeOpacity={0.8}>
+              <Ionicons name="warning-outline" size={18} color="#92400e" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.paymentWarningTitle}>Sin forma de pago</Text>
+                <Text style={styles.paymentWarningText}>Agrega una tarjeta u OXXO para poder ofertar · Toca aquí</Text>
               </View>
-              <Text style={styles.cardName}>{activeItem.cardName}</Text>
-              {activeItem.cardSet && (
-                <Text style={styles.cardMeta}>{activeItem.cardSet}{activeItem.cardNumber ? ` · #${activeItem.cardNumber}` : ''}</Text>
-              )}
-              <Text style={styles.cardMeta}>{CONDITIONS[activeItem.condition]}</Text>
+            </TouchableOpacity>
+          )}
 
-              <View style={styles.priceRow}>
-                <View>
-                  <Text style={styles.priceLabel}>Precio actual</Text>
-                  <Text style={styles.price}>{formatMXN(activeItem.currentPrice)}</Text>
-                </View>
-                {activeItem.winnerId && (
-                  <View style={styles.winnerBadge}>
-                    <Ionicons name="trophy-outline" size={14} color={colors.warning} />
-                    <Text style={styles.winnerText}>{activeItem.winnerId === user?.id ? 'Tu oferta' : 'Alguien ofertó'}</Text>
-                  </View>
-                )}
-              </View>
+          {/* Stream */}
+          {streamBlock()}
 
-              {isLive && !isSeller && (
-                <View style={styles.bidArea}>
-                  <View style={styles.bidRow}>
-                    <TextInput
-                      style={styles.bidInput}
-                      placeholder={`Mín. $${minBid.toFixed(2)}`}
-                      placeholderTextColor={colors.textMuted}
-                      value={bidAmount}
-                      onChangeText={setBidAmount}
-                      keyboardType="decimal-pad"
-                    />
-                    <TouchableOpacity
-                      style={[styles.maxBidToggle, showMaxBid && styles.maxBidToggleActive]}
-                      onPress={() => setShowMaxBid(p => !p)}
-                    >
-                      <Ionicons name="trending-up-outline" size={15} color={showMaxBid ? colors.white : colors.textMuted} />
-                      <Text style={[styles.maxBidToggleText, showMaxBid && { color: colors.white }]}>Máx</Text>
-                    </TouchableOpacity>
-                  </View>
+          {/* Buyer live view: just winning status */}
+          {isLive && !isSeller && activeItem && (
+            <View style={[styles.winningBanner, isWinning ? styles.winningBannerGreen : activeItem.winnerId ? styles.winningBannerOrange : styles.winningBannerNeutral]}>
+              <Ionicons
+                name={isWinning ? 'trophy' : activeItem.winnerId ? 'arrow-up-circle-outline' : 'time-outline'}
+                size={18}
+                color={isWinning ? colors.gold : activeItem.winnerId ? colors.error : colors.textMuted}
+              />
+              <Text style={[styles.winningText, { color: isWinning ? colors.gold : activeItem.winnerId ? colors.error : colors.textMuted }]}>
+                {isWinning ? '¡Vas ganando!' : activeItem.winnerId ? 'Alguien más va adelante' : `Precio inicial · ${activeItem.cardName}`}
+              </Text>
+            </View>
+          )}
 
-                  {showMaxBid && (
-                    <View style={styles.bidRow}>
-                      <TextInput
-                        style={[styles.bidInput, { borderColor: colors.accent }]}
-                        placeholder="Oferta máxima (MXN)"
-                        placeholderTextColor={colors.textMuted}
-                        value={maxBidAmount}
-                        onChangeText={setMaxBidAmount}
-                        keyboardType="decimal-pad"
-                      />
-                      <TouchableOpacity
-                        style={[styles.bidButton, { backgroundColor: colors.accent }, settingMaxBid && styles.buttonDisabled]}
-                        onPress={handleSetMaxBid}
-                        disabled={settingMaxBid}
-                      >
-                        {settingMaxBid ? <ActivityIndicator color={colors.white} size="small" /> : <Text style={styles.bidButtonText}>Activar</Text>}
-                      </TouchableOpacity>
-                    </View>
+          {/* Seller/non-live: show full details */}
+          {(!isLive || isSeller) && (
+            <>
+              <Text style={styles.title}>{auction.title}</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('SellerProfile', { sellerId: auction.sellerId })}>
+                <Text style={styles.seller}>@{auction.seller?.username} →</Text>
+              </TouchableOpacity>
+              {auction.description ? <Text style={styles.description}>{auction.description}</Text> : null}
+
+              {activeItem && (
+                <View style={styles.activeCard}>
+                  {activeItem.imageUrls && activeItem.imageUrls.length > 0 && (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll} contentContainerStyle={styles.imageScrollContent}>
+                      {activeItem.imageUrls.map((url, i) => (
+                        <Image key={i} source={{ uri: url }} style={[styles.cardImage, { width: cardImageWidth, height: cardImageHeight }]} resizeMode="contain" />
+                      ))}
+                    </ScrollView>
                   )}
+                  <View style={styles.activeCardBody}>
+                    <Text style={styles.sectionLabel}>SUBASTA ACTUAL</Text>
+                    <Text style={styles.cardName}>{activeItem.cardName}</Text>
+                    {activeItem.cardSet && <Text style={styles.cardMeta}>{activeItem.cardSet}{activeItem.cardNumber ? ` · #${activeItem.cardNumber}` : ''}</Text>}
+                    <View style={styles.conditionRow}>
+                      <Text style={styles.cardMeta}>{CONDITIONS[activeItem.condition]}</Text>
+                      {activeItem.gradingCompany && activeItem.grade && (
+                        <View style={styles.gradeBadge}>
+                          <Text style={styles.gradeBadgeText}>{activeItem.gradingCompany} {activeItem.grade}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.priceRow}>
+                      <View>
+                        <Text style={styles.priceLabel}>Precio actual</Text>
+                        <Text style={styles.price}>{formatMXN(activeItem.currentPrice)}</Text>
+                      </View>
+                      {activeItem.binPrice && (
+                        <View style={styles.binPriceBadge}>
+                          <Ionicons name="flash-outline" size={12} color={colors.success} />
+                          <Text style={styles.binPriceText}>BIN {formatMXN(activeItem.binPrice)}</Text>
+                        </View>
+                      )}
+                      {activeItem.winnerId && (
+                        <View style={styles.winnerBadge}>
+                          <Ionicons name="trophy-outline" size={14} color={colors.warning} />
+                          <Text style={styles.winnerText}>{activeItem.winnerId === user?.id ? 'Tu oferta' : 'Alguien ofertó'}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              )}
 
-                  <SliderButton label="Desliza para ofertar" onSlide={handleBid} disabled={!bidAmount.trim()} loading={bidding} />
+              {recentBids.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionLabel}>OFERTAS RECIENTES</Text>
+                  {recentBids.map((bid, index) => (
+                    <View
+                      key={bid.id}
+                      style={[
+                        styles.bidRow2,
+                        index === 0 && { backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, marginHorizontal: -spacing.sm, paddingHorizontal: spacing.sm },
+                      ]}
+                    >
+                      <Text style={styles.bidUser}>@{bid.bidder?.username}</Text>
+                      <Text style={[styles.bidAmt, bid.bidderId === user?.id && styles.myBid]}>{formatMXN(bid.amount)}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {auction.items && auction.items.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionLabel}>COLA DE CARTAS</Text>
+                  {auction.items.sort((a, b) => a.position - b.position).map((item) => (
+                    <View key={item.id} style={[styles.itemRow, item.status === 'active' && styles.itemActive]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.itemName}>{item.cardName}</Text>
+                        {item.cardSet && <Text style={styles.itemMeta}>{item.cardSet}</Text>}
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={[styles.itemPrice, item.status === 'active' && { color: colors.gold, fontWeight: '900' }]}>{formatMXN(item.currentPrice)}</Text>
+                        <Text style={[styles.itemStatus, { color: item.status === 'sold' ? colors.success : colors.textMuted }]}>
+                          {item.status === 'active' ? '▶ activa' : item.status === 'sold' ? '✓ vendida' : item.status === 'pending' ? 'pendiente' : 'no vendida'}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
+        </ScrollView>
+
+        {/* ── Fixed live bottom panel ── */}
+        {isLive && (
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <View style={styles.livePanel}>
+              {bidSectionJsx}
+              {chatMessagesJsx}
+              {chatBarJsx}
+            </View>
+          </KeyboardAvoidingView>
+        )}
+      </View>
+
+      {/* ── Fullscreen Modal ── */}
+      {isLive && streamCreds && (
+        <Modal visible={fullscreen} onRequestClose={() => setFullscreen(false)} animationType="slide" statusBarTranslucent>
+          <View style={[styles.fsContainer, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}>
+            <View style={[styles.fsStreamWrap, isLandscape && styles.fsStreamWrapFill]}>
+              <StreamViewer wsUrl={streamCreds.wsUrl} token={streamCreds.token} fill={isLandscape} />
+              <TouchableOpacity
+                style={[StyleSheet.absoluteFillObject, { zIndex: 1 }]}
+                onPress={() => setShowStreamChat(p => !p)}
+                activeOpacity={1}
+              />
+              {streamChatOverlayJsx}
+              <View style={[styles.reactionsOverlay, { zIndex: 3 }]} pointerEvents="none">
+                {floatingReactions.map((r) => <FloatingEmoji key={r.localId} item={r} />)}
+              </View>
+              <TouchableOpacity style={[styles.fsCloseBtn, { zIndex: 4 }]} onPress={() => setFullscreen(false)}>
+                <Ionicons name="close" size={24} color={colors.white} />
+              </TouchableOpacity>
+              {viewerCount > 0 && (
+                <View style={[styles.fsViewerBadge, { zIndex: 4 }]}>
+                  <Ionicons name="eye-outline" size={12} color={colors.white} />
+                  <Text style={styles.fsViewerText}>{viewerCount}</Text>
                 </View>
               )}
             </View>
-          </View>
-        )}
-
-        {/* Recent bids */}
-        {recentBids.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>OFERTAS RECIENTES</Text>
-            {recentBids.map((bid) => (
-              <View key={bid.id} style={styles.bidRow2}>
-                <Text style={styles.bidUser}>@{bid.bidder?.username}</Text>
-                <Text style={[styles.bidAmt, bid.bidderId === user?.id && styles.myBid]}>{formatMXN(bid.amount)}</Text>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: isLandscape ? 1 : undefined }}>
+              <View style={styles.livePanel}>
+                {bidSectionJsx}
+                {chatMessagesJsx}
+                {chatBarJsx}
               </View>
-            ))}
+            </KeyboardAvoidingView>
           </View>
-        )}
-
-        {/* All items queue */}
-        {auction.items && auction.items.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>COLA DE CARTAS</Text>
-            {auction.items.sort((a, b) => a.position - b.position).map((item) => (
-              <View key={item.id} style={[styles.itemRow, item.status === 'active' && styles.itemActive]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.itemName}>{item.cardName}</Text>
-                  {item.cardSet && <Text style={styles.itemMeta}>{item.cardSet}</Text>}
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.itemPrice}>{formatMXN(item.currentPrice)}</Text>
-                  <Text style={[styles.itemStatus, { color: item.status === 'sold' ? colors.success : colors.textMuted }]}>
-                    {item.status === 'active' ? '▶ activa' : item.status === 'sold' ? 'vendida' : item.status === 'pending' ? 'pendiente' : 'no vendida'}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </Modal>
+      )}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md, paddingBottom: spacing.xxl },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
-  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.full, gap: 4 },
+  content: { padding: spacing.md, paddingBottom: spacing.lg },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
+
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.sm, flexWrap: 'wrap' },
+  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.full, gap: 4, shadowColor: colors.error, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 6, elevation: 4 },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.white },
   badgeText: { color: colors.white, fontSize: font.sm, fontWeight: '700' },
-  wsIndicator: { width: 8, height: 8, borderRadius: 4 },
+  wsIndicator: { width: 8, height: 8, borderRadius: 4, marginLeft: 'auto' },
   bookmarkBtn: { padding: 4 },
-  viewerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceAlt, borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 3, borderWidth: 1, borderColor: colors.border },
+  viewerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceAlt, borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 4, borderWidth: 1, borderColor: colors.border },
   viewerText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
-  streamWrap: { position: 'relative', marginBottom: spacing.xs },
-  reactionsOverlay: { position: 'absolute', bottom: 8, right: 12, width: 50, height: 120, justifyContent: 'flex-end', alignItems: 'center' },
-  floatingEmoji: { position: 'absolute', fontSize: 28 },
-  reactionBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border, gap: 2 },
-  reactionBtn: { padding: 6 },
-  reactionEmoji: { fontSize: 22 },
-  chatToggle: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.full, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
-  chatToggleActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chatCount: { color: colors.textMuted, fontSize: 11, fontWeight: '700' },
-  chatPanel: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md, overflow: 'hidden' },
-  chatList: { height: 180 },
-  chatMsgRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, paddingVertical: 2 },
-  chatUser: { color: colors.textMuted, fontSize: font.sm, fontWeight: '700' },
-  chatUserMe: { color: colors.primaryLight },
-  chatMsgText: { color: colors.text, fontSize: font.sm, flexShrink: 1 },
-  chatEmpty: { color: colors.textMuted, fontSize: font.sm, textAlign: 'center', padding: spacing.md },
-  chatInputRow: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: spacing.sm, paddingVertical: 6 },
-  chatInput: { flex: 1, color: colors.text, fontSize: font.base, paddingVertical: 6 },
-  chatSend: { paddingHorizontal: spacing.sm, paddingVertical: 6 },
-  title: { color: colors.text, fontSize: font.xl, fontWeight: '800', marginBottom: spacing.xs, marginTop: spacing.sm },
+
+  streamWrap: { position: 'relative', marginBottom: spacing.sm, overflow: 'hidden', borderRadius: radius.lg, aspectRatio: 16 / 9, backgroundColor: colors.surface },
+  streamWrapFill: { aspectRatio: undefined, flex: 1, borderRadius: 0 },
+  reactionsOverlay: { position: 'absolute', bottom: 8, right: 8, width: 44, height: 100, justifyContent: 'flex-end', alignItems: 'center' },
+  floatingEmoji: { position: 'absolute', fontSize: 26 },
+  streamChatOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: spacing.sm, gap: 2, backgroundColor: 'rgba(0,0,0,0.55)' },
+  streamChatLine: { color: colors.white, fontSize: font.sm, lineHeight: 17 },
+  streamChatUser: { color: colors.gold, fontWeight: '700', fontSize: font.sm },
+
+  winningBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, padding: spacing.sm, marginBottom: spacing.sm, borderWidth: 1, borderLeftWidth: 3 },
+  winningBannerGreen: { backgroundColor: colors.gold + '18', borderColor: colors.gold + '55', borderLeftColor: colors.gold, shadowColor: colors.gold, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 5 },
+  winningBannerOrange: { backgroundColor: colors.error + '15', borderColor: colors.error + '44', borderLeftColor: colors.error, shadowColor: colors.error, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
+  winningBannerNeutral: { backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderLeftColor: colors.border },
+  winningText: { fontSize: font.lg, fontWeight: '700', flex: 1 },
+
+  paymentWarning: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: '#fef3c7', borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: '#fcd34d' },
+  paymentWarningTitle: { color: '#92400e', fontSize: font.sm, fontWeight: '700' },
+  paymentWarningText: { color: '#92400e', fontSize: font.sm },
+
+  title: { color: colors.text, fontSize: font.xl, fontWeight: '800', marginBottom: spacing.xs },
   seller: { color: colors.textMuted, fontSize: font.md, marginBottom: spacing.md },
   description: { color: colors.textMuted, fontSize: font.md, marginBottom: spacing.md },
   activeCard: { backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden', borderWidth: 1, borderColor: colors.primary, marginBottom: spacing.md },
   imageScroll: { marginBottom: spacing.sm },
   imageScrollContent: { padding: spacing.sm, gap: spacing.sm },
-  cardImage: { width: 140, height: 196, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt },
-  activeCardBody: { padding: spacing.md },
-  itemLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
-  sectionLabel: { color: colors.textMuted, fontSize: font.sm, fontWeight: '700', letterSpacing: 1 },
-  timerBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.surfaceAlt, paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border },
-  timerBadgeUrgent: { backgroundColor: colors.error, borderColor: colors.error },
-  timerText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '700', fontVariant: ['tabular-nums'] as any },
-  timerTextUrgent: { color: colors.white },
-  cardName: { color: colors.text, fontSize: font.xl, fontWeight: '800', marginBottom: spacing.xs },
-  cardMeta: { color: colors.textMuted, fontSize: font.md, marginBottom: 2 },
-  priceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.md, marginBottom: spacing.md },
+  cardImage: { borderRadius: radius.sm, backgroundColor: colors.surfaceAlt },
+  activeCardBody: { padding: spacing.md, gap: spacing.xs },
+  sectionLabel: { color: colors.textMuted, fontSize: font.sm, fontWeight: '700', letterSpacing: 1, marginBottom: spacing.xs },
+  cardName: { color: colors.text, fontSize: font.xl, fontWeight: '800' },
+  cardMeta: { color: colors.textMuted, fontSize: font.md },
+  priceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
   priceLabel: { color: colors.textMuted, fontSize: font.sm },
-  price: { color: colors.primaryLight, fontSize: font.xxl, fontWeight: '800' },
+  price: { color: colors.gold, fontSize: font.xxl, fontWeight: '800' },
   winnerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceAlt, paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.sm },
   winnerText: { color: colors.warning, fontSize: font.sm },
-  bidArea: { gap: spacing.sm },
-  bidRow: { flexDirection: 'row', gap: spacing.sm },
-  bidInput: { flex: 1, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, color: colors.text, fontSize: font.base },
-  bidButton: { backgroundColor: colors.primary, borderRadius: radius.md, paddingHorizontal: spacing.lg, justifyContent: 'center' },
-  buttonDisabled: { opacity: 0.6 },
-  bidButtonText: { color: colors.white, fontWeight: '700', fontSize: font.md },
-  maxBidToggle: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt },
-  maxBidToggleActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  maxBidToggleText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '700' },
   section: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md },
-  bidRow2: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },
+  bidRow2: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border + '44', paddingHorizontal: spacing.sm },
   bidUser: { color: colors.textMuted, fontSize: font.md },
   bidAmt: { color: colors.text, fontSize: font.md, fontWeight: '600' },
-  myBid: { color: colors.primaryLight },
+  myBid: { color: colors.gold },
   itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
-  itemActive: { backgroundColor: colors.surfaceAlt, marginHorizontal: -spacing.sm, paddingHorizontal: spacing.sm, borderRadius: radius.sm },
+  itemActive: { backgroundColor: colors.primary + '18', marginHorizontal: -spacing.sm, paddingHorizontal: spacing.sm, borderRadius: radius.sm, borderLeftWidth: 3, borderLeftColor: colors.primary },
   itemName: { color: colors.text, fontSize: font.md, fontWeight: '600' },
   itemMeta: { color: colors.textMuted, fontSize: font.sm },
   itemPrice: { color: colors.text, fontSize: font.md, fontWeight: '700' },
   itemStatus: { fontSize: font.sm },
-  paymentWarning: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: '#fef3c7', borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: '#fcd34d' },
-  paymentWarningTitle: { color: '#92400e', fontSize: font.sm, fontWeight: '700' },
-  paymentWarningText: { color: '#92400e', fontSize: font.sm },
+
+  // ── Live panel ──
+  livePanel: { backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, shadowColor: '#000', shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 12 },
+  bidSection: { padding: spacing.md, gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
+  bidPriceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  bidCurrentPrice: { color: colors.gold, fontSize: font.xl, fontWeight: '800', flex: 1 },
+  timerBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.surfaceAlt, paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border },
+  timerBadgeUrgent: { backgroundColor: colors.error, borderColor: colors.error },
+  timerText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '700', fontVariant: ['tabular-nums'] as any },
+  timerTextUrgent: { color: colors.white },
+  maxBidToggle: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt },
+  maxBidToggleActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  maxBidToggleText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '700' },
+  bidInput: { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, color: colors.text, fontSize: font.base },
+  binBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#059669', borderRadius: radius.md, paddingVertical: spacing.md, shadowColor: colors.success, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.4, shadowRadius: 6, elevation: 5 },
+  binBtnText: { color: '#fff', fontSize: font.base, fontWeight: '800', letterSpacing: 0.5 },
+  conditionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
+  gradeBadge: { backgroundColor: '#7c3aed', borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 3 },
+  gradeBadgeText: { color: '#fff', fontSize: font.sm, fontWeight: '800', letterSpacing: 0.5 },
+  binPriceBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.success + '22', borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: colors.success + '55' },
+  binPriceText: { color: colors.success, fontSize: font.sm, fontWeight: '700' },
+
+  chatMessages: { maxHeight: 110, backgroundColor: colors.bg },
+  chatMessagesContent: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+  chatLine: { color: colors.text, fontSize: font.sm, lineHeight: 18, paddingVertical: 1, paddingHorizontal: spacing.xs },
+  chatUser: { color: colors.accent, fontSize: font.sm, fontWeight: '700' },
+  chatUserMe: { color: colors.primaryLight },
+  chatEmpty: { color: colors.textMuted, fontSize: font.sm, textAlign: 'center', paddingVertical: spacing.xs, fontStyle: 'italic' },
+
+  chatBar: { borderTopWidth: 1, borderTopColor: colors.border },
+  emojiRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border },
+  emojiBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.full, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+  emojiBtnText: { fontSize: 22 },
+  chatInputRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 6, gap: spacing.xs },
+  chatInput: { flex: 1, backgroundColor: colors.surfaceAlt, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, color: colors.text, fontSize: font.base, paddingHorizontal: spacing.md, paddingVertical: 7 },
+  chatSend: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: colors.primary },
+
+  // ── Fullscreen ──
+  fsContainer: { flex: 1, backgroundColor: '#000' },
+  fsStreamWrap: { width: '100%', position: 'relative', backgroundColor: '#000', aspectRatio: 16 / 9 },
+  fsStreamWrapFill: { aspectRatio: undefined, flex: 1 },
+  fsCloseBtn: { position: 'absolute', top: 12, left: 12, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, padding: 7 },
+  fsViewerBadge: { position: 'absolute', top: 14, right: 12, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: radius.full, paddingHorizontal: spacing.sm, paddingVertical: 3 },
+  fsViewerText: { color: colors.white, fontSize: font.sm, fontWeight: '600' },
 });

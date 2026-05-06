@@ -57,15 +57,21 @@ interface ItemForm {
   condition: Condition;
   startingPrice: string;
   reservePrice: string;
+  binPrice: string;
+  gradingCompany: string;
+  grade: string;
   marketPriceUSD?: number;
   imageUris: string[];
   autoRelist: boolean;
 }
 
+const GRADING_COMPANIES = ['PSA', 'BGS', 'CGC', 'SGC'];
+
 const EMPTY_ITEM: ItemForm = {
   game: 'pokemon',
   cardName: '', cardSet: '', cardNumber: '',
   condition: 'near_mint', startingPrice: '', reservePrice: '',
+  binPrice: '', gradingCompany: '', grade: '',
   imageUris: [], autoRelist: false,
 };
 
@@ -257,6 +263,9 @@ export default function CreateAuctionScreen({ navigation }: Props) {
     const reserveCents = itemForm.reservePrice
       ? Math.round(parseFloat(itemForm.reservePrice) * 100)
       : undefined;
+    const binCents = itemForm.binPrice
+      ? Math.round(parseFloat(itemForm.binPrice) * 100)
+      : undefined;
 
     let imageUrls: string[] | undefined;
     if (itemForm.imageUris.length > 0) {
@@ -272,12 +281,15 @@ export default function CreateAuctionScreen({ navigation }: Props) {
     }
 
     setItems(prev => [...prev, {
-      cardName:      itemForm.cardName.trim(),
-      cardSet:       itemForm.cardSet.trim() || undefined,
-      cardNumber:    itemForm.cardNumber.trim() || undefined,
-      condition:     itemForm.condition,
-      startingPrice: price,
-      reservePrice:  reserveCents && !isNaN(reserveCents) ? reserveCents : undefined,
+      cardName:       itemForm.cardName.trim(),
+      cardSet:        itemForm.cardSet.trim() || undefined,
+      cardNumber:     itemForm.cardNumber.trim() || undefined,
+      condition:      itemForm.condition,
+      startingPrice:  price,
+      reservePrice:   reserveCents && !isNaN(reserveCents) ? reserveCents : undefined,
+      binPrice:       binCents && !isNaN(binCents) && binCents > price ? binCents : undefined,
+      gradingCompany: itemForm.gradingCompany.trim() || undefined,
+      grade:          itemForm.grade.trim() || undefined,
       imageUrls,
       autoRelist: itemForm.autoRelist,
     }]);
@@ -393,10 +405,17 @@ export default function CreateAuctionScreen({ navigation }: Props) {
         {items.map((item, i) => (
           <View key={i} style={styles.itemChip}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.itemChipName}>{item.cardName}</Text>
+              <Text style={styles.itemChipName}>
+                {item.cardName}
+                {item.gradingCompany && item.grade ? ` · ${item.gradingCompany} ${item.grade}` : ''}
+              </Text>
               <Text style={styles.itemChipMeta}>
                 {item.condition?.toUpperCase()} · {formatMXN(item.startingPrice)}
+                {item.binPrice ? ` · BIN ${formatMXN(item.binPrice)}` : ''}
                 {item.cardSet ? ` · ${item.cardSet}` : ''}
+              </Text>
+              <Text style={styles.itemChipFee}>
+                Recibirás aprox. {formatMXN(Math.round(item.startingPrice * 0.92))} (8% comisión)
               </Text>
             </View>
             <TouchableOpacity onPress={() => setItems(p => p.filter((_, j) => j !== i))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -567,6 +586,47 @@ export default function CreateAuctionScreen({ navigation }: Props) {
               </View>
             </View>
 
+            {/* Buy It Now price */}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Precio "Comprar ahora" (BIN) — opcional</Text>
+              <TextInput
+                style={authStyles.input}
+                placeholder="0.00 — compra inmediata a este precio"
+                placeholderTextColor={colors.textMuted}
+                value={itemForm.binPrice}
+                onChangeText={v => updateItemField('binPrice', v)}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            {/* Graded card */}
+            <Text style={styles.label}>Carta clasificada (PSA / BGS / CGC) — opcional</Text>
+            <View style={styles.row}>
+              <View style={{ flex: 2 }}>
+                <View style={styles.row}>
+                  {GRADING_COMPANIES.map(gc => (
+                    <TouchableOpacity
+                      key={gc}
+                      style={[styles.conditionBtn, itemForm.gradingCompany === gc && styles.conditionBtnActive]}
+                      onPress={() => updateItemField('gradingCompany', itemForm.gradingCompany === gc ? '' : gc)}
+                    >
+                      <Text style={[styles.conditionText, itemForm.gradingCompany === gc && styles.conditionTextActive]}>{gc}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              <View style={{ flex: 1 }}>
+                <TextInput
+                  style={[authStyles.input, { marginBottom: 0 }]}
+                  placeholder="Grado"
+                  placeholderTextColor={colors.textMuted}
+                  value={itemForm.grade}
+                  onChangeText={v => updateItemField('grade', v)}
+                  editable={!!itemForm.gradingCompany}
+                />
+              </View>
+            </View>
+
             <TouchableOpacity
               style={styles.autoRelistRow}
               onPress={() => updateItemField('autoRelist', !itemForm.autoRelist)}
@@ -676,6 +736,7 @@ const styles = StyleSheet.create({
   },
   itemChipName: { color: colors.text, fontSize: font.md, fontWeight: '600' },
   itemChipMeta: { color: colors.textMuted, fontSize: font.sm, marginTop: 2 },
+  itemChipFee: { color: colors.success, fontSize: font.xs, marginTop: 2 },
   itemForm: {
     backgroundColor: colors.surface, borderRadius: radius.lg,
     padding: spacing.md, borderWidth: 1, borderColor: colors.border,

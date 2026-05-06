@@ -11,6 +11,7 @@ export interface User {
   totalRatings: number;
   totalRatingPoints: number;
   averageRating: number | null; // computed by backend on public profile
+  isVerified: boolean;
   role: UserRole;
   zipCode: string | null;
   street: string | null;
@@ -42,6 +43,9 @@ export interface AuctionItem {
   startingPrice: number;
   currentPrice: number;
   reservePrice: number | null;
+  binPrice: number | null;
+  gradingCompany: string | null;
+  grade: string | null;
   imageUrls: string[] | null;
   position: number;
   status: 'pending' | 'active' | 'sold' | 'unsold';
@@ -72,8 +76,24 @@ export interface CreateAuctionItemPayload {
   condition?: AuctionItem['condition'];
   startingPrice: number;
   reservePrice?: number;
+  binPrice?: number;
+  gradingCompany?: string;
+  grade?: string;
   imageUrls?: string[];
   autoRelist?: boolean;
+}
+
+export type OfferStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn';
+
+export interface ListingOffer {
+  id: string;
+  listingId: string;
+  buyerId: string;
+  buyer: { id: string; username: string };
+  amount: number;
+  message: string | null;
+  status: OfferStatus;
+  createdAt: string;
 }
 
 export interface CreateAuctionPayload {
