@@ -21,10 +21,11 @@ export class PaymentsController {
   async checkout(
     @CurrentUser() user: User,
     @Body('orderId') orderId: string,
+    @Body('backUrls') backUrls?: { success: string; failure: string; pending: string },
   ): Promise<{ order: Order; initPoint: string; sandboxInitPoint: string }> {
     const order = await this.ordersService.getOrderForCheckout(orderId, user.id);
     const items = order.items.map(i => ({ title: i.cardName, quantity: 1, unitPrice: i.finalPrice }));
-    const pref = await this.paymentsService.createPreference({ orderId, items, buyerEmail: user.email });
+    const pref = await this.paymentsService.createPreference({ orderId, items, buyerEmail: user.email, backUrls });
     const isMock = pref.preferenceId.startsWith('MOCK-');
     const updatedOrder = await this.ordersService.storePreference(orderId, pref.preferenceId, isMock);
     return { order: updatedOrder, initPoint: pref.initPoint, sandboxInitPoint: pref.sandboxInitPoint };
