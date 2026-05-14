@@ -3,7 +3,6 @@ import { NavigationContainer, useNavigationContainerRef } from '@react-navigatio
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ActivityIndicator, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { setupNotificationListeners } from '../services/pushNotifications';
 
 import { useAuthStore } from '../store/auth.store';

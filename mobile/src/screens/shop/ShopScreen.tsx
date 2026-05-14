@@ -115,13 +115,13 @@ function GameChips({ selected, onSelect }: { selected: string | null; onSelect: 
   );
 }
 
-function ListingCard({ listing, onPress }: { listing: Listing; onPress: () => void }) {
+const ListingCard = React.memo(function ListingCard({ listing, onPress }: { listing: Listing; onPress: () => void }) {
   const gameMeta = GAMES.find(g => g.value === listing.game);
   const gc = listing.game ? (GAME_COLORS[listing.game as GameKey] ?? { bg: colors.border, text: '#fff' }) : { bg: colors.border, text: '#fff' };
   const condColor = listing.condition ? (CONDITION_COLORS[listing.condition] ?? colors.textMuted) : null;
   const scale = useRef(new Animated.Value(1)).current;
-  const pressIn  = () => Animated.spring(scale, { toValue: 0.94, useNativeDriver: true, friction: 8, tension: 160 }).start();
-  const pressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 140 }).start();
+  const pressIn  = useCallback(() => Animated.spring(scale, { toValue: 0.94, useNativeDriver: true, friction: 8, tension: 160 }).start(), [scale]);
+  const pressOut = useCallback(() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 140 }).start(), [scale]);
 
   return (
     <Animated.View style={[{ transform: [{ scale }] }, { flex: 1 }]}>
@@ -175,7 +175,7 @@ function ListingCard({ listing, onPress }: { listing: Listing; onPress: () => vo
       </TouchableOpacity>
     </Animated.View>
   );
-}
+});
 
 export default function ShopScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -201,24 +201,24 @@ export default function ShopScreen({ navigation }: Props) {
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async (currentGame = game, currentQ = q) => {
+  const load = useCallback(async (currentGame: string | null = null, currentQ = '') => {
     try {
       const { data } = await listingsApi.list(currentGame ?? undefined, currentQ || undefined);
       setListings(data);
     } catch {
-      // silent
+      // silent — don't crash on network error, show stale data
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [game, q]);
+  }, []);
 
-  useEffect(() => { load(); }, [game]);
+  useEffect(() => { load(game, q); }, [game]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSearch = (text: string) => {
     setQ(text);
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => load(game, text), 400);
+    searchTimer.current = setTimeout(() => load(game, text), 350);
   };
 
   const handleCreate = async () => {
@@ -270,7 +270,7 @@ export default function ShopScreen({ navigation }: Props) {
   const isSeller = user?.role === 'seller' || user?.role === 'admin';
   const takeHome = form.price > 0 ? Math.round(form.price * (1 - PLATFORM_FEE)) : 0;
 
-  if (loading) {
+  if (loading && listings.length === 0) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <ShopHeader searchValue={q} onSearch={handleSearch} />
@@ -295,7 +295,7 @@ export default function ShopScreen({ navigation }: Props) {
         windowSize={7}
         initialNumToRender={8}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(game, q); }} tintColor={colors.primary} />
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>

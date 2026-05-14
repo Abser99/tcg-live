@@ -28,7 +28,7 @@ export default function MessageThreadScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     navigation.setOptions({ title: `@${otherUsername}` });
-  }, [otherUsername]);
+  }, [navigation, otherUsername]);
 
   const loadHistory = useCallback(async () => {
     try {

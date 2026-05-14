@@ -44,7 +44,7 @@ export default function SellerProfileScreen({ route, navigation }: Props) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [sellerId]);
+  }, [sellerId, navigation]);
 
   const toggleFollow = async () => {
     if (followBusy) return;
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
   stat: { alignItems: 'center' },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   statValue: { color: colors.text, fontSize: font.xl, fontWeight: '800' },
-  statLabel: { color: colors.textMuted, fontSize: font.xs ?? 11, marginTop: 2, textAlign: 'center' },
+  statLabel: { color: colors.textMuted, fontSize: font.xs, marginTop: 2, textAlign: 'center' },
   statDivider: { width: 1, height: 32, backgroundColor: colors.border },
   followBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.md, backgroundColor: colors.primary, borderRadius: radius.full, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   followBtnActive: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.primary },
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: colors.textMuted, fontSize: font.sm, fontWeight: '800', letterSpacing: 1, marginBottom: spacing.xs },
   auctionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   rowBadge: { paddingHorizontal: spacing.xs, paddingVertical: 2, borderRadius: radius.sm },
-  rowBadgeText: { color: '#fff', fontSize: font.xs ?? 11, fontWeight: '700' },
+  rowBadgeText: { color: '#fff', fontSize: font.xs, fontWeight: '700' },
   auctionTitle: { color: colors.text, fontSize: font.md, fontWeight: '600' },
   auctionMeta: { color: colors.textMuted, fontSize: font.sm },
   empty: { alignItems: 'center', padding: spacing.xxl, gap: spacing.md },

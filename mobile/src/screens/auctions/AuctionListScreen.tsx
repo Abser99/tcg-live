@@ -129,7 +129,7 @@ function LiveDot() {
   );
 }
 
-function AuctionCard({
+const AuctionCard = React.memo(function AuctionCard({
   auction, watching, onPress, onToggleWatch,
 }: {
   auction: Auction;
@@ -153,8 +153,8 @@ function AuctionCard({
   const soldCount = auction.items?.filter(i => i.status === 'sold').length ?? 0;
 
   const scale = useRef(new Animated.Value(1)).current;
-  const pressIn  = () => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, friction: 10, tension: 200 }).start();
-  const pressOut = () => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, friction: 5,  tension: 120 }).start();
+  const pressIn  = useCallback(() => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, friction: 10, tension: 200 }).start(), [scale]);
+  const pressOut = useCallback(() => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, friction: 5,  tension: 120 }).start(), [scale]);
 
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
@@ -274,7 +274,7 @@ function AuctionCard({
       </TouchableOpacity>
     </Animated.View>
   );
-}
+});
 
 export default function AuctionListScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -304,13 +304,14 @@ export default function AuctionListScreen({ navigation }: Props) {
         watchlistApi.mine().catch(() => ({ data: [] as Auction[] })),
       ]);
       setAuctions(auctionsRes.data);
-      setWatchedIds(new Set(watchlistRes.data.map(a => a.id)));
+      setWatchedIds(new Set(watchlistRes.data.map((a) => a.id)));
     } catch {
       setError('No se pudo cargar las subastas');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { load(false, filters); }, [load]);
@@ -371,10 +372,11 @@ export default function AuctionListScreen({ navigation }: Props) {
     return () => clearInterval(id);
   }, [load, filters]);
 
-  if (loading) {
+  if (loading && auctions.length === 0) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <AppHeader filterCount={0} onOpenFilters={() => {}} searchValue="" onSearch={() => {}} />
+        <GameChips selected={filters.game} onSelect={handleGameSelect} />
         <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
       </View>
     );
@@ -416,11 +418,20 @@ export default function AuctionListScreen({ navigation }: Props) {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <View style={styles.emptyIconWrap}>
-              <Ionicons name="storefront-outline" size={44} color={colors.primary + '88'} />
+              <Ionicons
+                name={error ? 'cloud-offline-outline' : 'storefront-outline'}
+                size={44}
+                color={error ? colors.error + '88' : colors.primary + '88'}
+              />
             </View>
             <Text style={styles.emptyTitle}>{error ? 'Sin conexión' : 'Sin subastas'}</Text>
             <Text style={styles.emptyText}>{error ?? 'No hay subastas para estos filtros'}</Text>
-            {filterCount > 0 && (
+            {error && (
+              <TouchableOpacity onPress={() => load(false, filters)} style={styles.clearLink}>
+                <Text style={styles.clearLinkText}>Reintentar</Text>
+              </TouchableOpacity>
+            )}
+            {!error && filterCount > 0 && (
               <TouchableOpacity onPress={clearFilters} style={styles.clearLink}>
                 <Text style={styles.clearLinkText}>Limpiar filtros</Text>
               </TouchableOpacity>
@@ -440,6 +451,7 @@ export default function AuctionListScreen({ navigation }: Props) {
             onPress={() => navigation.navigate('AuctionDetail', { auctionId: item.id })}
           />
         )}
+        keyboardShouldPersistTaps="handled"
       />
 
       {/* Filter modal */}

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -42,7 +42,7 @@ export default function LoginScreen({ navigation }: Props) {
   // Subtle entrance animation for the card
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const cardY = useRef(new Animated.Value(24)).current;
-  React.useEffect(() => {
+  useEffect(() => {
     Animated.parallel([
       Animated.timing(cardOpacity, { toValue: 1, duration: 420, delay: 120, useNativeDriver: true }),
       Animated.spring(cardY, { toValue: 0, friction: 8, tension: 80, delay: 120, useNativeDriver: true }),

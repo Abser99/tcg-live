@@ -166,8 +166,16 @@ export default function CreateAuctionScreen({ navigation }: Props) {
       Alert.alert('Permiso requerido', 'Activa el acceso a la cámara en configuración');
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.5, base64: true });
-    if (result.canceled || !result.assets[0].base64) return;
+
+    let result: Awaited<ReturnType<typeof ImagePicker.launchCameraAsync>>;
+    try {
+      result = await ImagePicker.launchCameraAsync({ quality: 0.5, base64: true });
+    } catch {
+      Alert.alert('Escaneo no disponible', 'No se pudo abrir la cámara. Ingresa los datos manualmente.');
+      return;
+    }
+
+    if (result.canceled || !result.assets[0]?.base64) return;
 
     setScanning(true);
     try {
@@ -183,16 +191,25 @@ export default function CreateAuctionScreen({ navigation }: Props) {
 
       if (game !== 'other') {
         setSearching(true);
-        const results = await searchCards(game, scan.cardName);
-        if (results.length === 1) {
-          selectCard(results[0]);
-        } else {
-          setSearchResults(results);
+        try {
+          const results = await searchCards(game, scan.cardName);
+          if (results.length === 1) {
+            selectCard(results[0]);
+          } else {
+            setSearchResults(results);
+          }
+        } catch {
+          // Search failure is non-fatal — the card name was already filled in
+        } finally {
+          setSearching(false);
         }
-        setSearching(false);
       }
     } catch {
-      Alert.alert('Error', 'No se pudo escanear la carta');
+      Alert.alert(
+        'Escaneo no disponible',
+        'No se pudo identificar la carta. Ingresa los datos manualmente.',
+        [{ text: 'OK' }],
+      );
     } finally {
       setScanning(false);
     }
@@ -716,7 +733,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.md, paddingBottom: spacing.xxl },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.sm },
-  sectionTitle: { color: colors.text, fontSize: font.lg, fontWeight: '700', marginTop: spacing.xl, marginBottom: spacing.sm },
+  sectionTitle: { color: colors.text, fontSize: font.lg, fontWeight: '700' },
   gap: { height: spacing.sm },
   multiline: { height: 88, textAlignVertical: 'top', paddingTop: spacing.sm },
   dateBtn: {

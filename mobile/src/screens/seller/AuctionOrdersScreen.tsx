@@ -20,7 +20,7 @@ const STATUS_LABEL: Record<OrderStatus, { label: string; color: string }> = {
   pending:   { label: 'Pendiente',  color: colors.textMuted },
   confirmed: { label: 'Confirmado', color: colors.accent },
   shipped:   { label: 'Enviado',    color: colors.primary },
-  delivered: { label: 'Entregado',  color: colors.success ?? '#22c55e' },
+  delivered: { label: 'Entregado',  color: colors.success },
 };
 
 const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {

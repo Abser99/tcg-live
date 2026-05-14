@@ -353,10 +353,10 @@ const styles = StyleSheet.create({
   statsCard: {
     flexDirection: 'row',
     backgroundColor: colors.surface, borderRadius: radius.xl,
-    paddingVertical: spacing.lg, paddingHorizontal: spacing.xxl,
+    paddingVertical: spacing.lg, paddingHorizontal: spacing.xl,
     gap: spacing.xl, borderWidth: 1, borderColor: colors.border,
     marginBottom: spacing.xl,
-    width: '100%',
+    alignSelf: 'stretch',
     marginHorizontal: spacing.lg,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },

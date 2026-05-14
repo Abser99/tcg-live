@@ -14,8 +14,8 @@ type Props = NativeStackScreenProps<ProfileStackParamList, 'ShippingSettings'>;
 
 export default function ShippingSettingsScreen({ navigation }: Props) {
   const { user, setUser } = useAuthStore();
-  const [note, setNote] = useState((user as any)?.shippingNote ?? '');
-  const [insurance, setInsurance] = useState((user as any)?.shippingInsurance ?? false);
+  const [note, setNote] = useState(user?.shippingNote ?? '');
+  const [insurance, setInsurance] = useState(user?.shippingInsurance ?? false);
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -25,7 +25,7 @@ export default function ShippingSettingsScreen({ navigation }: Props) {
         shippingNote: note.trim() || undefined,
         shippingInsurance: insurance,
       });
-      if (setUser) setUser(data);
+      setUser(data);
       Alert.alert('Guardado', 'Configuración de envíos actualizada');
       navigation.goBack();
     } catch {

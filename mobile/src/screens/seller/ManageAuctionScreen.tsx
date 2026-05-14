@@ -108,7 +108,9 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
       const { data } = await auctionsApi.getLiveKitToken(auctionId);
       setStreamToken(data);
       setIsStreaming(true);
-    } catch { Alert.alert('Error', 'No se pudo iniciar el stream'); }
+    } catch {
+      Alert.alert('Stream no disponible', 'No se pudo obtener la sesión de stream. Verifica tu conexión e intenta de nuevo.');
+    }
   };
 
   const handleStart = () => {
@@ -235,6 +237,11 @@ export default function ManageAuctionScreen({ route, navigation }: Props) {
               wsUrl={streamToken.wsUrl}
               token={streamToken.token}
               onStop={() => { setIsStreaming(false); setStreamToken(null); }}
+              onRetry={async () => {
+                setIsStreaming(false);
+                setStreamToken(null);
+                await handleGoLive();
+              }}
             />
           ) : (
             <TouchableOpacity style={styles.goLiveBtn} onPress={handleGoLive}>
@@ -589,7 +596,6 @@ const styles = StyleSheet.create({
   payChipUnpaid: { backgroundColor: colors.warning + '20', borderWidth: 1, borderColor: colors.warning + '44' },
   payChipTextPaid: { fontSize: 11, fontWeight: '800', color: colors.success },
   payChipTextUnpaid: { fontSize: 11, fontWeight: '800', color: colors.warning },
-  payChipText: { fontSize: 11, fontWeight: '800', color: colors.text },
   orderStatusText: { fontSize: font.sm, color: colors.textMuted },
   reserveNote: { color: colors.textMuted, fontSize: font.sm, marginLeft: 38, fontStyle: 'italic' },
 });

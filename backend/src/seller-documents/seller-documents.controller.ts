@@ -34,6 +34,8 @@ interface MulterFile {
   buffer: Buffer;
 }
 
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
+
 const storage = diskStorage({
   destination: './uploads/seller-documents',
   filename: (_req, file, cb) => {
@@ -42,13 +44,21 @@ const storage = diskStorage({
   },
 });
 
+function fileFilter(_req: any, file: MulterFile, cb: (err: Error | null, accept: boolean) => void) {
+  if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new BadRequestException('Solo se permiten imágenes JPEG/PNG y PDFs'), false);
+  }
+}
+
 @Controller('seller-documents')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class SellerDocumentsController {
   constructor(private readonly service: SellerDocumentsService) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('file', { storage, limits: { fileSize: 10 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('file', { storage, fileFilter, limits: { fileSize: 10 * 1024 * 1024 } }))
   upload(
     @CurrentUser() user: User,
     @Body() dto: UploadDocumentDto,

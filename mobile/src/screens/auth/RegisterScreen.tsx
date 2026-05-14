@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -113,7 +113,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
   const formOpacity = useRef(new Animated.Value(0)).current;
   const formY       = useRef(new Animated.Value(20)).current;
-  React.useEffect(() => {
+  useEffect(() => {
     Animated.parallel([
       Animated.timing(formOpacity, { toValue: 1, duration: 400, delay: 100, useNativeDriver: true }),
       Animated.spring(formY, { toValue: 0, friction: 8, tension: 80, delay: 100, useNativeDriver: true }),

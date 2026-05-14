@@ -114,6 +114,9 @@ export default function SellerDashboardScreen({ navigation }: Props) {
         keyExtractor={(a) => a.id}
         contentContainerStyle={styles.list}
         ListHeaderComponent={statsHeader}
+        removeClippedSubviews
+        maxToRenderPerBatch={8}
+        windowSize={7}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -122,7 +125,7 @@ export default function SellerDashboardScreen({ navigation }: Props) {
           />
         }
         ListEmptyComponent={
-          <View style={styles.center}>
+          <View style={styles.emptyInner}>
             <Ionicons name="albums-outline" size={48} color={colors.textMuted} />
             <Text style={styles.emptyText}>No tienes subastas aún</Text>
             <TouchableOpacity style={styles.createBtn} onPress={() => navigation.navigate('CreateAuction')}>
@@ -170,7 +173,8 @@ export default function SellerDashboardScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl, marginTop: spacing.xxl },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+  emptyInner: { alignItems: 'center', padding: spacing.xl, paddingTop: spacing.xxl },
   list: { padding: spacing.md, gap: spacing.md },
   statsSection: { gap: spacing.sm, marginBottom: spacing.md },
   statsRow: { flexDirection: 'row', gap: spacing.sm },

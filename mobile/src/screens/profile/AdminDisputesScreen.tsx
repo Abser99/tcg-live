@@ -36,7 +36,7 @@ const FILTER_TABS: { value: FilterTab; label: string }[] = [
   { value: 'rejected',    label: 'Rechazadas' },
 ];
 
-export default function AdminDisputesScreen({}: Props) {
+export default function AdminDisputesScreen(_props: Props) {
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

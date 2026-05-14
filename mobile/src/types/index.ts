@@ -18,6 +18,8 @@ export interface User {
   colonia: string | null;
   city: string | null;
   state: string | null;
+  shippingNote: string | null;
+  shippingInsurance: boolean;
 }
 
 export type ApplicationStatus = 'pending' | 'approved' | 'rejected';

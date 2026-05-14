@@ -1,9 +1,13 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-// 10.0.2.2 is the Android emulator's alias for the host machine (localhost)
-export const API_URL = 'http://10.0.2.2:3000/api';
-export const WS_URL = 'http://10.0.2.2:3000';
+// EXPO_PUBLIC_API_URL is set via .env (e.g. EXPO_PUBLIC_API_URL=https://api.tcglive.mx)
+// Falls back to Android emulator alias for local development.
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:3000';
+
+export const API_URL = `${BASE_URL}/api`;
+// WS_URL is the base origin (no /api suffix) used by Socket.IO and LiveKit
+export const WS_URL = BASE_URL;
 
 export const api = axios.create({ baseURL: API_URL });
 

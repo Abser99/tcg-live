@@ -63,7 +63,7 @@ import { PushToken } from './notifications/entities/push-token.entity';
         username: config.get('database.user'),
         password: config.get('database.password'),
         entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, Order, OrderItem, PaymentMethod, PushToken, Dispute, WatchlistItem, Message, FollowedSeller, AuctionTemplate, Listing, ListingOffer, SellerDocument],
-        synchronize: true, // dev only — use migrations in production
+        synchronize: process.env.NODE_ENV !== 'production',
         logging: process.env.NODE_ENV === 'development',
       }),
     }),

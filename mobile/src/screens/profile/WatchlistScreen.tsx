@@ -3,15 +3,11 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, Alert,
 } from 'react-native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { watchlistApi } from '../../api/watchlist';
 import { Auction } from '../../types';
 import { colors, spacing, radius, font } from '../../theme';
-import { ProfileStackParamList } from '../../navigation/types';
-
-type Props = NativeStackScreenProps<ProfileStackParamList, 'Watchlist'>;
 
 const GAME_EMOJI: Record<string, string> = {
   pokemon: '⚡', mtg: '🔮', yugioh: '👁', onepiece: '⚓', lorcana: '✨', other: '🎮',
@@ -24,7 +20,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   cancelled:  { label: 'Cancelada',  color: colors.textMuted },
 };
 
-export default function WatchlistScreen({}: Props) {
+export default function WatchlistScreen() {
   const rootNav = useNavigation<any>();
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,6 +93,9 @@ export default function WatchlistScreen({}: Props) {
       contentContainerStyle={styles.content}
       data={auctions}
       keyExtractor={a => a.id}
+      removeClippedSubviews
+      maxToRenderPerBatch={10}
+      windowSize={7}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor={colors.primary} />}
       renderItem={({ item: auction }) => {
         const sc = STATUS_CONFIG[auction.status] ?? STATUS_CONFIG.ended;

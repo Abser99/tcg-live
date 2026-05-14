@@ -20,7 +20,7 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   pending:   { label: 'Pendiente', color: colors.textMuted },
   confirmed: { label: 'Confirmado', color: colors.accent },
   shipped:   { label: 'Enviado', color: colors.primary },
-  delivered: { label: 'Entregado', color: colors.success ?? '#22c55e' },
+  delivered: { label: 'Entregado', color: colors.success },
 };
 
 const SHIPPING_OPTIONS: { value: 'combined' | 'individual'; label: string; desc: string }[] = [
@@ -44,6 +44,9 @@ const DISPUTE_STATUS: Record<string, { label: string; color: string }> = {
   resolved:     { label: 'Resuelta',       color: '#22c55e' },
   rejected:     { label: 'Rechazada',      color: '#ef4444' },
 };
+
+// Set to true once Mercado Pago credentials are configured
+const PAYMENTS_ENABLED = false;
 
 export default function MyOrdersScreen({ navigation }: Props) {
   const user = useAuthStore(s => s.user);
@@ -253,19 +256,26 @@ export default function MyOrdersScreen({ navigation }: Props) {
             ) : null}
 
             {(!order.paymentStatus || order.paymentStatus === 'unpaid') && (
-              <TouchableOpacity
-                style={styles.payBtn}
-                onPress={() => handlePay(order)}
-                disabled={payingOrderId === order.id}
-              >
-                {payingOrderId === order.id
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <>
-                      <Ionicons name="card-outline" size={16} color="#fff" />
-                      <Text style={styles.payBtnText}>Pagar ahora</Text>
-                    </>
-                }
-              </TouchableOpacity>
+              PAYMENTS_ENABLED ? (
+                <TouchableOpacity
+                  style={styles.payBtn}
+                  onPress={() => handlePay(order)}
+                  disabled={payingOrderId === order.id}
+                >
+                  {payingOrderId === order.id
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <>
+                        <Ionicons name="card-outline" size={16} color="#fff" />
+                        <Text style={styles.payBtnText}>Pagar ahora</Text>
+                      </>
+                  }
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.payPendingNote}>
+                  <Ionicons name="lock-closed-outline" size={13} color={colors.textMuted} />
+                  <Text style={styles.payPendingText}>Pago en línea próximamente — te contactaremos</Text>
+                </View>
+              )
             )}
 
             {order.status === 'shipped' && (
@@ -309,7 +319,7 @@ export default function MyOrdersScreen({ navigation }: Props) {
                   setDisputeDescription('');
                 }}
               >
-                <Ionicons name="alert-circle-outline" size={16} color={colors.error ?? '#ef4444'} />
+                <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
                 <Text style={styles.disputeBtnText}>Abrir disputa</Text>
               </TouchableOpacity>
             )}
@@ -346,7 +356,7 @@ export default function MyOrdersScreen({ navigation }: Props) {
 
             {order.shippingChoice && (
               <View style={styles.shippingChosen}>
-                <Ionicons name="checkmark-circle" size={14} color={colors.success ?? '#22c55e'} />
+                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
                 <Text style={styles.shippingChosenText}>
                   {order.shippingChoice === 'combined' ? 'Un solo envío' : 'Envíos separados'}
                 </Text>
@@ -389,7 +399,7 @@ export default function MyOrdersScreen({ navigation }: Props) {
             maxLength={1000}
           />
           <TouchableOpacity
-            style={[styles.submitRatingBtn, { backgroundColor: colors.error ?? '#ef4444' }]}
+            style={[styles.submitRatingBtn, { backgroundColor: colors.error }]}
             onPress={handleSubmitDispute}
             disabled={submittingDispute || !disputeReason}
           >
@@ -456,6 +466,8 @@ const styles = StyleSheet.create({
   paidBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#22c55e', borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2 },
   paidBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   payBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.sm, backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.sm },
+  payPendingNote: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm, padding: spacing.sm },
+  payPendingText: { fontSize: font.xs, color: colors.textMuted, flex: 1 },
   payBtnText: { color: '#fff', fontWeight: '700', fontSize: font.sm },
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs },
   thumb: { width: 48, height: 67, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt },
@@ -479,14 +491,14 @@ const styles = StyleSheet.create({
   shippingCostAmount: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
   trackingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.xs },
   trackingText: { color: colors.primary, fontSize: font.sm, fontWeight: '600' },
-  receivedBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.sm, backgroundColor: colors.success ?? '#22c55e', borderRadius: radius.md, padding: spacing.sm },
+  receivedBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.sm, backgroundColor: colors.success, borderRadius: radius.md, padding: spacing.sm },
   receivedBtnText: { color: '#fff', fontWeight: '700', fontSize: font.sm },
   rateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.warning, borderRadius: radius.md, padding: spacing.sm },
   rateBtnText: { color: colors.warning, fontWeight: '700', fontSize: font.sm },
   ratedRow: { marginTop: spacing.xs },
   ratedText: { color: colors.textMuted, fontSize: font.sm },
-  disputeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.error ?? '#ef4444', borderRadius: radius.md, padding: spacing.sm },
-  disputeBtnText: { color: colors.error ?? '#ef4444', fontWeight: '700', fontSize: font.sm },
+  disputeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.error, borderRadius: radius.md, padding: spacing.sm },
+  disputeBtnText: { color: colors.error, fontWeight: '700', fontSize: font.sm },
   msgBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.accent, borderRadius: radius.md, padding: spacing.sm },
   msgBtnText: { color: colors.accent, fontWeight: '700', fontSize: font.sm },
   disputeBadge: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.sm, borderWidth: 1, borderRadius: radius.md, padding: spacing.sm },

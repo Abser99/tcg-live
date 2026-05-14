@@ -60,6 +60,8 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
   const [settingMaxBid, setSettingMaxBid] = useState(false);
   const [connected, setConnected] = useState(false);
   const [streamCreds, setStreamCreds] = useState<{ token: string; wsUrl: string } | null>(null);
+  const [streamTokenError, setStreamTokenError] = useState(false);
+  const [fetchingStreamToken, setFetchingStreamToken] = useState(false);
   const [hasPayment, setHasPayment] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const [showStreamChat, setShowStreamChat] = useState(false);
@@ -76,9 +78,25 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
   const [watching, setWatching] = useState(false);
   const [watchingBusy, setWatchingBusy] = useState(false);
 
-  const socketRef = useRef<Socket | null>(null);
+  const socketRef  = useRef<Socket | null>(null);
+  const userIdRef  = useRef<string | undefined>(user?.id);
+  useEffect(() => { userIdRef.current = user?.id; }, [user?.id]);
   const urgentPulse = useRef(new Animated.Value(1)).current;
   const urgentAnim = useRef<Animated.CompositeAnimation | null>(null);
+
+  const fetchStreamToken = useCallback(async () => {
+    setFetchingStreamToken(true);
+    setStreamTokenError(false);
+    try {
+      const { data } = await auctionsApi.getLiveKitToken(auctionId);
+      setStreamCreds(data);
+    } catch {
+      setStreamTokenError(true);
+      setStreamCreds(null);
+    } finally {
+      setFetchingStreamToken(false);
+    }
+  }, [auctionId]);
 
   const load = useCallback(async () => {
     try {
@@ -90,17 +108,24 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
       setAuction(auctionRes.data);
       navigation.setOptions({ title: auctionRes.data.title });
       setWatching(watchRes.data.watching);
-      if (tokenRes) setStreamCreds(tokenRes.data);
+      if (tokenRes) {
+        setStreamCreds(tokenRes.data);
+        setStreamTokenError(false);
+      } else {
+        setStreamTokenError(true);
+      }
       const active = auctionRes.data.items?.find((i) => i.status === 'active') ?? null;
       setActiveItem(active);
       if (active) {
         const { data: bids } = await auctionsApi.getItemBids(active.id);
         setRecentBids(bids.slice(0, 10));
       }
-      if (auctionRes.data.status === 'live' && auctionRes.data.sellerId !== user?.id) {
-        const { data } = await paymentMethodsApi.hasAny();
-        setHasPayment(data.hasPaymentMethod);
-      }
+      // Payment method check disabled until Mercado Pago credentials are active
+      // if (auctionRes.data.status === 'live' && auctionRes.data.sellerId !== userIdRef.current) {
+      //   const { data } = await paymentMethodsApi.hasAny();
+      //   setHasPayment(data.hasPaymentMethod);
+      // }
+      setHasPayment(true);
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? err?.message ?? String(err);
       console.error('[AuctionDetail] load error:', msg, err);
@@ -110,7 +135,7 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [auctionId, user?.id]);
+  }, [auctionId]);
 
   const startCountdown = useCallback((closesAt: string | null) => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -275,7 +300,7 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
   const streamChatOverlayJsx = showStreamChat && (
     <View style={[styles.streamChatOverlay, { zIndex: 2 }]} pointerEvents="none">
       {chatMessages.slice(-8).map((msg, i) => (
-        <Text key={i} style={styles.streamChatLine} numberOfLines={1}>
+        <Text key={`overlay-${msg.timestamp}-${i}`} style={styles.streamChatLine} numberOfLines={1}>
           <Text style={styles.streamChatUser}>@{msg.username} </Text>
           {msg.message}
         </Text>
@@ -283,22 +308,55 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
     </View>
   );
 
-  const streamBlock = (fill?: boolean) => isLive && streamCreds ? (
-    <View style={[styles.streamWrap, fill && styles.streamWrapFill]}>
-      <StreamViewer wsUrl={streamCreds.wsUrl} token={streamCreds.token} fill={fill} />
-      <TouchableOpacity
-        style={[StyleSheet.absoluteFillObject, { zIndex: 1 }]}
-        onPress={() => setShowStreamChat(p => !p)}
-        activeOpacity={1}
-      />
-      {streamChatOverlayJsx}
-      <View style={[styles.reactionsOverlay, { zIndex: 3 }]} pointerEvents="none">
-        {floatingReactions.map((r) => <FloatingEmoji key={r.localId} item={r} />)}
-      </View>
-    </View>
-  ) : null;
+  const streamBlock = (fill?: boolean) => {
+    if (!isLive) return null;
 
-  const bidSectionJsx = isLive && !isSeller && activeItem ? (
+    const wrapStyle = [styles.streamWrap, fill && styles.streamWrapFill];
+
+    if (fetchingStreamToken) {
+      return (
+        <View style={[styles.streamPlaceholder, fill && styles.streamWrapFill]}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.streamPlaceholderText}>Cargando stream...</Text>
+        </View>
+      );
+    }
+
+    if (streamTokenError || !streamCreds) {
+      return (
+        <View style={[styles.streamPlaceholder, fill && styles.streamWrapFill]}>
+          <Ionicons name="cloud-offline-outline" size={32} color={colors.error + '88'} />
+          <Text style={styles.streamPlaceholderText}>Stream no disponible</Text>
+          <TouchableOpacity style={styles.streamRetryBtn} onPress={fetchStreamToken}>
+            <Ionicons name="refresh-outline" size={16} color={colors.white} />
+            <Text style={styles.streamRetryText}>Reintentar</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <View style={wrapStyle}>
+        <StreamViewer
+          wsUrl={streamCreds.wsUrl}
+          token={streamCreds.token}
+          fill={fill}
+          onRetry={fetchStreamToken}
+        />
+        <TouchableOpacity
+          style={[StyleSheet.absoluteFillObject, { zIndex: 1 }]}
+          onPress={() => setShowStreamChat(p => !p)}
+          activeOpacity={1}
+        />
+        {streamChatOverlayJsx}
+        <View style={[styles.reactionsOverlay, { zIndex: 3 }]} pointerEvents="none">
+          {floatingReactions.map((r) => <FloatingEmoji key={r.localId} item={r} />)}
+        </View>
+      </View>
+    );
+  };
+
+  const bidSectionJsx = isLive && !isSeller && activeItem && hasPayment ? (
     <View style={styles.bidSection}>
       <View style={styles.bidPriceRow}>
         <Text style={styles.bidCurrentPrice}>{formatMXN(activeItem.currentPrice)}</Text>
@@ -371,7 +429,7 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
       {chatMessages.length === 0
         ? <Text style={styles.chatEmpty}>Sé el primero 👋</Text>
         : chatMessages.slice(-30).map((msg, i) => (
-            <Text key={i} style={styles.chatLine} numberOfLines={2}>
+            <Text key={`${msg.timestamp}-${i}`} style={styles.chatLine} numberOfLines={2}>
               <Text style={[styles.chatUser, msg.userId === user?.id && styles.chatUserMe]}>
                 @{msg.username}{' '}
               </Text>
@@ -551,7 +609,7 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
               {auction.items && auction.items.length > 0 && (
                 <View style={styles.section}>
                   <Text style={styles.sectionLabel}>COLA DE CARTAS</Text>
-                  {auction.items.sort((a, b) => a.position - b.position).map((item) => (
+                  {[...auction.items].sort((a, b) => a.position - b.position).map((item) => (
                     <View key={item.id} style={[styles.itemRow, item.status === 'active' && styles.itemActive]}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.itemName}>{item.cardName}</Text>
@@ -588,7 +646,7 @@ export default function AuctionDetailScreen({ route, navigation }: Props) {
         <Modal visible={fullscreen} onRequestClose={() => setFullscreen(false)} animationType="slide" statusBarTranslucent>
           <View style={[styles.fsContainer, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}>
             <View style={[styles.fsStreamWrap, isLandscape && styles.fsStreamWrapFill]}>
-              <StreamViewer wsUrl={streamCreds.wsUrl} token={streamCreds.token} fill={isLandscape} />
+              <StreamViewer wsUrl={streamCreds.wsUrl} token={streamCreds.token} fill={isLandscape} onRetry={fetchStreamToken} />
               <TouchableOpacity
                 style={[StyleSheet.absoluteFillObject, { zIndex: 1 }]}
                 onPress={() => setShowStreamChat(p => !p)}
@@ -656,6 +714,19 @@ const styles = StyleSheet.create({
 
   streamWrap: { position: 'relative', marginBottom: spacing.sm, overflow: 'hidden', borderRadius: radius.lg, aspectRatio: 16 / 9, backgroundColor: colors.surface },
   streamWrapFill: { aspectRatio: undefined, flex: 1, borderRadius: 0 },
+  streamPlaceholder: {
+    aspectRatio: 16 / 9, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: colors.surface, borderRadius: radius.lg,
+    marginBottom: spacing.sm, gap: spacing.sm,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  streamPlaceholderText: { color: colors.textMuted, fontSize: font.sm },
+  streamRetryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    backgroundColor: colors.primary, paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm, borderRadius: radius.md, marginTop: spacing.xs,
+  },
+  streamRetryText: { color: colors.white, fontSize: font.sm, fontWeight: '700' },
   reactionsOverlay: { position: 'absolute', bottom: 8, right: 8, width: 44, height: 100, justifyContent: 'flex-end', alignItems: 'center' },
   floatingEmoji: { position: 'absolute', fontSize: 26 },
   streamChatOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: spacing.sm, gap: 2, backgroundColor: 'rgba(0,0,0,0.55)' },

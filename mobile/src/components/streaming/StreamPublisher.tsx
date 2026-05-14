@@ -9,15 +9,23 @@ interface Props {
   wsUrl: string;
   token: string;
   onStop: () => void;
+  /** Called when user taps "Reintentar" — parent should re-fetch the token and pass new props. */
+  onRetry?: () => void;
 }
 
-export default function StreamPublisher({ wsUrl, token, onStop }: Props) {
+export default function StreamPublisher({ wsUrl, token, onStop, onRetry }: Props) {
   const roomRef = useRef<Room | null>(null);
   const [connecting, setConnecting] = useState(true);
+  const [connectError, setConnectError] = useState(false);
   const [videoTrack, setVideoTrack] = useState<LocalVideoTrack | undefined>();
   const [micMuted, setMicMuted] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    setConnecting(true);
+    setConnectError(false);
+    setVideoTrack(undefined);
+
     const room = new Room();
     roomRef.current = room;
 
@@ -33,14 +41,17 @@ export default function StreamPublisher({ wsUrl, token, onStop }: Props) {
         await room.connect(wsUrl, token);
         await room.localParticipant.setCameraEnabled(true);
         await room.localParticipant.setMicrophoneEnabled(true);
+      } catch {
+        if (!cancelled) setConnectError(true);
       } finally {
-        setConnecting(false);
+        if (!cancelled) setConnecting(false);
       }
     };
 
     start();
 
     return () => {
+      cancelled = true;
       room.disconnect();
       AudioSession.stopAudioSession();
     };
@@ -65,6 +76,26 @@ export default function StreamPublisher({ wsUrl, token, onStop }: Props) {
       <View style={styles.placeholder}>
         <ActivityIndicator color={colors.primary} />
         <Text style={styles.placeholderText}>Conectando stream...</Text>
+      </View>
+    );
+  }
+
+  if (connectError) {
+    return (
+      <View style={styles.placeholder}>
+        <Ionicons name="cloud-offline-outline" size={32} color={colors.error + '88'} />
+        <Text style={styles.placeholderText}>Stream no disponible — intenta de nuevo</Text>
+        <View style={styles.errorActions}>
+          {onRetry && (
+            <TouchableOpacity style={styles.retryBtn} onPress={onRetry}>
+              <Ionicons name="refresh-outline" size={16} color={colors.white} />
+              <Text style={styles.retryText}>Reintentar</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.backBtn} onPress={onStop}>
+            <Text style={styles.backText}>Volver</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -109,6 +140,15 @@ const styles = StyleSheet.create({
   video: { width: '100%', height: '100%' },
   placeholder: { aspectRatio: 16 / 9, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.lg, gap: spacing.sm },
   placeholderText: { color: colors.textMuted, fontSize: font.sm },
+  errorActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    backgroundColor: colors.primary, paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm, borderRadius: radius.md,
+  },
+  retryText: { color: colors.white, fontSize: font.sm, fontWeight: '700' },
+  backBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  backText: { color: colors.textMuted, fontSize: font.sm, fontWeight: '600' },
   controls: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

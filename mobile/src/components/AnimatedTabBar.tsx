@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, font, radius, spacing } from '../theme';
-import Pokeball from './Pokeball';
 
 const TAB_ICONS: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
   Auctions: { active: 'storefront', inactive: 'storefront-outline' },
@@ -40,7 +39,7 @@ function TabItem({
 }) {
   const accentColor = TAB_COLORS[routeName] ?? colors.primary;
 
-  const scale        = useRef(new Animated.Value(isFocused ? 1 : 1)).current;
+  const scale        = useRef(new Animated.Value(1)).current;
   const pillWidth    = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
   const pillOpacity  = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
   const glowOpacity  = useRef(new Animated.Value(isFocused ? 1 : 0)).current;

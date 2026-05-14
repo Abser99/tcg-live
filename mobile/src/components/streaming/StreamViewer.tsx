@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { Room, RoomEvent, Track, RemoteVideoTrack, ConnectionState } from 'livekit-client';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { Room, RoomEvent, Track, RemoteVideoTrack } from 'livekit-client';
 import { VideoView, AudioSession } from '@livekit/react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, font } from '../../theme';
@@ -9,15 +9,23 @@ interface Props {
   wsUrl: string;
   token: string;
   fill?: boolean;
+  /** Called when the user taps "Reintentar" after a connection failure. */
+  onRetry?: () => void;
 }
 
-export default function StreamViewer({ wsUrl, token, fill }: Props) {
+export default function StreamViewer({ wsUrl, token, fill, onRetry }: Props) {
   const roomRef = useRef<Room | null>(null);
   const [connecting, setConnecting] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
+  const [connectError, setConnectError] = useState(false);
   const [videoTrack, setVideoTrack] = useState<RemoteVideoTrack | undefined>();
 
   useEffect(() => {
+    let cancelled = false;
+    setConnecting(true);
+    setConnectError(false);
+    setVideoTrack(undefined);
+
     const room = new Room({
       reconnectPolicy: { maxRetries: 5, minReconnectWait: 1000, maxReconnectWait: 10000 },
     });
@@ -40,13 +48,16 @@ export default function StreamViewer({ wsUrl, token, fill }: Props) {
       try {
         await AudioSession.startAudioSession();
         await room.connect(wsUrl, token);
+      } catch {
+        if (!cancelled) setConnectError(true);
       } finally {
-        setConnecting(false);
+        if (!cancelled) setConnecting(false);
       }
     };
     start();
 
     return () => {
+      cancelled = true;
       room.disconnect();
       AudioSession.stopAudioSession();
     };
@@ -61,7 +72,27 @@ export default function StreamViewer({ wsUrl, token, fill }: Props) {
     : styles.placeholder;
 
   if (connecting) {
-    return <View style={placeholderStyle}><ActivityIndicator color={colors.primary} /></View>;
+    return (
+      <View style={placeholderStyle}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={styles.offlineText}>Conectando al stream...</Text>
+      </View>
+    );
+  }
+
+  if (connectError) {
+    return (
+      <View style={placeholderStyle}>
+        <Ionicons name="cloud-offline-outline" size={32} color={colors.error + '88'} />
+        <Text style={styles.offlineText}>Stream no disponible</Text>
+        {onRetry && (
+          <TouchableOpacity style={styles.retryBtn} onPress={onRetry}>
+            <Ionicons name="refresh-outline" size={16} color={colors.white} />
+            <Text style={styles.retryText}>Reintentar</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
   }
 
   if (!videoTrack) {
@@ -112,7 +143,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     gap: spacing.sm,
   },
-  offlineText: { color: colors.textMuted, fontSize: font.sm },
+  offlineText: { color: colors.textMuted, fontSize: font.sm, marginTop: spacing.xs },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    marginTop: spacing.md, backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+  },
+  retryText: { color: colors.white, fontSize: font.sm, fontWeight: '700' },
   liveBadge: {
     position: 'absolute', top: spacing.sm, left: spacing.sm,
     flexDirection: 'row', alignItems: 'center', gap: 5,

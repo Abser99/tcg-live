@@ -20,8 +20,8 @@ function bidStatusLabel(entry: MyBidEntry, userId: string): { label: string; col
   if (auction.status === 'live' || auction.status === 'scheduled') {
     if (item.status === 'active') {
       return item.winnerId === userId
-        ? { label: 'Ganando', color: colors.success ?? '#22c55e', icon: 'trending-up-outline' }
-        : { label: 'Superado', color: colors.error ?? '#ef4444', icon: 'trending-down-outline' };
+        ? { label: 'Ganando', color: colors.success, icon: 'trending-up-outline' }
+        : { label: 'Superado', color: colors.error, icon: 'trending-down-outline' };
     }
     if (item.status === 'pending') {
       return { label: 'En espera', color: colors.textMuted, icon: 'time-outline' };
@@ -29,7 +29,7 @@ function bidStatusLabel(entry: MyBidEntry, userId: string): { label: string; col
   }
   if (item.status === 'sold') {
     return item.winnerId === userId
-      ? { label: 'Ganaste', color: colors.success ?? '#22c55e', icon: 'trophy-outline' }
+      ? { label: 'Ganaste', color: colors.success, icon: 'trophy-outline' }
       : { label: 'No ganaste', color: colors.textMuted, icon: 'close-circle-outline' };
   }
   if (item.status === 'unsold') {
@@ -38,7 +38,7 @@ function bidStatusLabel(entry: MyBidEntry, userId: string): { label: string; col
   return { label: '—', color: colors.textMuted, icon: 'help-outline' };
 }
 
-export default function MyBidsScreen({ navigation }: Props) {
+export default function MyBidsScreen(_props: Props) {
   const { user } = useAuthStore();
   const nav = useNavigation<any>();
   const [entries, setEntries] = useState<MyBidEntry[]>([]);
@@ -70,6 +70,9 @@ export default function MyBidsScreen({ navigation }: Props) {
       contentContainerStyle={styles.content}
       data={entries}
       keyExtractor={e => e.auctionItemId}
+      removeClippedSubviews
+      maxToRenderPerBatch={10}
+      windowSize={7}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -148,11 +151,11 @@ const styles = StyleSheet.create({
   cardSet: { color: colors.textMuted, fontSize: font.sm },
   auctionTitle: { color: colors.textMuted, fontSize: font.sm, marginTop: 2 },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs, flexWrap: 'wrap' },
-  priceLabel: { color: colors.textMuted, fontSize: font.xs ?? 11 },
+  priceLabel: { color: colors.textMuted, fontSize: font.xs },
   priceValue: { color: colors.text, fontSize: font.sm, fontWeight: '700' },
-  winning: { color: colors.success ?? '#22c55e' },
+  winning: { color: colors.success },
   priceSep: { color: colors.border, fontSize: font.sm },
   right: { alignItems: 'center' },
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderRadius: radius.full, paddingHorizontal: 7, paddingVertical: 3 },
-  statusText: { fontSize: font.xs ?? 11, fontWeight: '700' },
+  statusText: { fontSize: font.xs, fontWeight: '700' },
 });

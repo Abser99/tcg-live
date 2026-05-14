@@ -25,6 +25,9 @@ export class PaymentsService {
     this.accessToken = config.get<string>('MERCADOPAGO_ACCESS_TOKEN');
     this.useMock = !this.accessToken;
     if (this.useMock) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('MERCADOPAGO_ACCESS_TOKEN is required in production');
+      }
       this.logger.warn('MERCADOPAGO_ACCESS_TOKEN not set — using mock payment data');
     }
   }
@@ -37,58 +40,56 @@ export class PaymentsService {
   }): Promise<PaymentPreference> {
     if (this.useMock) return this.mockPreference(params.orderId);
 
-    // Mercado Pago Checkout API v2
-    // Uncomment when you have the access token:
-    //
-    // const res = await fetch('https://api.mercadopago.com/checkout/preferences', {
-    //   method: 'POST',
-    //   headers: {
-    //     Authorization: `Bearer ${this.accessToken}`,
-    //     'Content-Type': 'application/json',
-    //   },
-    //   body: JSON.stringify({
-    //     external_reference: params.orderId,
-    //     items: params.items.map(i => ({
-    //       title: i.title,
-    //       quantity: i.quantity,
-    //       unit_price: i.unitPrice / 100, // MP uses MXN pesos, not cents
-    //       currency_id: 'MXN',
-    //     })),
-    //     payer: { email: params.buyerEmail },
-    //     back_urls: params.backUrls ?? {
-    //       success: 'tcglive://payment/success',
-    //       failure: 'tcglive://payment/failure',
-    //       pending: 'tcglive://payment/pending',
-    //     },
-    //     auto_return: 'approved',
-    //     notification_url: `${process.env.BACKEND_URL}/payments/webhook`,
-    //   }),
-    // });
-    // const data = await res.json();
-    // return {
-    //   preferenceId: data.id,
-    //   initPoint: data.init_point,
-    //   sandboxInitPoint: data.sandbox_init_point,
-    // };
-
-    return this.mockPreference(params.orderId);
+    const res = await fetch('https://api.mercadopago.com/checkout/preferences', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        external_reference: params.orderId,
+        items: params.items.map(i => ({
+          title: i.title,
+          quantity: i.quantity,
+          unit_price: i.unitPrice / 100, // MP usa MXN pesos, no centavos
+          currency_id: 'MXN',
+        })),
+        payer: { email: params.buyerEmail },
+        back_urls: params.backUrls ?? {
+          success: `${this.config.get('WEB_URL', 'http://localhost:3001')}/pago/exitoso`,
+          failure: `${this.config.get('WEB_URL', 'http://localhost:3001')}/pago/error`,
+          pending: `${this.config.get('WEB_URL', 'http://localhost:3001')}/pago/pendiente`,
+        },
+        auto_return: 'approved',
+        notification_url: `${this.config.get('BACKEND_URL', 'http://localhost:3000')}/api/payments/webhook`,
+      }),
+    });
+    const data = await res.json();
+    if (!data.id) {
+      this.logger.error('MP preference creation failed', data);
+      return this.mockPreference(params.orderId);
+    }
+    return {
+      preferenceId: data.id,
+      initPoint: data.init_point,
+      sandboxInitPoint: data.sandbox_init_point,
+    };
   }
 
   async getPaymentStatus(paymentId: string): Promise<PaymentStatus> {
     if (this.useMock) return this.mockStatus(paymentId);
 
-    // const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-    //   headers: { Authorization: `Bearer ${this.accessToken}` },
-    // });
-    // const data = await res.json();
-    // return {
-    //   id: String(data.id),
-    //   status: data.status,
-    //   statusDetail: data.status_detail,
-    //   amount: Math.round(data.transaction_amount * 100),
-    // };
-
-    return this.mockStatus(paymentId);
+    const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+      headers: { Authorization: `Bearer ${this.accessToken}` },
+    });
+    const data = await res.json();
+    return {
+      id: String(data.id),
+      status: data.status,
+      statusDetail: data.status_detail,
+      amount: Math.round((data.transaction_amount ?? 0) * 100),
+      orderId: data.external_reference ?? null,
+    };
   }
 
   // -- Mock implementations --------------------------------------------------

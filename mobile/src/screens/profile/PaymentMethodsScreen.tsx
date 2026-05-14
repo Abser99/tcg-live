@@ -43,6 +43,7 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
   // Card form state
   const [cardNumber, setCardNumber]     = useState('');
   const [expiry, setExpiry]             = useState('');
+  const [cvv, setCvv]                   = useState('');
   const [cardholderName, setCardholderName] = useState('');
   const [saving, setSaving]             = useState(false);
 
@@ -65,6 +66,7 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
     setSelectedType(null);
     setCardNumber('');
     setExpiry('');
+    setCvv('');
     setCardholderName('');
   };
 
@@ -75,18 +77,20 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
       const num = cardNumber.replace(/\s/g, '');
       if (num.length < 13) { Alert.alert('Error', 'Número de tarjeta inválido'); return; }
       if (!/^\d{2}\/\d{2}$/.test(expiry)) { Alert.alert('Error', 'Expiración inválida (MM/YY)'); return; }
+      if (!/^\d{3,4}$/.test(cvv)) { Alert.alert('Error', 'CVV inválido — debe tener 3 o 4 dígitos'); return; }
+
+      // Card tokenization requires Stripe/Conekta integration which is not yet active.
+      Alert.alert(
+        'Próximamente',
+        'El cobro con tarjeta estará disponible pronto.\n\nIntegración con Stripe/Conekta pendiente.\n\nPor ahora puedes registrar OXXO o SPEI.',
+        [{ text: 'Entendido' }],
+      );
+      return;
     }
 
     setSaving(true);
     try {
-      const { data } = await paymentMethodsApi.add({
-        type: selectedType,
-        ...(selectedType === 'card' && {
-          cardNumber: cardNumber.replace(/\s/g, ''),
-          expiry,
-          cardholderName,
-        }),
-      });
+      const { data } = await paymentMethodsApi.add({ type: selectedType });
       setMethods(prev => [...prev, data]);
       setShowAdd(false);
       resetForm();
@@ -238,6 +242,8 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
                           keyboardType="numeric"
                           maxLength={4}
                           secureTextEntry
+                          value={cvv}
+                          onChangeText={t => setCvv(t.replace(/\D/g, '').slice(0, 4))}
                         />
                       </View>
                     </View>
@@ -253,10 +259,10 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
                       />
                     </View>
                     <Text style={styles.secureNote}>
-                      🔒 Tu información está segura. El número completo nunca se almacena.
+                      Integración Stripe/Conekta próximamente — tus datos no se envían aún.
                     </Text>
                     <TouchableOpacity style={styles.saveBtn} onPress={handleAdd} disabled={saving}>
-                      {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Agregar tarjeta</Text>}
+                      {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Continuar</Text>}
                     </TouchableOpacity>
                   </>
                 ) : (

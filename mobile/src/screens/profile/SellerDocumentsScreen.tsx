@@ -36,7 +36,7 @@ const STATUS_CONFIG: Record<DocumentStatus, { label: string; color: string; icon
   rejected: { label: 'Rechazado',   color: colors.error,   icon: 'close-circle-outline' },
 };
 
-export default function SellerDocumentsScreen({}: Props) {
+export default function SellerDocumentsScreen(_props: Props) {
   const [documents, setDocuments] = useState<SellerDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
