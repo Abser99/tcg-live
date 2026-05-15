@@ -21,6 +21,12 @@ export class OrdersController {
     return this.ordersService.getMyOrders(user.id);
   }
 
+  @Get('selling')
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  getSellerOrders(@CurrentUser() user: User) {
+    return this.ordersService.getSellerOrders(user.id);
+  }
+
   @Get('seller-stats')
   @Roles(UserRole.SELLER, UserRole.ADMIN)
   getSellerStats(@CurrentUser() user: User) {

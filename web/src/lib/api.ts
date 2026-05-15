@@ -66,6 +66,8 @@ export const auctionsApi = {
 export const ordersApi = {
   my: () => api.get<ApiOrder[]>("/orders/my"),
 
+  selling: () => api.get<ApiOrder[]>("/orders/selling"),
+
   sellerStats: () => api.get<SellerStats>("/orders/seller-stats"),
 
   auctionOrders: (auctionId: string) =>
@@ -313,7 +315,7 @@ export interface SellerDocumentRecord {
 export interface CreateAuctionPayload {
   title: string;
   game?: string;
-  items: { cardName: string; condition: string; startingBid: number; binPrice?: number; description?: string }[];
-  scheduledStart?: string;
-  durationMinutes?: number;
+  description?: string;
+  items: { cardName: string; cardSet?: string; condition?: string; startingPrice: number; binPrice?: number; imageUrls?: string[] }[];
+  scheduledAt?: string;
 }

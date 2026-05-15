@@ -3,18 +3,31 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import { SALE_ORDERS, type AuctionStatus } from "@/lib/mock-data";
+import { type AuctionStatus } from "@/lib/mock-data";
 import { useAuth } from "@/contexts/auth";
-import { auctionsApi, ordersApi, type ApiAuction, type SellerStats } from "@/lib/api";
+import { auctionsApi, ordersApi, type ApiAuction, type ApiOrder, type SellerStats } from "@/lib/api";
+
+const CLOUDINARY_CLOUD  = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dsjhoj5wt";
+const CLOUDINARY_PRESET = "tcg_live";
+
+async function uploadToCloudinary(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("upload_preset", CLOUDINARY_PRESET);
+  form.append("folder", "tcg-live/auction-items");
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, { method: "POST", body: form });
+  const data = await res.json();
+  if (!data.secure_url) throw new Error("Error al subir imagen");
+  return data.secure_url as string;
+}
 
 type Tab = "dashboard" | "subastas" | "crear" | "ordenes";
 
-const TABS: { key: Tab; label: string; badge?: string }[] = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "subastas",  label: "Mis Subastas" },
-  { key: "crear",     label: "Crear Subasta" },
-  { key: "ordenes",   label: "Órdenes de Venta",
-    badge: String(SALE_ORDERS.filter(o => o.status === "pendiente_envio" || o.status === "disputa").length) },
+const TABS: { key: Tab; label: string }[] = [
+  { key: "dashboard", label: "Dashboard"        },
+  { key: "subastas",  label: "Mis Subastas"     },
+  { key: "crear",     label: "Crear Subasta"    },
+  { key: "ordenes",   label: "Órdenes de Venta" },
 ];
 
 const AUCTION_STATUS_STYLE: Record<string, { label: string; color: string; bg: string }> = {
@@ -60,11 +73,12 @@ interface AuctionForm {
   binPrice: string;
   duration: string;
   description: string;
+  imageUrl: string;
 }
 
 const EMPTY_FORM: AuctionForm = {
   name: "", set: "", condition: "", startingBid: "",
-  binPrice: "", duration: "", description: "",
+  binPrice: "", duration: "", description: "", imageUrl: "",
 };
 
 export default function VendedorPage() {
@@ -75,22 +89,39 @@ export default function VendedorPage() {
   const [saleFilter, setSaleFilter] = useState<AuctionStatus | "all">("all");
   const [shippingOrder, setShippingOrder] = useState<string | null>(null);
   const [trackingInput, setTrackingInput] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [creating,      setCreating]      = useState(false);
+  const [createError,   setCreateError]   = useState("");
+  const [uploadingImg,  setUploadingImg]  = useState(false);
 
   // Real API data
-  const [myAuctions, setMyAuctions] = useState<ApiAuction[]>([]);
-  const [sellerStats, setSellerStats] = useState<SellerStats | null>(null);
+  const [myAuctions,   setMyAuctions]   = useState<ApiAuction[]>([]);
+  const [sellerStats,  setSellerStats]  = useState<SellerStats | null>(null);
+  const [sellerOrders, setSellerOrders] = useState<ApiOrder[] | null>(null);
 
   useEffect(() => {
     if (!user) return;
     Promise.all([
       auctionsApi.my().catch(() => null),
       ordersApi.sellerStats().catch(() => null),
-    ]).then(([auctionsRes, statsRes]) => {
+      ordersApi.selling().catch(() => null),
+    ]).then(([auctionsRes, statsRes, ordersRes]) => {
       if (auctionsRes) setMyAuctions(auctionsRes.data);
       if (statsRes)    setSellerStats(statsRes.data);
+      if (ordersRes)   setSellerOrders(ordersRes.data);
     });
   }, [user]);
+
+  async function handleImageUpload(file: File) {
+    setUploadingImg(true);
+    try {
+      const url = await uploadToCloudinary(file);
+      setForm(f => ({ ...f, imageUrl: url }));
+    } catch {
+      setCreateError("Error al subir imagen. Intenta de nuevo.");
+    } finally {
+      setUploadingImg(false);
+    }
+  }
 
   const filteredAuctions =
     saleFilter === "all"
@@ -103,23 +134,33 @@ export default function VendedorPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setCreateError("");
+    if (!form.name || !form.condition || !form.startingBid) {
+      setCreateError("Completa todos los campos obligatorios.");
+      return;
+    }
     setCreating(true);
     try {
       await auctionsApi.create({
         title: form.name,
+        description: form.description || undefined,
         items: [{
-          cardName: form.name,
-          condition: form.condition,
-          startingBid: Number(form.startingBid),
-          binPrice: form.binPrice ? Number(form.binPrice) : undefined,
-          description: form.description,
+          cardName:     form.name,
+          cardSet:      form.set || undefined,
+          condition:    form.condition || undefined,
+          startingPrice: Number(form.startingBid), // MXN pesos
+          binPrice:      form.binPrice ? Number(form.binPrice) : undefined,
+          imageUrls:     form.imageUrl ? [form.imageUrl] : undefined,
         }],
       });
-    } catch {
-      // API may fail if not logged in as seller — still show success for demo
+      setSubmitted(true);
+      // Refresh auctions list
+      auctionsApi.my().then(r => setMyAuctions(r.data)).catch(() => {});
+    } catch (err: any) {
+      setCreateError(err?.response?.data?.message ?? "Error al crear la subasta. Verifica tus datos.");
+    } finally {
+      setCreating(false);
     }
-    setCreating(false);
-    setSubmitted(true);
   }
 
   function handleReset() {
@@ -127,9 +168,7 @@ export default function VendedorPage() {
     setSubmitted(false);
   }
 
-  const totalRevenue = sellerStats?.totalRevenue ?? SALE_ORDERS
-    .filter(o => o.status !== "disputa")
-    .reduce((sum, o) => sum + o.amount, 0);
+  const totalRevenue = sellerStats?.totalRevenue ?? 0;
 
   return (
     <div className="min-h-screen bg-[#0F0F14] text-white">
@@ -171,8 +210,8 @@ export default function VendedorPage() {
                 {[
                   { label: "Subastas activas", value: sellerStats?.activeAuctions ?? myAuctions.filter(a => a.status === "live").length },
                   { label: "Total vendido",    value: `$${totalRevenue.toLocaleString("es-MX")} MXN` },
-                  { label: "Pendientes envío", value: sellerStats?.pendingOrders ?? SALE_ORDERS.filter(o => o.status === "pendiente_envio").length },
-                  { label: "Disputas",         value: SALE_ORDERS.filter(o => o.status === "disputa").length },
+                  { label: "Pendientes envío", value: sellerStats?.pendingOrders ?? (sellerOrders?.filter(o => o.status === "pending" || o.status === "pendiente_pago").length ?? 0) },
+                  { label: "Mis subastas",     value: myAuctions.length },
                 ].map((s) => (
                   <div key={s.label}>
                     <p className="text-xl font-black">{s.value}</p>
@@ -198,31 +237,18 @@ export default function VendedorPage() {
           <div className="flex items-center gap-1 mt-8 overflow-x-auto">
             {TABS.map((t) => {
               const active = tab === t.key;
-              const hasAlert = t.key === "ordenes" && SALE_ORDERS.some(o => o.status === "disputa");
+              const pendingOrdersCount = t.key === "ordenes" ? (sellerOrders?.filter(o => o.status === "pending" || o.status === "pendiente_pago").length ?? 0) : 0;
               return (
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-sm font-semibold whitespace-nowrap transition-all border-b-2"
-                  style={
-                    active
-                      ? { color: "#a78bfa", borderColor: "#6C3AE8", background: "rgba(108,58,232,0.08)" }
-                      : { color: "#71717a", borderColor: "transparent" }
-                  }
+                  style={active ? { color: "#a78bfa", borderColor: "#6C3AE8", background: "rgba(108,58,232,0.08)" } : { color: "#71717a", borderColor: "transparent" }}
                 >
                   {t.label}
-                  {t.badge && t.badge !== "0" && (
-                    <span
-                      className="text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
-                      style={
-                        hasAlert && t.key === "ordenes"
-                          ? { background: "rgba(248,113,113,0.2)", color: "#f87171" }
-                          : active
-                          ? { background: "rgba(108,58,232,0.3)", color: "#a78bfa" }
-                          : { background: "rgba(255,255,255,0.07)", color: "#71717a" }
-                      }
-                    >
-                      {t.badge}
+                  {pendingOrdersCount > 0 && (
+                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center" style={{ background: "rgba(245,158,11,0.2)", color: "#f59e0b" }}>
+                      {pendingOrdersCount}
                     </span>
                   )}
                 </button>
@@ -520,28 +546,42 @@ export default function VendedorPage() {
             ) : (
               <form onSubmit={handleSubmit} className="space-y-5">
 
-                {/* Upload */}
-                <div
-                  className="rounded-2xl border-2 border-dashed p-8 flex flex-col items-center gap-3 cursor-pointer transition-all hover:border-[#6C3AE8]/60"
-                  style={{ borderColor: "rgba(255,255,255,0.1)", background: "#16161E" }}
-                >
-                  <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
-                    style={{ background: "rgba(108,58,232,0.1)" }}
-                  >
-                    📸
+                {createError && (
+                  <div className="px-4 py-3 rounded-xl text-sm text-red-400" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                    {createError}
                   </div>
+                )}
+
+                {/* Upload */}
+                <label
+                  className="rounded-2xl border-2 border-dashed p-8 flex flex-col items-center gap-3 cursor-pointer transition-all hover:border-[#6C3AE8]/60 block"
+                  style={{ borderColor: form.imageUrl ? "rgba(74,222,128,0.4)" : "rgba(255,255,255,0.1)", background: "#16161E" }}
+                >
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); }}
+                  />
+                  {form.imageUrl ? (
+                    <img src={form.imageUrl} alt="carta" className="w-24 h-32 object-contain rounded-xl" />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl" style={{ background: "rgba(108,58,232,0.1)" }}>
+                      📸
+                    </div>
+                  )}
                   <div className="text-center">
-                    <p className="font-semibold text-sm">Subir foto de la carta</p>
+                    <p className="font-semibold text-sm">
+                      {uploadingImg ? "Subiendo imagen..." : form.imageUrl ? "✓ Imagen subida — clic para cambiar" : "Subir foto de la carta"}
+                    </p>
                     <p className="text-xs text-zinc-600 mt-1">PNG, JPG hasta 10 MB</p>
                   </div>
-                  <span
-                    className="text-xs font-semibold px-4 py-2 rounded-xl"
-                    style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa" }}
-                  >
-                    Seleccionar archivo
-                  </span>
-                </div>
+                  {!form.imageUrl && !uploadingImg && (
+                    <span className="text-xs font-semibold px-4 py-2 rounded-xl" style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa" }}>
+                      Seleccionar archivo
+                    </span>
+                  )}
+                </label>
 
                 {/* Card name */}
                 <div>
@@ -698,101 +738,90 @@ export default function VendedorPage() {
         {/* ─── ÓRDENES DE VENTA ─── */}
         {tab === "ordenes" && (
           <div className="space-y-3">
-            {SALE_ORDERS.map((order) => {
-              const s = SALE_STATUS_STYLE[order.status];
+            {sellerOrders === null && (
+              <div className="flex items-center justify-center py-16">
+                <div className="w-5 h-5 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+              </div>
+            )}
+            {sellerOrders !== null && sellerOrders.length === 0 && (
+              <div className="text-center py-16">
+                <p className="text-4xl mb-3">📭</p>
+                <p className="text-zinc-400 font-medium">Sin órdenes de venta aún</p>
+                <p className="text-xs text-zinc-600 mt-1">Las órdenes aparecerán aquí cuando terminen tus subastas</p>
+              </div>
+            )}
+            {(sellerOrders ?? []).map((order) => {
+              const statusKey = order.status as keyof typeof SALE_STATUS_STYLE;
+              const s = SALE_STATUS_STYLE[statusKey] ?? { label: order.status, color: "#71717a", icon: "📋" };
               const isShipping = shippingOrder === order.id;
+              const cardName = order.items?.[0]?.cardName ?? "Carta";
+              const amount   = order.items?.reduce((sum, i) => sum + (i.finalPrice ?? 0), 0) ?? order.totalAmount ?? 0;
+              const isPending = order.status === "pending" || order.status === "pendiente_pago" || order.status === "pending_payment";
+              const isShipped = order.status === "shipped" || order.status === "en_camino";
+              const date = new Date(order.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
               return (
                 <div
                   key={order.id}
                   className="rounded-2xl p-5 transition-all"
                   style={{
                     background: "#16161E",
-                    border: order.status === "disputa"
-                      ? "1px solid rgba(248,113,113,0.3)"
-                      : "1px solid rgba(255,255,255,0.07)",
+                    border: "1px solid rgba(255,255,255,0.07)",
                   }}
                 >
                   <div className="flex items-start gap-4">
-                    {/* Card preview */}
-                    <div
-                      className={`w-12 h-16 rounded-xl bg-gradient-to-br ${order.gradient} flex items-center justify-center text-xl shrink-0`}
-                      style={{ boxShadow: `0 0 16px ${order.glow}` }}
-                    >
-                      {order.emoji}
+                    <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0" style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}>
+                      🃏
                     </div>
 
-                    {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2 flex-wrap">
                         <div>
-                          <p className="font-bold text-sm">{order.item}</p>
+                          <p className="font-bold text-sm">{cardName}</p>
                           <p className="text-xs text-zinc-500 mt-0.5">
-                            Comprador: <span className="text-zinc-400">@{order.buyer}</span> · {order.date}
+                            Comprador: <span className="text-zinc-400">@{order.buyer?.username ?? "—"}</span> · {date}
                           </p>
                         </div>
-                        <span
-                          className="text-xs font-semibold px-2.5 py-1 rounded-xl shrink-0"
-                          style={{ background: "rgba(255,255,255,0.05)", color: "#71717a" }}
-                        >
-                          {order.id}
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-xl shrink-0" style={{ background: "rgba(255,255,255,0.05)", color: "#71717a" }}>
+                          {order.id.slice(0, 8)}…
                         </span>
                       </div>
 
-                      {/* Status */}
                       <div className="flex items-center gap-2 mt-3">
                         <span className="text-base">{s.icon}</span>
                         <span className="text-sm font-semibold" style={{ color: s.color }}>{s.label}</span>
                       </div>
 
-                      {order.tracking && (
-                        <p className="text-[11px] text-zinc-600 mt-1.5 font-mono">
-                          Rastreo: {order.tracking}
-                        </p>
+                      {order.trackingNumber && (
+                        <p className="text-[11px] text-zinc-600 mt-1.5 font-mono">Rastreo: {order.trackingNumber}</p>
                       )}
 
-                      {/* Dispute alert */}
-                      {order.status === "disputa" && (
-                        <div
-                          className="mt-3 rounded-xl p-3 flex items-start gap-2"
-                          style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}
-                        >
-                          <span>⚠️</span>
-                          <div>
-                            <p className="text-xs text-red-400 font-semibold">Disputa abierta por el comprador</p>
-                            <p className="text-[11px] text-zinc-500 mt-0.5">
-                              Tienes 48h para responder. Revisa el mensaje del comprador.
-                            </p>
-                            <button
-                              className="mt-2 text-xs font-bold text-red-400 underline underline-offset-2"
-                            >
-                              Responder disputa →
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Ship form */}
-                      {order.status === "pendiente_envio" && (
+                      {/* Marcar como enviado */}
+                      {isPending && (
                         isShipping ? (
                           <div className="mt-3 flex items-center gap-2">
                             <input
                               type="text"
                               placeholder="Número de guía / rastreo"
                               value={trackingInput}
-                              onChange={(e) => setTrackingInput(e.target.value)}
-                              className="flex-1 bg-[#0F0F14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
+                              onChange={e => setTrackingInput(e.target.value)}
+                              className="flex-1 bg-[#0F0F14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60"
                             />
                             <button
-                              onClick={() => { setShippingOrder(null); setTrackingInput(""); }}
+                              onClick={async () => {
+                                if (trackingInput.trim()) {
+                                  await ordersApi.updateStatus(order.id, "shipped").catch(() => {});
+                                  const refreshed = await ordersApi.selling().catch(() => null);
+                                  if (refreshed) setSellerOrders(refreshed.data);
+                                }
+                                setShippingOrder(null);
+                                setTrackingInput("");
+                              }}
                               className="text-xs font-bold text-white px-4 py-2 rounded-xl"
                               style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
                             >
                               Confirmar
                             </button>
-                            <button
-                              onClick={() => setShippingOrder(null)}
-                              className="text-xs text-zinc-600 px-3 py-2"
-                            >
+                            <button onClick={() => setShippingOrder(null)} className="text-xs text-zinc-600 px-3 py-2">
                               Cancelar
                             </button>
                           </div>
@@ -800,10 +829,7 @@ export default function VendedorPage() {
                           <button
                             onClick={() => setShippingOrder(order.id)}
                             className="mt-3 text-xs font-bold text-white px-5 py-2 rounded-xl"
-                            style={{
-                              background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)",
-                              boxShadow: "0 4px 16px rgba(108,58,232,0.35)",
-                            }}
+                            style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 4px 16px rgba(108,58,232,0.35)" }}
                           >
                             Marcar como enviado →
                           </button>
@@ -811,9 +837,8 @@ export default function VendedorPage() {
                       )}
                     </div>
 
-                    {/* Amount */}
                     <div className="text-right shrink-0">
-                      <p className="font-black text-lg">${order.amount.toLocaleString("es-MX")}</p>
+                      <p className="font-black text-lg">${amount.toLocaleString("es-MX")}</p>
                       <p className="text-[10px] text-zinc-600 mt-0.5">MXN</p>
                     </div>
                   </div>
