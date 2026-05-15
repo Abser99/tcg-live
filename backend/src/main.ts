@@ -20,15 +20,15 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  app.use(helmet());
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  app.setGlobalPrefix('api');
-
   const webUrl = process.env.WEB_URL;
   app.enableCors({
     origin: webUrl ? [webUrl, 'http://localhost:3001'] : 'http://localhost:3001',
     credentials: true,
   });
+
+  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.setGlobalPrefix('api');
 
   app.useWebSocketAdapter(new IoAdapter(app));
 
