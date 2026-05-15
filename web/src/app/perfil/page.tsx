@@ -228,6 +228,12 @@ export default function PerfilPage() {
               </div>
             </div>
 
+            <Link
+              href="/ajustes"
+              className="shrink-0 text-sm font-semibold text-zinc-400 hover:text-white px-4 py-2 rounded-xl transition-all border border-white/10 hover:border-white/20"
+            >
+              ⚙ Ajustes
+            </Link>
             {user.role === "SELLER" && (
               <Link
                 href="/vendedor"

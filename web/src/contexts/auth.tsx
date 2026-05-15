@@ -35,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const u = localStorage.getItem("tcg_user");
       if (t && u) {
         setToken(t);
-        setUser(JSON.parse(u));
+        setUser(normalize(JSON.parse(u)));
       }
     } catch {
       // corrupted storage — ignore
@@ -44,11 +44,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Backend returns role as lowercase enum ('admin','seller','buyer'); normalize to uppercase
+  function normalize(u: ApiUser): ApiUser {
+    return { ...u, role: u.role?.toUpperCase() as ApiUser["role"] };
+  }
+
   function persist(t: string, u: ApiUser) {
+    const normalized = normalize(u);
     localStorage.setItem("tcg_token", t);
-    localStorage.setItem("tcg_user", JSON.stringify(u));
+    localStorage.setItem("tcg_user", JSON.stringify(normalized));
     setToken(t);
-    setUser(u);
+    setUser(normalized);
   }
 
   const login = useCallback(async (email: string, password: string) => {

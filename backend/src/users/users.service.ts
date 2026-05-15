@@ -1,10 +1,12 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from './user.entity';
 import { UpdateShippingDto } from './dto/update-shipping.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Injectable()
 export class UsersService {
@@ -40,6 +42,31 @@ export class UsersService {
 
   async updateRole(id: string, role: UserRole): Promise<void> {
     await this.usersRepo.update(id, { role });
+  }
+
+  async updateProfile(id: string, dto: UpdateProfileDto): Promise<User> {
+    if (dto.username) {
+      const exists = await this.usersRepo.findOne({ where: { username: dto.username } });
+      if (exists && exists.id !== id) throw new ConflictException('Nombre de usuario ya en uso');
+    }
+    await this.usersRepo.update(id, {
+      ...(dto.username    !== undefined && { username:    dto.username    }),
+      ...(dto.displayName !== undefined && { displayName: dto.displayName }),
+    });
+    return this.findById(id);
+  }
+
+  async changePassword(id: string, dto: ChangePasswordDto): Promise<void> {
+    const user = await this.usersRepo
+      .createQueryBuilder('user')
+      .addSelect('user.passwordHash')
+      .where('user.id = :id', { id })
+      .getOne();
+    if (!user) throw new NotFoundException('User not found');
+    const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    if (!valid) throw new UnauthorizedException('Contraseña actual incorrecta');
+    const hash = await bcrypt.hash(dto.newPassword, 12);
+    await this.usersRepo.update(id, { passwordHash: hash });
   }
 
   async updateShipping(id: string, dto: UpdateShippingDto): Promise<User> {

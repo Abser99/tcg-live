@@ -100,6 +100,17 @@ export const listingsApi = {
   get: (id: string) => api.get<ApiListing>(`/listings/${id}`),
 };
 
+// ─── Users ─────────────────────────────────────────────────────
+export const usersApi = {
+  me: () => api.get<ApiUser>("/users/me"),
+  updateProfile: (dto: { username?: string; displayName?: string }) =>
+    api.patch<ApiUser>("/users/me", dto),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.patch("/users/me/password", { currentPassword, newPassword }),
+  updateAddress: (dto: { zipCode?: string; street?: string; colonia?: string; city?: string; state?: string }) =>
+    api.patch<ApiUser>("/users/me/address", dto),
+};
+
 // ─── Messages ──────────────────────────────────────────────────
 export const messagesApi = {
   threads: () => api.get<MessageThread[]>("/messages"),
@@ -133,7 +144,18 @@ export interface ApiUser {
   username: string;
   email: string;
   role: "BUYER" | "SELLER" | "ADMIN";
+  displayName?: string;
+  avatarUrl?: string;
+  reputationScore?: number;
   reputation?: number;
+  isVerified?: boolean;
+  zipCode?: string;
+  street?: string;
+  colonia?: string;
+  city?: string;
+  state?: string;
+  shippingNote?: string;
+  shippingInsurance?: boolean;
   createdAt?: string;
 }
 
