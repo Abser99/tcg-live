@@ -1,10 +1,9 @@
-import { BadRequestException, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import type { Cache } from 'cache-manager';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
+import Redis from 'ioredis';
 import { UsersService } from '../users/users.service';
 import { User, UserRole } from '../users/user.entity';
 import { RegisterDto } from './dto/register.dto';
@@ -12,18 +11,24 @@ import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 
-const RESET_TTL_MS = 3_600_000; // 1 hour
+const RESET_TTL_SECONDS = 3_600; // 1 hour
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private readonly redis: Redis;
 
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    @Inject(CACHE_MANAGER) private readonly cache: Cache,
-  ) {}
+  ) {
+    this.redis = new Redis({
+      host: process.env.REDIS_HOST ?? 'localhost',
+      port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
+      lazyConnect: true,
+    });
+  }
 
   async register(dto: RegisterDto) {
     const user = await this.usersService.create(dto.email, dto.username, dto.password);
@@ -55,7 +60,7 @@ export class AuthService {
     if (!user) return; // silently succeed — don't leak whether email exists
 
     const token = crypto.randomBytes(32).toString('hex');
-    await this.cache.set(`reset:${token}`, user.id, RESET_TTL_MS);
+    await this.redis.set(`reset:${token}`, user.id, 'EX', RESET_TTL_SECONDS);
 
     const webUrl = this.configService.get<string>('WEB_URL') ?? 'http://localhost:3001';
     const resetUrl = `${webUrl}/reset-contrasena?token=${token}`;
@@ -64,7 +69,7 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {
-    const userId = await this.cache.get<string>(`reset:${dto.token}`);
+    const userId = await this.redis.get(`reset:${dto.token}`);
     if (!userId) throw new BadRequestException('El enlace de recuperación expiró o no es válido');
 
     const user = await this.usersService.findById(userId);
@@ -72,7 +77,7 @@ export class AuthService {
 
     const hash = await bcrypt.hash(dto.newPassword, 12);
     await this.usersService.setPasswordHash(user.id, hash);
-    await this.cache.del(`reset:${dto.token}`);
+    await this.redis.del(`reset:${dto.token}`);
   }
 
   private async sendResetEmail(to: string, resetUrl: string): Promise<void> {
