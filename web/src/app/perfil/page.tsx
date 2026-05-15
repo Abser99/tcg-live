@@ -5,16 +5,32 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
-import { ordersApi, auctionsApi, paymentsApi, watchlistApi, messagesApi, sellerApplicationsApi, sellerDocumentsApi, type ApiOrder, type ApiBid, type WatchlistItem, type MessageThread, type SellerApplication, type SellerDocumentRecord } from "@/lib/api";
+import { ordersApi, auctionsApi, paymentsApi, watchlistApi, messagesApi, sellerApplicationsApi, sellerDocumentsApi, disputesApi, type ApiOrder, type ApiBid, type WatchlistItem, type MessageThread, type SellerApplication, type SellerDocumentRecord, type ApiDispute } from "@/lib/api";
 import { MY_ORDERS, type Order } from "@/lib/mock-data";
 
-type Tab = "ordenes" | "watchlist" | "mensajes";
+type Tab = "ordenes" | "watchlist" | "mensajes" | "disputas";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "ordenes",   label: "Mis Órdenes" },
   { key: "watchlist", label: "Watchlist"   },
   { key: "mensajes",  label: "Mensajes"    },
+  { key: "disputas",  label: "Disputas"    },
 ];
+
+const DISPUTE_REASON_LABELS: Record<string, string> = {
+  not_received:     "No recibí el paquete",
+  wrong_item:       "Artículo incorrecto",
+  damaged:          "Llegó dañado",
+  not_as_described: "No coincide con la descripción",
+  other:            "Otro",
+};
+
+const DISPUTE_STATUS_STYLE: Record<string, { label: string; color: string; bg: string; icon: string }> = {
+  open:         { label: "Abierta",      color: "#f59e0b", bg: "rgba(245,158,11,0.12)",  icon: "🔓" },
+  under_review: { label: "En revisión",  color: "#60a5fa", bg: "rgba(96,165,250,0.12)",  icon: "🔍" },
+  resolved:     { label: "Resuelta",     color: "#4ade80", bg: "rgba(74,222,128,0.12)",  icon: "✅" },
+  rejected:     { label: "Rechazada",    color: "#f87171", bg: "rgba(248,113,113,0.12)", icon: "❌" },
+};
 
 const BID_STATUS: Record<string, { label: string; color: string; bg: string }> = {
   ganando:   { label: "Ganando",   color: "#4ade80", bg: "rgba(74,222,128,0.1)"  },
@@ -87,6 +103,15 @@ export default function PerfilPage() {
   const [dataLoading, setDataLoading] = useState(false);
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
 
+  // Disputes
+  const [disputes,          setDisputes]          = useState<ApiDispute[] | null>(null);
+  const [showDisputeModal,  setShowDisputeModal]  = useState(false);
+  const [disputeOrderId,    setDisputeOrderId]    = useState("");
+  const [disputeReason,     setDisputeReason]     = useState("");
+  const [disputeDesc,       setDisputeDesc]       = useState("");
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [disputeError,      setDisputeError]      = useState("");
+
   // Seller application
   const [application, setApplication]       = useState<SellerApplication | null | undefined>(undefined);
   const [showSellerModal, setShowSellerModal] = useState(false);
@@ -112,12 +137,14 @@ export default function PerfilPage() {
       watchlistApi.my().catch(() => null),
       messagesApi.threads().catch(() => null),
       sellerApplicationsApi.myApplication().catch(() => null),
-    ]).then(([ordersRes, bidsRes, watchlistRes, messagesRes, appRes]) => {
+      disputesApi.my().catch(() => null),
+    ]).then(([ordersRes, bidsRes, watchlistRes, messagesRes, appRes, disputesRes]) => {
       if (ordersRes)    setRealOrders(ordersRes.data);
       if (bidsRes)      setRealBids(bidsRes.data);
       if (watchlistRes) setRealWatchlist(watchlistRes.data);
       if (messagesRes)  setRealMessages(messagesRes.data);
       setApplication(appRes?.data ?? null);
+      if (disputesRes)  setDisputes(disputesRes.data);
     }).finally(() => setDataLoading(false));
   }, [user]);
 
@@ -155,6 +182,26 @@ export default function PerfilPage() {
     }
   }
 
+  async function handleOpenDispute(e?: React.MouseEvent) {
+    e?.stopPropagation();
+    setDisputeError("");
+    if (!disputeReason) { setDisputeError("Selecciona el motivo"); return; }
+    if (disputeDesc.length < 10) { setDisputeError("Describe el problema (mínimo 10 caracteres)"); return; }
+    setDisputeSubmitting(true);
+    try {
+      const { data } = await disputesApi.open({ orderId: disputeOrderId, reason: disputeReason, description: disputeDesc });
+      setDisputes(prev => [data, ...(prev ?? [])]);
+      setShowDisputeModal(false);
+      setDisputeReason("");
+      setDisputeDesc("");
+      setTab("disputas");
+    } catch (err: any) {
+      setDisputeError(err?.response?.data?.message ?? "Error al abrir disputa. Intenta de nuevo.");
+    } finally {
+      setDisputeSubmitting(false);
+    }
+  }
+
   async function handleCheckout(orderId: string) {
     setCheckingOut(orderId);
     try {
@@ -183,10 +230,12 @@ export default function PerfilPage() {
     : MY_ORDERS;
 
   const bidsCount = realBids?.length ?? 0;
+  const openDisputesCount = disputes?.filter(d => d.status === "open" || d.status === "under_review").length;
   const tabCounts: Record<Tab, number | undefined> = {
     ordenes:   orders.length + bidsCount,
     watchlist: realWatchlist?.length ?? 0,
     mensajes:  realMessages?.reduce((n, m) => n + (m.unreadCount ?? 0), 0) || undefined,
+    disputas:  openDisputesCount || undefined,
   };
 
   return (
@@ -420,6 +469,20 @@ export default function PerfilPage() {
                           {order.tracking && (
                             <p className="text-[11px] text-zinc-600 mt-1.5 font-mono">Rastreo: {order.tracking}</p>
                           )}
+                          {!isPending && order.status !== "entregado" && order.status !== "delivered" && (
+                            <button
+                              onClick={() => {
+                                setDisputeOrderId(order.id);
+                                setDisputeReason("");
+                                setDisputeDesc("");
+                                setDisputeError("");
+                                setShowDisputeModal(true);
+                              }}
+                              className="mt-3 text-[11px] font-semibold text-zinc-500 hover:text-red-400 transition-colors"
+                            >
+                              ⚠ Reportar problema
+                            </button>
+                          )}
                           {isPending && (
                             PAYMENTS_ENABLED ? (
                               <button
@@ -488,6 +551,49 @@ export default function PerfilPage() {
               </div>
             )}
 
+            {/* ── DISPUTAS ── */}
+            {tab === "disputas" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-zinc-500">Una disputa protege tus compras cuando algo sale mal con tu pedido.</p>
+                </div>
+                {(disputes ?? []).length === 0 ? (
+                  <div className="text-center py-16">
+                    <p className="text-3xl mb-3">🛡</p>
+                    <p className="text-zinc-400 font-medium">Sin disputas</p>
+                    <p className="text-xs text-zinc-600 mt-1">Si tienes un problema con una orden, reportarlo desde "Mis Órdenes"</p>
+                  </div>
+                ) : (disputes ?? []).map(d => {
+                  const s = DISPUTE_STATUS_STYLE[d.status] ?? DISPUTE_STATUS_STYLE.open;
+                  return (
+                    <div key={d.id} className="rounded-2xl p-5" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                      <div className="flex items-start gap-4">
+                        <span className="text-2xl mt-1 shrink-0">{s.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <p className="font-bold text-sm">{DISPUTE_REASON_LABELS[d.reason] ?? d.reason}</p>
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.color }}>
+                              {s.label}
+                            </span>
+                          </div>
+                          <p className="text-xs text-zinc-500 mt-1">
+                            Orden: {d.orderId.slice(0, 8)}… · {new Date(d.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}
+                          </p>
+                          <p className="text-sm text-zinc-300 mt-2 leading-relaxed">{d.description}</p>
+                          {d.resolutionNote && (
+                            <div className="mt-3 p-3 rounded-xl" style={{ background: "rgba(108,58,232,0.08)", border: "1px solid rgba(108,58,232,0.2)" }}>
+                              <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Resolución del equipo</p>
+                              <p className="text-sm text-zinc-300">{d.resolutionNote}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {/* ── MENSAJES ── */}
             {tab === "mensajes" && (
               <div className="space-y-2">
@@ -527,6 +633,66 @@ export default function PerfilPage() {
           </>
         )}
       </div>
+
+      {/* ── MODAL ABRIR DISPUTA ── */}
+      {showDisputeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="relative w-full max-w-md rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <button onClick={() => setShowDisputeModal(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
+
+            <h2 className="text-xl font-black mb-1">Reportar un problema</h2>
+            <p className="text-xs text-zinc-500 mb-5">Orden: <span className="font-mono">{disputeOrderId.slice(0, 8)}…</span></p>
+
+            {disputeError && (
+              <div className="mb-4 px-4 py-3 rounded-xl text-sm text-red-400" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                {disputeError}
+              </div>
+            )}
+
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-zinc-400 mb-1.5">¿Cuál es el problema?</label>
+              <select
+                value={disputeReason}
+                onChange={e => setDisputeReason(e.target.value)}
+                className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#6C3AE8]/60"
+              >
+                <option value="">Selecciona el motivo</option>
+                <option value="not_received">No recibí el paquete</option>
+                <option value="wrong_item">Artículo incorrecto</option>
+                <option value="damaged">Llegó dañado</option>
+                <option value="not_as_described">No coincide con la descripción</option>
+                <option value="other">Otro</option>
+              </select>
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Describe el problema</label>
+              <textarea
+                value={disputeDesc}
+                onChange={e => setDisputeDesc(e.target.value)}
+                rows={4}
+                placeholder="Explica con detalle qué pasó con tu pedido..."
+                maxLength={1000}
+                className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 resize-none"
+              />
+              <p className="text-[11px] text-zinc-600 mt-1 text-right">{disputeDesc.length}/1000</p>
+            </div>
+
+            <div className="p-3 rounded-xl mb-5" style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.15)" }}>
+              <p className="text-[11px] text-amber-400/80">Al reportar un problema, nuestro equipo revisará el caso y se pondrá en contacto contigo en 1-3 días hábiles.</p>
+            </div>
+
+            <button
+              onClick={handleOpenDispute}
+              disabled={disputeSubmitting}
+              className="w-full py-3.5 rounded-xl font-black text-white disabled:opacity-60"
+              style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)" }}
+            >
+              {disputeSubmitting ? "Enviando..." : "Abrir disputa"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── MODAL SOLICITUD VENDEDOR ── */}
       {showSellerModal && (

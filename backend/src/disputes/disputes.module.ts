@@ -5,9 +5,10 @@ import { DisputesService } from './disputes.service';
 import { DisputesController } from './disputes.controller';
 import { OrdersModule } from '../orders/orders.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Dispute]), OrdersModule, NotificationsModule],
+  imports: [TypeOrmModule.forFeature([Dispute]), OrdersModule, NotificationsModule, UsersModule],
   providers: [DisputesService],
   controllers: [DisputesController],
   exports: [DisputesService],

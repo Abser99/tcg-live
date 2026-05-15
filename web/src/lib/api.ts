@@ -111,6 +111,16 @@ export const usersApi = {
     api.patch<ApiUser>("/users/me/address", dto),
 };
 
+// ─── Disputes ──────────────────────────────────────────────────
+export const disputesApi = {
+  open: (dto: { orderId: string; reason: string; description: string }) =>
+    api.post<ApiDispute>("/disputes", dto),
+  my: () => api.get<ApiDispute[]>("/disputes/my"),
+  all: () => api.get<ApiDispute[]>("/disputes"),
+  resolve: (id: string, status: "resolved" | "rejected", resolutionNote: string) =>
+    api.patch<ApiDispute>(`/disputes/${id}/resolve`, { status, resolutionNote }),
+};
+
 // ─── Messages ──────────────────────────────────────────────────
 export const messagesApi = {
   threads: () => api.get<MessageThread[]>("/messages"),
@@ -239,6 +249,21 @@ export interface PaymentStatus {
 export interface WatchlistItem {
   id: string;
   auction?: ApiAuction;
+}
+
+export interface ApiDispute {
+  id: string;
+  orderId: string;
+  buyerId: string;
+  sellerId: string;
+  reason: string;
+  description: string;
+  status: "open" | "under_review" | "resolved" | "rejected";
+  resolutionNote?: string;
+  createdAt: string;
+  updatedAt: string;
+  buyer?: { username: string; email: string } | null;
+  seller?: { username: string; email: string } | null;
 }
 
 export interface MessageThread {
