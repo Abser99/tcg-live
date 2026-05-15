@@ -11,15 +11,17 @@ export interface ScanResult {
 
 @Injectable()
 export class CardsService {
-  private readonly client: Anthropic;
+  private readonly client: Anthropic | null;
 
   constructor(private readonly config: ConfigService) {
-    this.client = new Anthropic({
-      apiKey: config.getOrThrow('ANTHROPIC_API_KEY'),
-    });
+    const apiKey = config.get<string>('ANTHROPIC_API_KEY');
+    this.client = apiKey ? new Anthropic({ apiKey }) : null;
   }
 
   async scanCard(imageBase64: string, mimeType: string): Promise<ScanResult> {
+    if (!this.client) {
+      return { cardName: '', cardSet: '', cardNumber: '', game: 'other' };
+    }
     const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const;
     type ValidType = (typeof validTypes)[number];
     const safeType: ValidType = validTypes.includes(mimeType as ValidType)
