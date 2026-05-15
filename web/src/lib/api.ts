@@ -40,6 +40,12 @@ export const authApi = {
     api.post<{ token: string; user: ApiUser }>("/auth/register", { username, email, password }),
 
   me: () => api.get<ApiUser>("/auth/me"),
+
+  forgotPassword: (email: string) =>
+    api.post("/auth/forgot-password", { email }),
+
+  resetPassword: (token: string, newPassword: string) =>
+    api.post("/auth/reset-password", { token, newPassword }),
 };
 
 // ─── Auctions ──────────────────────────────────────────────────
@@ -308,6 +314,7 @@ export interface SellerDocumentRecord {
   status: "pending" | "approved" | "rejected";
   emissionDate?: string;
   rejectionNote?: string;
+  isExpired?: boolean;
   userId?: string;
   user?: { id: string; username: string; email: string };
 }

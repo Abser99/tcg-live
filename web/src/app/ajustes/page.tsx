@@ -5,17 +5,41 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
-import { usersApi, sellerApplicationsApi, type ApiUser, type SellerApplication } from "@/lib/api";
+import { usersApi, sellerApplicationsApi, sellerDocumentsApi, type ApiUser, type SellerApplication, type SellerDocumentRecord } from "@/lib/api";
+
+const CLOUDINARY_CLOUD  = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dsjhoj5wt";
+const CLOUDINARY_PRESET = "tcg_live";
+
+async function uploadToCloudinary(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("upload_preset", CLOUDINARY_PRESET);
+  form.append("folder", "tcg-live/seller-docs");
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/auto/upload`, { method: "POST", body: form });
+  const data = await res.json();
+  if (!data.secure_url) throw new Error("Error al subir archivo");
+  return data.secure_url as string;
+}
+
+const REQUIRED_DOCS: { type: string; label: string; hint: string; needsDate: boolean }[] = [
+  { type: "identificacion",        label: "Identificación Oficial",         hint: "INE o Pasaporte vigente",                            needsDate: false },
+  { type: "curp",                  label: "CURP",                           hint: "Documento CURP actualizado",                         needsDate: false },
+  { type: "constancia_fiscal",     label: "Constancia de Situación Fiscal", hint: "Del SAT, debe ser del mes en curso",                  needsDate: true  },
+  { type: "opinion_cumplimiento",  label: "Opinión de Cumplimiento SAT",    hint: "Positiva, del mes en curso",                         needsDate: true  },
+  { type: "comprobante_domicilio", label: "Comprobante de Domicilio",       hint: "Máximo 3 meses de antigüedad (luz, agua, etc.)",     needsDate: true  },
+  { type: "cuenta_bancaria",       label: "Cuenta Bancaria / CLABE",        hint: "Estado de cuenta o carátula con CLABE interbancaria", needsDate: false },
+];
 
 const ESTADOS_MX = ["Aguascalientes","Baja California","Baja California Sur","Campeche","Chiapas","Chihuahua","Ciudad de México","Coahuila","Colima","Durango","Guanajuato","Guerrero","Hidalgo","Jalisco","México","Michoacán","Morelos","Nayarit","Nuevo León","Oaxaca","Puebla","Querétaro","Quintana Roo","San Luis Potosí","Sinaloa","Sonora","Tabasco","Tamaulipas","Tlaxcala","Veracruz","Yucatán","Zacatecas"];
 
-type Section = "cuenta" | "seguridad" | "direccion" | "notificaciones";
+type Section = "cuenta" | "seguridad" | "direccion" | "notificaciones" | "verificacion";
 
 const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: "cuenta",         label: "Información personal", icon: "👤" },
-  { key: "seguridad",      label: "Contraseña",           icon: "🔒" },
-  { key: "direccion",      label: "Dirección de envío",   icon: "📦" },
-  { key: "notificaciones", label: "Notificaciones",        icon: "🔔" },
+  { key: "verificacion",   label: "Verificación",          icon: "🪪" },
+  { key: "seguridad",      label: "Contraseña",            icon: "🔒" },
+  { key: "direccion",      label: "Dirección de envío",    icon: "📦" },
+  { key: "notificaciones", label: "Notificaciones",         icon: "🔔" },
 ];
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -77,8 +101,26 @@ export default function AjustesPage() {
   const [activeSection, setActiveSection] = useState<Section>("cuenta");
 
   // Full user data (includes address fields)
-  const [fullUser, setFullUser] = useState<ApiUser | null>(null);
+  const [fullUser, setFullUser]   = useState<ApiUser | null>(null);
   const [application, setApplication] = useState<SellerApplication | null | undefined>(undefined);
+  const [myDocs, setMyDocs]       = useState<SellerDocumentRecord[] | null>(null);
+
+  // Seller application modal
+  const [showSellerModal, setShowSellerModal] = useState(false);
+  const [sellerStep, setSellerStep]           = useState<1 | 2>(1);
+  const [sellerForm, setSellerForm]           = useState({ fullName: "", state: "", description: "" });
+  const [docUrls, setDocUrls]                 = useState<Record<string, string>>({});
+  const [docDates, setDocDates]               = useState<Record<string, string>>({});
+  const [docUploading, setDocUploading]       = useState<Record<string, boolean>>({});
+  const [sellerSubmitting, setSellerSubmitting] = useState(false);
+  const [sellerError, setSellerError]         = useState("");
+
+  // Doc re-upload (for SELLER with expired/rejected docs)
+  const [reuploadUrls, setReuploadUrls]     = useState<Record<string, string>>({});
+  const [reuploadDates, setReuploadDates]   = useState<Record<string, string>>({});
+  const [reuploadBusy, setReuploadBusy]     = useState<Record<string, boolean>>({});
+  const [reuploadDone, setReuploadDone]     = useState<Record<string, boolean>>({});
+  const [reuploadError, setReuploadError]   = useState<Record<string, string>>({});
 
   // Profile form
   const [profileForm, setProfileForm] = useState({ username: "", displayName: "" });
@@ -115,7 +157,8 @@ export default function AjustesPage() {
     Promise.all([
       usersApi.me().catch(() => null),
       sellerApplicationsApi.myApplication().catch(() => null),
-    ]).then(([meRes, appRes]) => {
+      sellerDocumentsApi.myDocuments().catch(() => null),
+    ]).then(([meRes, appRes, docsRes]) => {
       if (meRes) {
         setFullUser(meRes.data);
         setProfileForm({ username: meRes.data.username, displayName: meRes.data.displayName ?? "" });
@@ -128,6 +171,7 @@ export default function AjustesPage() {
         });
       }
       setApplication(appRes?.data ?? null);
+      if (docsRes) setMyDocs(docsRes.data);
     });
 
     // Load notification prefs from localStorage
@@ -198,6 +242,68 @@ export default function AjustesPage() {
   function saveNotifs(updated: typeof notifs) {
     setNotifs(updated);
     localStorage.setItem("tcg_notifs", JSON.stringify(updated));
+  }
+
+  async function handleDocUpload(type: string, file: File, forReupload: boolean) {
+    if (forReupload) {
+      setReuploadBusy(p => ({ ...p, [type]: true }));
+      setReuploadError(p => ({ ...p, [type]: "" }));
+      try {
+        const url = await uploadToCloudinary(file);
+        setReuploadUrls(p => ({ ...p, [type]: url }));
+      } catch { setReuploadError(p => ({ ...p, [type]: "Error al subir. Intenta de nuevo." })); }
+      finally { setReuploadBusy(p => ({ ...p, [type]: false })); }
+    } else {
+      setDocUploading(p => ({ ...p, [type]: true }));
+      setSellerError("");
+      try {
+        const url = await uploadToCloudinary(file);
+        setDocUrls(p => ({ ...p, [type]: url }));
+      } catch { setSellerError("Error al subir archivo. Intenta de nuevo."); }
+      finally { setDocUploading(p => ({ ...p, [type]: false })); }
+    }
+  }
+
+  async function handleReuploadSubmit(type: string) {
+    const url = reuploadUrls[type];
+    if (!url) return;
+    const docDef = REQUIRED_DOCS.find(d => d.type === type);
+    if (docDef?.needsDate && !reuploadDates[type]) {
+      setReuploadError(p => ({ ...p, [type]: "Ingresa la fecha de emisión" }));
+      return;
+    }
+    setReuploadBusy(p => ({ ...p, [type]: true }));
+    try {
+      await sellerDocumentsApi.uploadFromUrl(type, url, reuploadDates[type]);
+      setReuploadDone(p => ({ ...p, [type]: true }));
+      const docsRes = await sellerDocumentsApi.myDocuments().catch(() => null);
+      if (docsRes) setMyDocs(docsRes.data);
+    } catch (e: any) {
+      setReuploadError(p => ({ ...p, [type]: e?.response?.data?.message ?? "Error al guardar" }));
+    } finally {
+      setReuploadBusy(p => ({ ...p, [type]: false }));
+    }
+  }
+
+  async function handleSellerApply() {
+    setSellerError("");
+    const missing = REQUIRED_DOCS.filter(d => !docUrls[d.type]);
+    if (missing.length) { setSellerError(`Falta subir: ${missing.map(d => d.label).join(", ")}`); return; }
+    const missingDates = REQUIRED_DOCS.filter(d => d.needsDate && !docDates[d.type]);
+    if (missingDates.length) { setSellerError(`Falta fecha de emisión de: ${missingDates.map(d => d.label).join(", ")}`); return; }
+    setSellerSubmitting(true);
+    try {
+      for (const doc of REQUIRED_DOCS) {
+        await sellerDocumentsApi.uploadFromUrl(doc.type, docUrls[doc.type], docDates[doc.type]);
+      }
+      const { data } = await sellerApplicationsApi.apply(sellerForm);
+      setApplication(data);
+      setShowSellerModal(false);
+    } catch (e: any) {
+      setSellerError(e?.response?.data?.message ?? "Error al enviar solicitud. Intenta de nuevo.");
+    } finally {
+      setSellerSubmitting(false);
+    }
   }
 
   if (authLoading || !user) return null;
@@ -359,30 +465,39 @@ export default function AjustesPage() {
                         <div>
                           <p className="text-sm font-semibold">Cuenta de vendedor</p>
                           <p className="text-xs text-zinc-500 mt-0.5">
-                            {application === null && "Solicita vender en TCG Live"}
-                            {application?.status === "pending" && "Tu solicitud está en revisión"}
+                            {(!application || application === null) && "Solicita vender en TCG Live"}
+                            {application?.status === "pending"  && "Tu solicitud está en revisión (1–3 días hábiles)"}
                             {application?.status === "approved" && "Solicitud aprobada"}
-                            {application?.status === "rejected" && "Solicitud rechazada"}
+                            {application?.status === "rejected" && `Solicitud rechazada${application.reviewNote ? ` — ${application.reviewNote}` : ""}`}
                           </p>
                         </div>
-                        {application === null && (
-                          <Link
-                            href="/perfil"
-                            className="text-xs font-bold px-4 py-2 rounded-xl"
+                        {(!application || application === null) && (
+                          <button
+                            onClick={() => { setShowSellerModal(true); setSellerStep(1); setSellerError(""); }}
+                            className="text-xs font-bold px-4 py-2 rounded-xl shrink-0"
                             style={{ background: "rgba(5,150,105,0.12)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)" }}
                           >
                             Solicitar →
-                          </Link>
+                          </button>
                         )}
                         {application?.status === "pending" && (
-                          <span className="text-xs font-bold px-3 py-1.5 rounded-full" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>
+                          <span className="text-xs font-bold px-3 py-1.5 rounded-full shrink-0" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>
                             ⏳ En revisión
                           </span>
                         )}
                         {application?.status === "approved" && (
-                          <span className="text-xs font-bold px-3 py-1.5 rounded-full" style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80" }}>
+                          <span className="text-xs font-bold px-3 py-1.5 rounded-full shrink-0" style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80" }}>
                             ✓ Aprobada
                           </span>
+                        )}
+                        {application?.status === "rejected" && (
+                          <button
+                            onClick={() => { setShowSellerModal(true); setSellerStep(1); setSellerError(""); }}
+                            className="text-xs font-bold px-4 py-2 rounded-xl shrink-0"
+                            style={{ background: "rgba(248,113,113,0.1)", color: "#f87171", border: "1px solid rgba(248,113,113,0.2)" }}
+                          >
+                            Volver a solicitar →
+                          </button>
                         )}
                       </div>
                     )}
@@ -475,6 +590,141 @@ export default function AjustesPage() {
                   </ul>
                 </div>
               </SectionCard>
+            )}
+
+            {/* ── VERIFICACIÓN ── */}
+            {activeSection === "verificacion" && (
+              <div className="space-y-6">
+                {user.role === "BUYER" && (
+                  <SectionCard title="Verificación de identidad">
+                    <p className="text-xs text-zinc-400 mb-5">
+                      Para vender en TCG Live necesitas verificar tu identidad subiendo los 6 documentos requeridos.
+                      El equipo los revisará en 1–3 días hábiles.
+                    </p>
+                    {(!application || application === null) && (
+                      <button
+                        onClick={() => { setShowSellerModal(true); setSellerStep(1); setSellerError(""); }}
+                        className="w-full py-3.5 rounded-xl font-black text-white text-sm"
+                        style={{ background: "linear-gradient(135deg, #059669, #10b981)" }}
+                      >
+                        Iniciar verificación → Solicitar cuenta de vendedor
+                      </button>
+                    )}
+                    {application?.status === "pending" && (
+                      <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                        <span className="text-2xl">⏳</span>
+                        <div>
+                          <p className="font-bold text-sm">Solicitud en revisión</p>
+                          <p className="text-xs text-zinc-500 mt-0.5">Te notificaremos cuando sea revisada.</p>
+                        </div>
+                      </div>
+                    )}
+                    {application?.status === "approved" && (
+                      <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.2)" }}>
+                        <span className="text-2xl">✅</span>
+                        <p className="font-bold text-sm">Solicitud aprobada — ya eres vendedor</p>
+                      </div>
+                    )}
+                    {application?.status === "rejected" && (
+                      <>
+                        {application.reviewNote && (
+                          <div className="rounded-xl p-4 mb-4" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                            <p className="text-xs font-bold text-red-400 mb-1">Motivo del rechazo</p>
+                            <p className="text-sm text-zinc-300">{application.reviewNote}</p>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => { setShowSellerModal(true); setSellerStep(1); setSellerError(""); }}
+                          className="w-full py-3.5 rounded-xl font-black text-white text-sm"
+                          style={{ background: "linear-gradient(135deg, #059669, #10b981)" }}
+                        >
+                          Volver a solicitar →
+                        </button>
+                      </>
+                    )}
+                  </SectionCard>
+                )}
+
+                {user.role === "SELLER" && (
+                  <SectionCard title="Mis documentos de verificación">
+                    <p className="text-xs text-zinc-400 mb-5">
+                      Algunos documentos tienen fecha de vigencia. Vuelve a subirlos antes de que expiren para mantener tu cuenta activa.
+                    </p>
+                    <div className="space-y-3">
+                      {REQUIRED_DOCS.map(doc => {
+                        const existing = myDocs?.find(d => d.documentType === doc.type);
+                        const isExpired  = (existing as any)?.isExpired === true;
+                        const status     = existing?.status;
+                        const needsReupload = !existing || status === "rejected" || isExpired;
+
+                        const statusColor = status === "approved" && !isExpired
+                          ? { bg: "rgba(74,222,128,0.1)", color: "#4ade80", label: "✓ Aprobado" }
+                          : status === "pending"
+                          ? { bg: "rgba(245,158,11,0.1)", color: "#f59e0b", label: "⏳ En revisión" }
+                          : isExpired
+                          ? { bg: "rgba(248,113,113,0.1)", color: "#f87171", label: "⚠ Vencido" }
+                          : status === "rejected"
+                          ? { bg: "rgba(248,113,113,0.1)", color: "#f87171", label: "✗ Rechazado" }
+                          : { bg: "rgba(255,255,255,0.05)", color: "#71717a", label: "Sin subir" };
+
+                        return (
+                          <div key={doc.type} className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${needsReupload ? "rgba(248,113,113,0.2)" : "rgba(255,255,255,0.07)"}` }}>
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold">{doc.label}</p>
+                                <p className="text-[11px] text-zinc-500 mt-0.5">{doc.hint}</p>
+                              </div>
+                              <span className="text-[11px] font-bold px-2 py-1 rounded-full shrink-0" style={{ background: statusColor.bg, color: statusColor.color }}>
+                                {statusColor.label}
+                              </span>
+                            </div>
+
+                            {existing?.rejectionNote && (
+                              <p className="text-xs text-red-400 mb-2">Motivo: {existing.rejectionNote}</p>
+                            )}
+
+                            {needsReupload && (
+                              <div className="mt-2 space-y-2">
+                                <input
+                                  type="file" accept=".jpg,.jpeg,.png,.pdf"
+                                  onChange={e => { const f = e.target.files?.[0]; if (f) handleDocUpload(doc.type, f, true); }}
+                                  className="w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-violet-600/20 file:text-violet-300 hover:file:bg-violet-600/30"
+                                />
+                                {doc.needsDate && (
+                                  <div>
+                                    <label className="text-[11px] text-zinc-500 block mb-1">Fecha de emisión</label>
+                                    <input type="date"
+                                      value={reuploadDates[doc.type] ?? ""}
+                                      onChange={e => setReuploadDates(p => ({ ...p, [doc.type]: e.target.value }))}
+                                      className="bg-[#0F0F14] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#6C3AE8]/60"
+                                    />
+                                  </div>
+                                )}
+                                {reuploadError[doc.type] && (
+                                  <p className="text-xs text-red-400">{reuploadError[doc.type]}</p>
+                                )}
+                                {reuploadUrls[doc.type] && !reuploadDone[doc.type] && (
+                                  <button
+                                    onClick={() => handleReuploadSubmit(doc.type)}
+                                    disabled={reuploadBusy[doc.type]}
+                                    className="text-xs font-bold px-4 py-2 rounded-xl text-white disabled:opacity-60"
+                                    style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                                  >
+                                    {reuploadBusy[doc.type] ? "Guardando..." : "Enviar documento →"}
+                                  </button>
+                                )}
+                                {reuploadDone[doc.type] && (
+                                  <p className="text-xs text-green-400 font-bold">✓ Enviado — pendiente de revisión</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </SectionCard>
+                )}
+              </div>
             )}
 
             {/* ── DIRECCIÓN ── */}
@@ -596,6 +846,106 @@ export default function AjustesPage() {
           </div>
         </div>
       </div>
+
+      {/* ── MODAL SOLICITUD VENDEDOR ── */}
+      {showSellerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <button onClick={() => setShowSellerModal(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
+
+            <h2 className="text-xl font-black mb-1">Solicitar cuenta de vendedor</h2>
+            <p className="text-xs text-zinc-500 mb-6">Paso {sellerStep} de 2 — {sellerStep === 1 ? "Datos personales" : "Documentos requeridos"}</p>
+
+            {sellerError && (
+              <div className="mb-4 px-4 py-3 rounded-xl text-sm text-red-400" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                {sellerError}
+              </div>
+            )}
+
+            {sellerStep === 1 && (
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Nombre completo</label>
+                  <input value={sellerForm.fullName} onChange={e => setSellerForm(p => ({ ...p, fullName: e.target.value }))}
+                    placeholder="Como aparece en tu INE"
+                    className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Estado</label>
+                  <select value={sellerForm.state} onChange={e => setSellerForm(p => ({ ...p, state: e.target.value }))}
+                    className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#6C3AE8]/60">
+                    <option value="">Selecciona tu estado</option>
+                    {ESTADOS_MX.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-400 mb-1.5">¿Qué vendes y cuál es tu experiencia?</label>
+                  <textarea value={sellerForm.description} onChange={e => setSellerForm(p => ({ ...p, description: e.target.value }))}
+                    rows={4} placeholder="Ej: Vendo cartas de Pokémon y MTG, llevo 3 años coleccionando..." maxLength={500}
+                    className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 resize-none" />
+                  <p className="text-[11px] text-zinc-600 mt-1 text-right">{sellerForm.description.length}/500</p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (!sellerForm.fullName || !sellerForm.state || sellerForm.description.length < 20) {
+                      setSellerError("Completa todos los campos (descripción mínimo 20 caracteres).");
+                      return;
+                    }
+                    setSellerError(""); setSellerStep(2);
+                  }}
+                  className="w-full py-3.5 rounded-xl font-black text-white mt-2"
+                  style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                >
+                  Continuar →
+                </button>
+              </div>
+            )}
+
+            {sellerStep === 2 && (
+              <div className="flex flex-col gap-3">
+                {REQUIRED_DOCS.map(doc => {
+                  const uploaded  = !!docUrls[doc.type];
+                  const uploading = !!docUploading[doc.type];
+                  return (
+                    <div key={doc.type} className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${uploaded ? "rgba(74,222,128,0.3)" : "rgba(255,255,255,0.07)"}` }}>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div>
+                          <p className="text-sm font-bold">{doc.label}</p>
+                          <p className="text-[11px] text-zinc-500 mt-0.5">{doc.hint}</p>
+                        </div>
+                        {uploaded  && <span className="text-[11px] font-black text-green-400 shrink-0">✓ Listo</span>}
+                        {uploading && <span className="text-[11px] text-zinc-400 shrink-0 animate-pulse">Subiendo...</span>}
+                      </div>
+                      <input type="file" accept=".jpg,.jpeg,.png,.pdf"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleDocUpload(doc.type, f, false); }}
+                        className="w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-violet-600/20 file:text-violet-300 hover:file:bg-violet-600/30 cursor-pointer" />
+                      {doc.needsDate && (
+                        <div className="mt-2">
+                          <label className="text-[11px] text-zinc-500 block mb-1">Fecha de emisión</label>
+                          <input type="date" value={docDates[doc.type] ?? ""} onChange={e => setDocDates(p => ({ ...p, [doc.type]: e.target.value }))}
+                            className="bg-[#0F0F14] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#6C3AE8]/60" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <div className="flex gap-3 mt-2">
+                  <button onClick={() => setSellerStep(1)} className="flex-1 py-3 rounded-xl font-bold text-zinc-400 text-sm" style={{ background: "rgba(255,255,255,0.05)" }}>
+                    ← Atrás
+                  </button>
+                  <button onClick={handleSellerApply} disabled={sellerSubmitting}
+                    className="flex-1 py-3 rounded-xl font-black text-white text-sm disabled:opacity-60"
+                    style={{ background: "linear-gradient(135deg, #059669, #10b981)" }}>
+                    {sellerSubmitting ? "Enviando..." : "Enviar solicitud"}
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-600 text-center">Tu solicitud será revisada en 1–3 días hábiles</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -100,6 +100,10 @@ export class UsersService {
     return Math.round((user.totalRatingPoints / user.totalRatings) * 10) / 10;
   }
 
+  async setPasswordHash(id: string, hash: string): Promise<void> {
+    await this.usersRepo.update(id, { passwordHash: hash });
+  }
+
   async setVerified(id: string, isVerified: boolean): Promise<void> {
     await this.usersRepo.update(id, { isVerified });
   }

@@ -76,7 +76,7 @@ export default function LoginPage() {
             <div>
               <div className="flex justify-between mb-2">
                 <label className="text-sm font-semibold text-zinc-300">Contraseña</label>
-                <Link href="#" className="text-xs text-[#a78bfa] hover:text-white transition-colors">
+                <Link href="/olvide-contrasena" className="text-xs text-[#a78bfa] hover:text-white transition-colors">
                   ¿Olvidaste tu contraseña?
                 </Link>
               </div>
