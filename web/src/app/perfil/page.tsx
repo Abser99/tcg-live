@@ -6,15 +6,11 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
 import { ordersApi, auctionsApi, paymentsApi, watchlistApi, messagesApi, type ApiOrder, type ApiBid, type WatchlistItem, type MessageThread } from "@/lib/api";
-import {
-  AUCTIONS, MY_BIDS, MY_ORDERS,
-  type Order,
-} from "@/lib/mock-data";
+import { MY_ORDERS, type Order } from "@/lib/mock-data";
 
-type Tab = "pujas" | "ordenes" | "watchlist" | "mensajes";
+type Tab = "ordenes" | "watchlist" | "mensajes";
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: "pujas",     label: "Mis Pujas"   },
   { key: "ordenes",   label: "Mis Órdenes" },
   { key: "watchlist", label: "Watchlist"   },
   { key: "mensajes",  label: "Mensajes"    },
@@ -57,7 +53,7 @@ async function initiateCheckout(orderId: string) {
 export default function PerfilPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("pujas");
+  const [tab, setTab] = useState<Tab>("ordenes");
 
   // Real data
   const [realOrders,    setRealOrders]    = useState<ApiOrder[]      | null>(null);
@@ -114,9 +110,9 @@ export default function PerfilPage() {
       }))
     : MY_ORDERS;
 
+  const bidsCount = realBids?.length ?? 0;
   const tabCounts: Record<Tab, number | undefined> = {
-    pujas:     realBids?.length ?? MY_BIDS.length,
-    ordenes:   orders.length,
+    ordenes:   orders.length + bidsCount,
     watchlist: realWatchlist?.length ?? 0,
     mensajes:  realMessages?.reduce((n, m) => n + (m.unreadCount ?? 0), 0) || undefined,
   };
@@ -148,9 +144,9 @@ export default function PerfilPage() {
               <p className="text-zinc-500 text-sm mt-0.5">@{user.username} · {user.email}</p>
               <div className="flex flex-wrap items-center gap-5 mt-4">
                 {[
-                  { label: "Pujas",    value: realBids?.length  ?? MY_BIDS.length   },
-                  { label: "Órdenes",  value: orders.length                          },
-                  { label: "Watchlist",value: realWatchlist?.length ?? 0             },
+                  { label: "Pujas activas", value: realBids?.filter(b => b.status === "active").length ?? 0 },
+                  { label: "Órdenes",       value: orders.length                                            },
+                  { label: "Watchlist",     value: realWatchlist?.length ?? 0                               },
                 ].map((s) => (
                   <div key={s.label}>
                     <p className="text-xl font-black">{s.value}</p>
@@ -211,73 +207,50 @@ export default function PerfilPage() {
 
         {!dataLoading && (
           <>
-            {/* ── MIS PUJAS ── */}
-            {tab === "pujas" && (
-              <div className="space-y-3">
-                {(realBids ? realBids.map((bid) => {
-                  const status = BID_STATUS[bid.status ?? "active"];
-                  const isActive = bid.status === "active" || bid.status === "ganando";
-                  return (
-                    <div key={bid.id} className="flex items-center gap-4 rounded-2xl p-4" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
-                      <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0" style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}>
-                        🃏
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm truncate">{bid.item?.cardName ?? bid.auction?.title ?? "Carta"}</p>
-                        <p className="text-xs text-zinc-500 mt-0.5">{bid.item?.condition ?? ""}</p>
-                        <div className="flex items-center gap-3 mt-2">
-                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: status?.bg, color: status?.color }}>
-                            {status?.label ?? bid.status}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-[10px] text-zinc-600 mb-0.5">Mi puja</p>
-                        <p className="font-black text-base">${bid.amount.toLocaleString("es-MX")}</p>
-                      </div>
-                      {isActive && bid.auction && (
-                        <Link href={`/auctions/${bid.auction.id}`} className="shrink-0 text-xs font-bold text-white px-4 py-2 rounded-xl" style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}>
-                          Pujar →
-                        </Link>
-                      )}
-                    </div>
-                  );
-                }) : MY_BIDS.map((bid) => {
-                  const auction = AUCTIONS.find((a) => a.id === bid.auctionId)!;
-                  const s = BID_STATUS[bid.status];
-                  const isActive = bid.status === "ganando" || bid.status === "perdiendo";
-                  return (
-                    <div key={bid.auctionId} className="flex items-center gap-4 rounded-2xl p-4" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
-                      <div className={`w-12 h-16 rounded-xl bg-gradient-to-br ${auction.gradient} flex items-center justify-center text-xl shrink-0`} style={{ boxShadow: `0 0 16px ${auction.glow}` }}>
-                        {auction.emoji}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm truncate">{auction.name}</p>
-                        <p className="text-xs text-zinc-500 mt-0.5">{auction.set} · {auction.condition}</p>
-                        <div className="flex items-center gap-3 mt-2">
-                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.color }}>{s.label}</span>
-                          {isActive && <span className="text-[11px] text-zinc-500 font-mono">{auction.timer}</span>}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-[10px] text-zinc-600 mb-0.5">Mi puja</p>
-                        <p className="font-black text-base">${bid.myBid.toLocaleString("es-MX")}</p>
-                        <p className="text-[10px] text-zinc-500 mt-0.5">Actual: ${auction.currentBid.toLocaleString("es-MX")}</p>
-                      </div>
-                      {isActive && (
-                        <Link href={`/auctions/${auction.id}`} className="shrink-0 text-xs font-bold text-white px-4 py-2 rounded-xl" style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}>
-                          Pujar →
-                        </Link>
-                      )}
-                    </div>
-                  );
-                }))}
-              </div>
-            )}
-
-            {/* ── MIS ÓRDENES ── */}
+            {/* ── MIS ÓRDENES + PUJAS ── */}
             {tab === "ordenes" && (
               <div className="space-y-3">
+
+                {/* Pujas activas */}
+                {realBids && realBids.length > 0 && (
+                  <>
+                    <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-1 pt-2">Mis Pujas</p>
+                    {realBids.map((bid) => {
+                      const status = BID_STATUS[bid.status ?? "active"];
+                      const isActive = bid.status === "active" || bid.status === "ganando";
+                      return (
+                        <div key={bid.id} className="flex items-center gap-4 rounded-2xl p-4" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                          <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0" style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}>
+                            🃏
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-sm truncate">{bid.item?.cardName ?? bid.auction?.title ?? "Carta"}</p>
+                            <p className="text-xs text-zinc-500 mt-0.5">{bid.item?.condition ?? ""}</p>
+                            <div className="flex items-center gap-3 mt-2">
+                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: status?.bg, color: status?.color }}>
+                                {status?.label ?? bid.status}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-[10px] text-zinc-600 mb-0.5">Mi puja</p>
+                            <p className="font-black text-base">${bid.amount.toLocaleString("es-MX")}</p>
+                          </div>
+                          {isActive && bid.auction && (
+                            <Link href={`/auctions/${bid.auction.id}`} className="shrink-0 text-xs font-bold text-white px-4 py-2 rounded-xl" style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}>
+                              Pujar →
+                            </Link>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {orders.length > 0 && (
+                      <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-1 pt-4">Órdenes</p>
+                    )}
+                  </>
+                )}
+
+                {/* Órdenes */}
                 {orders.map((order) => {
                   const s = ORDER_STATUS[order.status] ?? { label: order.status, icon: "📋", color: "#71717a" };
                   const isPending = order.status === "pendiente_pago" || order.status === "pending_payment";

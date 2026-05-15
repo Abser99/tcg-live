@@ -9,7 +9,6 @@ export default function RegisterPage() {
   const { register } = useAuth();
   const router = useRouter();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
-  const [role, setRole]   = useState<"BUYER" | "SELLER">("BUYER");
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
 
@@ -26,8 +25,8 @@ export default function RegisterPage() {
     setLoading(true);
     setError("");
     try {
-      await register(form.name, form.email, form.password, role);
-      router.push(role === "SELLER" ? "/vendedor" : "/auctions");
+      await register(form.name, form.email, form.password);
+      router.push("/auctions");
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "No se pudo crear la cuenta. Intenta de nuevo.");
     } finally {
@@ -50,35 +49,13 @@ export default function RegisterPage() {
             </div>
           </Link>
           <h1 className="text-3xl font-black">Crea tu cuenta gratis</h1>
-          <p className="text-zinc-500 mt-2 text-sm">Empieza a comprar o vender hoy</p>
+          <p className="text-zinc-500 mt-2 text-sm">Empieza a pujar y comprar hoy</p>
         </div>
 
         <div
           className="rounded-2xl p-8"
           style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}
         >
-          {/* Role selector */}
-          <div
-            className="grid grid-cols-2 p-1 rounded-xl mb-6"
-            style={{ background: "rgba(255,255,255,0.04)" }}
-          >
-            {(["BUYER", "SELLER"] as const).map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setRole(r)}
-                className="py-2.5 rounded-lg text-sm font-bold transition-all"
-                style={
-                  role === r
-                    ? { background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", color: "#fff", boxShadow: "0 4px 15px rgba(108,58,232,0.3)" }
-                    : { color: "#71717a" }
-                }
-              >
-                {r === "BUYER" ? "🛍 Comprador" : "🎙 Vendedor"}
-              </button>
-            ))}
-          </div>
-
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {error && (
               <div

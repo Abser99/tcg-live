@@ -36,8 +36,8 @@ export const authApi = {
   login: (email: string, password: string) =>
     api.post<{ token: string; user: ApiUser }>("/auth/login", { email, password }),
 
-  register: (username: string, email: string, password: string, role: "BUYER" | "SELLER") =>
-    api.post<{ token: string; user: ApiUser }>("/auth/register", { username, email, password, role }),
+  register: (username: string, email: string, password: string) =>
+    api.post<{ token: string; user: ApiUser }>("/auth/register", { username, email, password }),
 
   me: () => api.get<ApiUser>("/auth/me"),
 };
