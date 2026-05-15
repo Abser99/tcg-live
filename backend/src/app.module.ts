@@ -95,6 +95,7 @@ import { PushToken } from './notifications/entities/push-token.entity';
     TemplatesModule,
     ListingsModule,
     SellerDocumentsModule,
+    TypeOrmModule.forFeature([User, Auction, Bid]),
   ],
   controllers: [HealthController],
   providers: [

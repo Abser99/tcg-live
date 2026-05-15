@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
+import { api } from "@/lib/api";
 
 const liveAuctions = [
   { emoji: "🔥", gradient: "from-orange-500 to-red-600", glow: "rgba(239,68,68,0.4)", name: "Charizard VMAX Rainbow", set: "Brilliant Stars · PSA 10", bid: "$2,850", viewers: 47, timer: "2:34", seller: "PokéVault_MX", verified: true },
@@ -18,10 +20,18 @@ const features = [
 
 export default function Home() {
   const { user } = useAuth();
+  const [stats, setStats] = useState<{ totalUsers: number; totalAuctions: number; totalBids: number } | null>(null);
+
+  useEffect(() => {
+    api.get<{ totalUsers: number; totalAuctions: number; totalBids: number }>("/stats")
+      .then(res => setStats(res.data))
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#0F0F14] text-white overflow-x-hidden">
       <Navbar />
-      <Hero user={user} />
+      <Hero user={user} stats={stats} />
       <LiveNow />
       <Features />
       {!user && <CTASection />}
@@ -30,7 +40,7 @@ export default function Home() {
   );
 }
 
-function Hero({ user }: { user: { username: string } | null }) {
+function Hero({ user, stats }: { user: { username: string } | null; stats: { totalUsers: number; totalAuctions: number; totalBids: number } | null }) {
   return (
     <section className="relative min-h-screen flex items-center pt-16 overflow-hidden">
       <div className="absolute inset-0 pointer-events-none">
@@ -78,7 +88,11 @@ function Hero({ user }: { user: { username: string } | null }) {
                 <div key={i} className="w-8 h-8 rounded-full bg-[#1E1E2A] border-2 border-[#0F0F14] flex items-center justify-center text-sm">{e}</div>
               ))}
             </div>
-            <span><span className="text-white font-semibold">+2,400</span> cartas vendidas este mes</span>
+            {stats && stats.totalUsers > 0 ? (
+              <span><span className="text-white font-semibold">+{stats.totalUsers.toLocaleString("es-MX")}</span> coleccionistas registrados</span>
+            ) : (
+              <span><span className="text-white font-semibold">TCG Live</span> — tu marketplace de cartas en México</span>
+            )}
           </div>
         </div>
 
