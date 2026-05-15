@@ -56,17 +56,25 @@ import { PushToken } from './notifications/entities/push-token.entity';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]), // 120 req/min globally
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres',
-        host: config.get('database.host'),
-        port: config.get('database.port'),
-        database: config.get('database.name'),
-        username: config.get('database.user'),
-        password: config.get('database.password'),
-        entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, Order, OrderItem, PaymentMethod, PushToken, Dispute, WatchlistItem, Message, FollowedSeller, AuctionTemplate, Listing, ListingOffer, SellerDocument],
-        synchronize: process.env.NODE_ENV !== 'production',
-        logging: process.env.NODE_ENV === 'development',
-      }),
+      useFactory: (config: ConfigService) => {
+        const dbUrl = config.get<string>('database.url');
+        return {
+          type: 'postgres' as const,
+          ...(dbUrl
+            ? { url: dbUrl }
+            : {
+                host: config.get('database.host'),
+                port: config.get<number>('database.port'),
+                database: config.get('database.name'),
+                username: config.get('database.user'),
+                password: config.get('database.password'),
+              }),
+          entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, Order, OrderItem, PaymentMethod, PushToken, Dispute, WatchlistItem, Message, FollowedSeller, AuctionTemplate, Listing, ListingOffer, SellerDocument],
+          synchronize: process.env.NODE_ENV !== 'production',
+          ssl: dbUrl?.includes('railway.app') ? { rejectUnauthorized: false } : false,
+          logging: process.env.NODE_ENV === 'development',
+        };
+      },
     }),
     CacheModule.registerAsync({
       isGlobal: true,

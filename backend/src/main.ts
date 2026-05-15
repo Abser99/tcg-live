@@ -6,15 +6,19 @@ import { join } from 'path';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
-const REQUIRED_ENV = [
-  'DATABASE_HOST', 'DATABASE_NAME', 'DATABASE_USER', 'DATABASE_PASSWORD',
-  'JWT_SECRET', 'REDIS_HOST',
-];
-
 async function bootstrap() {
-  const missing = REQUIRED_ENV.filter(k => !process.env[k]);
+  const logger = new Logger('Bootstrap');
+
+  // Accept DATABASE_URL (Railway style) OR individual DATABASE_* vars OR PG* vars
+  const hasDb = process.env.DATABASE_URL || process.env.DATABASE_HOST || process.env.PGHOST;
+  const hasRedis = process.env.REDIS_HOST || process.env.REDIS_URL;
+  const missing: string[] = [];
+  if (!hasDb) missing.push('DATABASE_URL or DATABASE_HOST');
+  if (!process.env.JWT_SECRET) missing.push('JWT_SECRET');
+  if (!hasRedis) missing.push('REDIS_HOST');
+
   if (missing.length) {
-    new Logger('Bootstrap').error(`Missing required env vars: ${missing.join(', ')}`);
+    logger.error(`Missing required env vars: ${missing.join(', ')}`);
     process.exit(1);
   }
 
