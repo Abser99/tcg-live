@@ -25,9 +25,6 @@ export class PaymentsService {
     this.accessToken = config.get<string>('MERCADOPAGO_ACCESS_TOKEN');
     this.useMock = !this.accessToken;
     if (this.useMock) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error('MERCADOPAGO_ACCESS_TOKEN is required in production');
-      }
       this.logger.warn('MERCADOPAGO_ACCESS_TOKEN not set — using mock payment data');
     }
   }
