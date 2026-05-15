@@ -1,16 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Turnstile } from "@marsidev/react-turnstile";
 import { useAuth } from "@/contexts/auth";
+
+// Replace with real Cloudflare Turnstile site key from dash.cloudflare.com
+const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA";
 
 export default function RegisterPage() {
   const { register } = useAuth();
   const router = useRouter();
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
+  const [form, setForm]       = useState({ name: "", email: "", password: "", confirm: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
+  const [cfToken, setCfToken] = useState<string | null>(null);
+  const turnstileRef           = useRef<any>(null);
 
   function set(key: string, val: string) {
     setForm((prev) => ({ ...prev, [key]: val }));
@@ -22,6 +29,10 @@ export default function RegisterPage() {
       setError("Las contraseñas no coinciden.");
       return;
     }
+    if (!cfToken) {
+      setError("Completa la verificación de seguridad.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -29,6 +40,8 @@ export default function RegisterPage() {
       router.push("/auctions");
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "No se pudo crear la cuenta. Intenta de nuevo.");
+      turnstileRef.current?.reset();
+      setCfToken(null);
     } finally {
       setLoading(false);
     }
@@ -123,6 +136,21 @@ export default function RegisterPage() {
               />
             </div>
 
+            {/* Cloudflare Turnstile — anti-bot */}
+            <div className="flex flex-col items-start gap-1">
+              <label className="block text-sm font-semibold mb-1 text-zinc-300">
+                Verificación de seguridad
+              </label>
+              <Turnstile
+                ref={turnstileRef}
+                siteKey={TURNSTILE_SITE_KEY}
+                onSuccess={setCfToken}
+                onExpire={() => setCfToken(null)}
+                onError={() => setCfToken(null)}
+                options={{ theme: "dark", language: "es" }}
+              />
+            </div>
+
             <label className="flex items-start gap-3 cursor-pointer mt-1">
               <input type="checkbox" required className="mt-0.5 accent-violet-500" />
               <span className="text-xs text-zinc-500 leading-relaxed">
@@ -135,7 +163,7 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !cfToken}
               className="w-full py-4 rounded-xl font-black text-white transition-all active:scale-95 disabled:opacity-60 mt-1"
               style={{
                 background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)",

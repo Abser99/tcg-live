@@ -36,7 +36,7 @@ type Section = "cuenta" | "seguridad" | "direccion" | "notificaciones" | "verifi
 
 const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: "cuenta",         label: "Información personal", icon: "👤" },
-  { key: "verificacion",   label: "Verificación",          icon: "🪪" },
+  { key: "verificacion",   label: "Cuenta de vendedor",    icon: "🏪" },
   { key: "seguridad",      label: "Contraseña",            icon: "🔒" },
   { key: "direccion",      label: "Dirección de envío",    icon: "📦" },
   { key: "notificaciones", label: "Notificaciones",         icon: "🔔" },
@@ -589,14 +589,43 @@ export default function AjustesPage() {
                     ))}
                   </ul>
                 </div>
+
+                {/* Verificación de persona */}
+                <div className="mt-8 pt-6 border-t border-white/5">
+                  <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4">Verificación de cuenta</p>
+                  <div className="flex items-center justify-between py-3 rounded-xl px-4" style={{ background: "#0F0F14", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">✉️</span>
+                      <div>
+                        <p className="text-sm font-semibold">Correo electrónico</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">{user.email}</p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold px-3 py-1.5 rounded-full" style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80" }}>
+                      ✓ Verificado
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-3 rounded-xl px-4 mt-2" style={{ background: "#0F0F14", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">📱</span>
+                      <div>
+                        <p className="text-sm font-semibold">Número de celular</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">Verificación por SMS — próximamente</p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold px-3 py-1.5 rounded-full" style={{ background: "rgba(161,161,170,0.1)", color: "#71717a" }}>
+                      Pendiente
+                    </span>
+                  </div>
+                </div>
               </SectionCard>
             )}
 
-            {/* ── VERIFICACIÓN ── */}
+            {/* ── CUENTA DE VENDEDOR ── */}
             {activeSection === "verificacion" && (
               <div className="space-y-6">
                 {user.role === "BUYER" && (
-                  <SectionCard title="Verificación de identidad">
+                  <SectionCard title="Solicitar cuenta de vendedor">
                     <p className="text-xs text-zinc-400 mb-5">
                       Para vender en TCG Live necesitas verificar tu identidad subiendo los 6 documentos requeridos.
                       El equipo los revisará en 1–3 días hábiles.
