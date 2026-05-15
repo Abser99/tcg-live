@@ -20,7 +20,6 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  // Build allowlist from WEB_URL — normalise by stripping trailing slash
   const rawWebUrl = (process.env.WEB_URL ?? '').replace(/\/$/, '');
   const allowedOrigins = [
     rawWebUrl || null,
@@ -30,12 +29,15 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
-      // Allow server-to-server requests (no origin) and all allowed origins.
-      // If WEB_URL not set, allow everything.
-      if (!rawWebUrl || !origin || allowedOrigins.includes(origin)) {
+      if (
+        !origin ||                                    // server-to-server
+        !rawWebUrl ||                                 // WEB_URL not set → open (dev)
+        allowedOrigins.includes(origin) ||            // exact match
+        /\.vercel\.app$/.test(origin) ||              // any Vercel preview URL
+        /^http:\/\/localhost(:\d+)?$/.test(origin)    // any localhost port
+      ) {
         callback(null, true);
       } else {
-        // Deny silently — do NOT pass an Error or Express returns 500
         callback(null, false);
       }
     },
