@@ -34,6 +34,7 @@ import { ListingsModule } from './listings/listings.module';
 import { Listing } from './listings/entities/listing.entity';
 import { ListingOffer } from './listings/entities/listing-offer.entity';
 import { SellerDocumentsModule } from './seller-documents/seller-documents.module';
+import { HealthController } from './health.controller';
 import { SellerDocument } from './seller-documents/seller-document.entity';
 import { User } from './users/user.entity';
 import { Auction } from './auctions/entities/auction.entity';
@@ -95,6 +96,7 @@ import { PushToken } from './notifications/entities/push-token.entity';
     ListingsModule,
     SellerDocumentsModule,
   ],
+  controllers: [HealthController],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
