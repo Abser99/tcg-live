@@ -17,6 +17,7 @@ import { extname } from 'path';
 import { AuthGuard } from '@nestjs/passport';
 import { SellerDocumentsService } from './seller-documents.service';
 import { UploadDocumentDto } from './dto/upload-document.dto';
+import { UploadDocumentUrlDto } from './dto/upload-document-url.dto';
 import { ReviewDocumentDto } from './dto/review-document.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -67,6 +68,11 @@ export class SellerDocumentsController {
     if (!file) throw new BadRequestException('Se requiere un archivo');
     const fileUrl = `/uploads/seller-documents/${file.filename}`;
     return this.service.upload(user.id, dto, fileUrl);
+  }
+
+  @Post('from-url')
+  uploadFromUrl(@CurrentUser() user: User, @Body() dto: UploadDocumentUrlDto) {
+    return this.service.upload(user.id, dto, dto.fileUrl);
   }
 
   @Get('me')

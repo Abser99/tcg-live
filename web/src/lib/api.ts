@@ -105,6 +105,20 @@ export const messagesApi = {
   threads: () => api.get<MessageThread[]>("/messages"),
 };
 
+// ─── Seller Applications ───────────────────────────────────────
+export const sellerApplicationsApi = {
+  apply: (dto: { fullName: string; state: string; description: string }) =>
+    api.post<SellerApplication>("/seller-applications", dto),
+  myApplication: () => api.get<SellerApplication | null>("/seller-applications/me"),
+};
+
+// ─── Seller Documents ──────────────────────────────────────────
+export const sellerDocumentsApi = {
+  uploadFromUrl: (documentType: string, fileUrl: string, emissionDate?: string) =>
+    api.post("/seller-documents/from-url", { documentType, fileUrl, emissionDate }),
+  myDocuments: () => api.get<SellerDocumentRecord[]>("/seller-documents/me"),
+};
+
 // ─── Types ─────────────────────────────────────────────────────
 export interface ApiUser {
   id: string;
@@ -216,6 +230,25 @@ export interface ApiListing {
   createdAt: string;
   seller?: { id: string; username: string; isVerified?: boolean };
   acceptsOffers?: boolean;
+}
+
+export interface SellerApplication {
+  id: string;
+  status: "pending" | "approved" | "rejected";
+  fullName: string;
+  state: string;
+  description: string;
+  reviewNote?: string;
+  createdAt: string;
+}
+
+export interface SellerDocumentRecord {
+  id: string;
+  documentType: string;
+  fileUrl: string;
+  status: "pending" | "approved" | "rejected";
+  emissionDate?: string;
+  rejectionNote?: string;
 }
 
 export interface CreateAuctionPayload {

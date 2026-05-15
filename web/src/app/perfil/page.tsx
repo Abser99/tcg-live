@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
-import { ordersApi, auctionsApi, paymentsApi, watchlistApi, messagesApi, type ApiOrder, type ApiBid, type WatchlistItem, type MessageThread } from "@/lib/api";
+import { ordersApi, auctionsApi, paymentsApi, watchlistApi, messagesApi, sellerApplicationsApi, sellerDocumentsApi, type ApiOrder, type ApiBid, type WatchlistItem, type MessageThread, type SellerApplication, type SellerDocumentRecord } from "@/lib/api";
 import { MY_ORDERS, type Order } from "@/lib/mock-data";
 
 type Tab = "ordenes" | "watchlist" | "mensajes";
@@ -37,8 +37,32 @@ const ORDER_STATUS: Record<string, { label: string; icon: string; color: string 
 };
 
 
-// Set to true once Mercado Pago credentials are configured
 const PAYMENTS_ENABLED = false;
+
+const CLOUDINARY_CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dsjhoj5wt";
+const CLOUDINARY_PRESET = "tcg_live";
+
+async function uploadToCloudinary(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("upload_preset", CLOUDINARY_PRESET);
+  form.append("folder", "tcg-live/seller-docs");
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/auto/upload`, { method: "POST", body: form });
+  const data = await res.json();
+  if (!data.secure_url) throw new Error("Error al subir archivo");
+  return data.secure_url as string;
+}
+
+const REQUIRED_DOCS: { type: string; label: string; hint: string; needsDate: boolean }[] = [
+  { type: "identificacion",       label: "Identificación Oficial",          hint: "INE o Pasaporte vigente",                        needsDate: false },
+  { type: "curp",                 label: "CURP",                            hint: "Documento CURP actualizado",                     needsDate: false },
+  { type: "constancia_fiscal",    label: "Constancia de Situación Fiscal",  hint: "Del SAT, debe ser del mes en curso",              needsDate: true  },
+  { type: "opinion_cumplimiento", label: "Opinión de Cumplimiento SAT",     hint: "Positiva, del mes en curso",                     needsDate: true  },
+  { type: "comprobante_domicilio",label: "Comprobante de Domicilio",        hint: "Máximo 3 meses de antigüedad (luz, agua, etc.)", needsDate: true  },
+  { type: "cuenta_bancaria",      label: "Cuenta Bancaria / CLABE",         hint: "Estado de cuenta o carátula con CLABE interbancaria", needsDate: false },
+];
+
+const ESTADOS_MX = ["Aguascalientes","Baja California","Baja California Sur","Campeche","Chiapas","Chihuahua","Ciudad de México","Coahuila","Colima","Durango","Guanajuato","Guerrero","Hidalgo","Jalisco","México","Michoacán","Morelos","Nayarit","Nuevo León","Oaxaca","Puebla","Querétaro","Quintana Roo","San Luis Potosí","Sinaloa","Sonora","Tabasco","Tamaulipas","Tlaxcala","Veracruz","Yucatán","Zacatecas"];
 
 async function initiateCheckout(orderId: string) {
   const webUrl = process.env.NEXT_PUBLIC_WEB_URL ?? window.location.origin;
@@ -63,6 +87,18 @@ export default function PerfilPage() {
   const [dataLoading, setDataLoading] = useState(false);
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
 
+  // Seller application
+  const [application, setApplication]       = useState<SellerApplication | null | undefined>(undefined);
+  const [showSellerModal, setShowSellerModal] = useState(false);
+  const [sellerStep, setSellerStep]           = useState<1 | 2>(1);
+  const [sellerForm, setSellerForm]           = useState({ fullName: "", state: "", description: "" });
+  const [docFiles, setDocFiles]               = useState<Record<string, File | null>>({});
+  const [docDates, setDocDates]               = useState<Record<string, string>>({});
+  const [docUrls, setDocUrls]                 = useState<Record<string, string>>({});
+  const [docUploading, setDocUploading]       = useState<Record<string, boolean>>({});
+  const [submitting, setSubmitting]           = useState(false);
+  const [sellerError, setSellerError]         = useState("");
+
   useEffect(() => {
     if (!authLoading && !user) router.push("/login");
   }, [authLoading, user, router]);
@@ -75,13 +111,49 @@ export default function PerfilPage() {
       auctionsApi.myBids().catch(() => null),
       watchlistApi.my().catch(() => null),
       messagesApi.threads().catch(() => null),
-    ]).then(([ordersRes, bidsRes, watchlistRes, messagesRes]) => {
+      sellerApplicationsApi.myApplication().catch(() => null),
+    ]).then(([ordersRes, bidsRes, watchlistRes, messagesRes, appRes]) => {
       if (ordersRes)    setRealOrders(ordersRes.data);
       if (bidsRes)      setRealBids(bidsRes.data);
       if (watchlistRes) setRealWatchlist(watchlistRes.data);
       if (messagesRes)  setRealMessages(messagesRes.data);
+      setApplication(appRes?.data ?? null);
     }).finally(() => setDataLoading(false));
   }, [user]);
+
+  async function handleDocFile(type: string, file: File) {
+    setDocFiles(p => ({ ...p, [type]: file }));
+    setDocUploading(p => ({ ...p, [type]: true }));
+    try {
+      const url = await uploadToCloudinary(file);
+      setDocUrls(p => ({ ...p, [type]: url }));
+    } catch {
+      setSellerError("Error al subir archivo. Intenta de nuevo.");
+    } finally {
+      setDocUploading(p => ({ ...p, [type]: false }));
+    }
+  }
+
+  async function handleSellerSubmit() {
+    setSellerError("");
+    const missing = REQUIRED_DOCS.filter(d => !docUrls[d.type]);
+    if (missing.length) { setSellerError(`Falta subir: ${missing.map(d => d.label).join(", ")}`); return; }
+    const missingDates = REQUIRED_DOCS.filter(d => d.needsDate && !docDates[d.type]);
+    if (missingDates.length) { setSellerError(`Falta la fecha de emisión de: ${missingDates.map(d => d.label).join(", ")}`); return; }
+    setSubmitting(true);
+    try {
+      for (const doc of REQUIRED_DOCS) {
+        await sellerDocumentsApi.uploadFromUrl(doc.type, docUrls[doc.type], docDates[doc.type]);
+      }
+      const { data } = await sellerApplicationsApi.apply(sellerForm);
+      setApplication(data);
+      setShowSellerModal(false);
+    } catch (e: any) {
+      setSellerError(e?.response?.data?.message ?? "Error al enviar solicitud. Intenta de nuevo.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function handleCheckout(orderId: string) {
     setCheckingOut(orderId);
@@ -164,6 +236,29 @@ export default function PerfilPage() {
               >
                 Mi tienda →
               </Link>
+            )}
+            {user.role === "BUYER" && application === null && (
+              <button
+                onClick={() => { setShowSellerModal(true); setSellerStep(1); setSellerError(""); }}
+                className="shrink-0 text-sm font-bold text-white px-5 py-2.5 rounded-xl transition-all"
+                style={{ background: "linear-gradient(135deg, #059669, #10b981)" }}
+              >
+                Vender en TCG Live →
+              </button>
+            )}
+            {user.role === "BUYER" && application?.status === "pending" && (
+              <div className="shrink-0 text-xs font-bold px-4 py-2.5 rounded-xl" style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.2)" }}>
+                ⏳ Solicitud en revisión
+              </div>
+            )}
+            {user.role === "BUYER" && application?.status === "rejected" && (
+              <button
+                onClick={() => { setShowSellerModal(true); setSellerStep(1); setSellerError(""); }}
+                className="shrink-0 text-xs font-bold px-4 py-2.5 rounded-xl"
+                style={{ background: "rgba(248,113,113,0.12)", color: "#f87171", border: "1px solid rgba(248,113,113,0.2)" }}
+              >
+                Solicitud rechazada — volver a intentar
+              </button>
             )}
           </div>
 
@@ -382,6 +477,106 @@ export default function PerfilPage() {
           </>
         )}
       </div>
+
+      {/* ── MODAL SOLICITUD VENDEDOR ── */}
+      {showSellerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <button onClick={() => setShowSellerModal(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
+
+            <h2 className="text-xl font-black mb-1">Solicitar cuenta de vendedor</h2>
+            <p className="text-xs text-zinc-500 mb-6">Paso {sellerStep} de 2 — {sellerStep === 1 ? "Datos personales" : "Documentos requeridos"}</p>
+
+            {sellerError && (
+              <div className="mb-4 px-4 py-3 rounded-xl text-sm text-red-400" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                {sellerError}
+              </div>
+            )}
+
+            {sellerStep === 1 && (
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Nombre completo</label>
+                  <input value={sellerForm.fullName} onChange={e => setSellerForm(p => ({ ...p, fullName: e.target.value }))}
+                    placeholder="Como aparece en tu INE" className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Estado</label>
+                  <select value={sellerForm.state} onChange={e => setSellerForm(p => ({ ...p, state: e.target.value }))}
+                    className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#6C3AE8]/60">
+                    <option value="">Selecciona tu estado</option>
+                    {ESTADOS_MX.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-400 mb-1.5">¿Qué vendes y cuál es tu experiencia?</label>
+                  <textarea value={sellerForm.description} onChange={e => setSellerForm(p => ({ ...p, description: e.target.value }))}
+                    rows={4} placeholder="Ej: Vendo cartas de Pokémon y MTG, llevo 3 años comprando y vendiendo colecciones..." maxLength={500}
+                    className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 resize-none" />
+                  <p className="text-[11px] text-zinc-600 mt-1 text-right">{sellerForm.description.length}/500</p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (!sellerForm.fullName || !sellerForm.state || sellerForm.description.length < 20) {
+                      setSellerError("Completa todos los campos (descripción mínimo 20 caracteres).");
+                      return;
+                    }
+                    setSellerError("");
+                    setSellerStep(2);
+                  }}
+                  className="w-full py-3.5 rounded-xl font-black text-white mt-2"
+                  style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                >
+                  Continuar →
+                </button>
+              </div>
+            )}
+
+            {sellerStep === 2 && (
+              <div className="flex flex-col gap-4">
+                {REQUIRED_DOCS.map(doc => {
+                  const uploaded = !!docUrls[doc.type];
+                  const uploading = !!docUploading[doc.type];
+                  return (
+                    <div key={doc.type} className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${uploaded ? "rgba(74,222,128,0.3)" : "rgba(255,255,255,0.07)"}` }}>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div>
+                          <p className="text-sm font-bold">{doc.label}</p>
+                          <p className="text-[11px] text-zinc-500 mt-0.5">{doc.hint}</p>
+                        </div>
+                        {uploaded && <span className="text-[11px] font-black text-green-400 shrink-0">✓ Subido</span>}
+                        {uploading && <span className="text-[11px] text-zinc-400 shrink-0 animate-pulse">Subiendo...</span>}
+                      </div>
+                      <input type="file" accept=".jpg,.jpeg,.png,.pdf"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleDocFile(doc.type, f); }}
+                        className="w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-violet-600/20 file:text-violet-300 hover:file:bg-violet-600/30 cursor-pointer" />
+                      {doc.needsDate && (
+                        <div className="mt-2">
+                          <label className="text-[11px] text-zinc-500 block mb-1">Fecha de emisión</label>
+                          <input type="date" value={docDates[doc.type] ?? ""} onChange={e => setDocDates(p => ({ ...p, [doc.type]: e.target.value }))}
+                            className="bg-[#0F0F14] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#6C3AE8]/60" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <div className="flex gap-3 mt-2">
+                  <button onClick={() => setSellerStep(1)} className="flex-1 py-3 rounded-xl font-bold text-zinc-400 text-sm" style={{ background: "rgba(255,255,255,0.05)" }}>
+                    ← Atrás
+                  </button>
+                  <button onClick={handleSellerSubmit} disabled={submitting}
+                    className="flex-1 py-3 rounded-xl font-black text-white text-sm disabled:opacity-60"
+                    style={{ background: "linear-gradient(135deg, #059669, #10b981)" }}>
+                    {submitting ? "Enviando..." : "Enviar solicitud"}
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-600 text-center">Tu solicitud será revisada por el equipo en 1-3 días hábiles</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
