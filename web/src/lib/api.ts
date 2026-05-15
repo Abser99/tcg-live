@@ -110,6 +110,10 @@ export const sellerApplicationsApi = {
   apply: (dto: { fullName: string; state: string; description: string }) =>
     api.post<SellerApplication>("/seller-applications", dto),
   myApplication: () => api.get<SellerApplication | null>("/seller-applications/me"),
+  // Admin
+  list: (status?: string) => api.get<SellerApplication[]>("/seller-applications", { params: status ? { status } : {} }),
+  review: (id: string, status: "approved" | "rejected", note?: string) =>
+    api.patch(`/seller-applications/${id}/review`, { status, reviewNote: note }),
 };
 
 // ─── Seller Documents ──────────────────────────────────────────
@@ -117,6 +121,10 @@ export const sellerDocumentsApi = {
   uploadFromUrl: (documentType: string, fileUrl: string, emissionDate?: string) =>
     api.post("/seller-documents/from-url", { documentType, fileUrl, emissionDate }),
   myDocuments: () => api.get<SellerDocumentRecord[]>("/seller-documents/me"),
+  // Admin
+  listAll: (status?: string) => api.get<SellerDocumentRecord[]>("/seller-documents", { params: status ? { status } : {} }),
+  review: (id: string, status: "approved" | "rejected", note?: string) =>
+    api.patch(`/seller-documents/${id}/review`, { status, rejectionNote: note }),
 };
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -240,6 +248,8 @@ export interface SellerApplication {
   description: string;
   reviewNote?: string;
   createdAt: string;
+  userId?: string;
+  user?: { id: string; username: string; email: string };
 }
 
 export interface SellerDocumentRecord {
@@ -249,6 +259,8 @@ export interface SellerDocumentRecord {
   status: "pending" | "approved" | "rejected";
   emissionDate?: string;
   rejectionNote?: string;
+  userId?: string;
+  user?: { id: string; username: string; email: string };
 }
 
 export interface CreateAuctionPayload {
