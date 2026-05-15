@@ -70,7 +70,7 @@ export class AuthService {
     const user = await this.usersService.findById(userId);
     if (!user) throw new BadRequestException('Usuario no encontrado');
 
-    const hash = await bcrypt.hash(dto.newPassword, 10);
+    const hash = await bcrypt.hash(dto.newPassword, 12);
     await this.usersService.setPasswordHash(user.id, hash);
     await this.cache.del(`reset:${dto.token}`);
   }
