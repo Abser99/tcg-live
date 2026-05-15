@@ -56,22 +56,22 @@ import { PushToken } from './notifications/entities/push-token.entity';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]), // 120 req/min globally
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
+      useFactory: (config: ConfigService): any => {
         const dbUrl = config.get<string>('database.url');
         return {
-          type: 'postgres' as const,
+          type: 'postgres',
           ...(dbUrl
             ? { url: dbUrl }
             : {
-                host: config.get('database.host'),
+                host: config.get<string>('database.host'),
                 port: config.get<number>('database.port'),
-                database: config.get('database.name'),
-                username: config.get('database.user'),
-                password: config.get('database.password'),
+                database: config.get<string>('database.name'),
+                username: config.get<string>('database.user'),
+                password: config.get<string>('database.password'),
               }),
           entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, Order, OrderItem, PaymentMethod, PushToken, Dispute, WatchlistItem, Message, FollowedSeller, AuctionTemplate, Listing, ListingOffer, SellerDocument],
           synchronize: process.env.NODE_ENV !== 'production',
-          ssl: dbUrl?.includes('railway.app') ? { rejectUnauthorized: false } : false,
+          ssl: dbUrl ? { rejectUnauthorized: false } : false,
           logging: process.env.NODE_ENV === 'development',
         };
       },
