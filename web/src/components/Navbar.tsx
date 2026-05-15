@@ -30,11 +30,16 @@ export default function Navbar() {
           <Link href="/#features" className="hover:text-white transition-colors">
             Características
           </Link>
-          {user?.role === "SELLER" || user?.role === "ADMIN" ? (
+          {(user?.role === "SELLER" || user?.role === "ADMIN") && (
             <Link href="/vendedor" className="hover:text-white transition-colors">
               Mi tienda
             </Link>
-          ) : null}
+          )}
+          {user?.role === "ADMIN" && (
+            <Link href="/admin" className="hover:text-white transition-colors font-semibold" style={{ color: "#f59e0b" }}>
+              Admin
+            </Link>
+          )}
         </div>
 
         {!loading && (
