@@ -300,6 +300,50 @@ export default function PerfilPage() {
           </div>
         )}
 
+        {/* ── BANNER VENDEDOR ── */}
+        {!dataLoading && user.role === "BUYER" && (
+          <div className="mb-6">
+            {application === null && (
+              <div className="rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap"
+                style={{ background: "linear-gradient(135deg, rgba(5,150,105,0.15), rgba(16,185,129,0.08))", border: "1px solid rgba(16,185,129,0.25)" }}>
+                <div>
+                  <p className="font-black text-base">¿Quieres vender en TCG Live?</p>
+                  <p className="text-sm text-zinc-400 mt-0.5">Solicita tu cuenta de vendedor — revisamos tu solicitud en 1-3 días hábiles.</p>
+                </div>
+                <button onClick={() => { setShowSellerModal(true); setSellerStep(1); setSellerError(""); }}
+                  className="shrink-0 font-black text-white px-6 py-3 rounded-xl text-sm"
+                  style={{ background: "linear-gradient(135deg, #059669, #10b981)" }}>
+                  Solicitar ahora →
+                </button>
+              </div>
+            )}
+            {application?.status === "pending" && (
+              <div className="rounded-2xl p-4 flex items-center gap-3"
+                style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                <span className="text-xl">⏳</span>
+                <div>
+                  <p className="font-bold text-sm">Solicitud de vendedor en revisión</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">Te notificaremos cuando sea aprobada.</p>
+                </div>
+              </div>
+            )}
+            {application?.status === "rejected" && (
+              <div className="rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap"
+                style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                <div>
+                  <p className="font-bold text-sm text-red-400">Solicitud rechazada</p>
+                  {application.reviewNote && <p className="text-xs text-zinc-500 mt-0.5">{application.reviewNote}</p>}
+                </div>
+                <button onClick={() => { setShowSellerModal(true); setSellerStep(1); setSellerError(""); }}
+                  className="shrink-0 text-xs font-bold px-4 py-2 rounded-xl"
+                  style={{ background: "rgba(248,113,113,0.15)", color: "#f87171", border: "1px solid rgba(248,113,113,0.3)" }}>
+                  Volver a solicitar
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {!dataLoading && (
           <>
             {/* ── MIS ÓRDENES + PUJAS ── */}
