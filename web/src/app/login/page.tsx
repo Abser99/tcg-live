@@ -103,18 +103,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="flex items-center gap-3 my-6">
-            <div className="flex-1 h-px bg-white/8" />
-            <span className="text-xs text-zinc-600">o continúa con</span>
-            <div className="flex-1 h-px bg-white/8" />
-          </div>
-
-          <button
-            className="w-full py-3 rounded-xl font-semibold text-sm text-white transition-colors flex items-center justify-center gap-2"
-            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}
-          >
-            <span>G</span> Continuar con Google
-          </button>
         </div>
 
         <p className="text-center mt-6 text-sm text-zinc-500">
