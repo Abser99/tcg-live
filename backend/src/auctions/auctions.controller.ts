@@ -103,6 +103,17 @@ export class AuctionsController {
     return this.auctionsService.relist(id, user.id);
   }
 
+  @Post(':id/items')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  addItem(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() body: { cardName: string; startingPrice: number; imageUrls?: string[] },
+  ) {
+    return this.auctionsService.addItem(id, user.id, body);
+  }
+
   @Post('items/:itemId/bids')
   @UseGuards(AuthGuard('jwt'))
   placeBid(

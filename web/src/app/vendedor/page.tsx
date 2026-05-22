@@ -5,6 +5,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 type AuctionStatus = "live" | "ending" | "upcoming" | "ended";
 import { useAuth } from "@/contexts/auth";
+import { useRouter } from "next/navigation";
 import { auctionsApi, ordersApi, listingsApi, type ApiAuction, type ApiOrder, type SellerStats, type ApiListing } from "@/lib/api";
 
 const CLOUDINARY_CLOUD  = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dsjhoj5wt";
@@ -70,7 +71,9 @@ const EMPTY_FORM: AuctionForm = {
 
 export default function VendedorPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [launchingStream, setLaunchingStream] = useState(false);
   const [form, setForm] = useState<AuctionForm>(EMPTY_FORM);
   const [submitted, setSubmitted] = useState(false);
   const [saleFilter, setSaleFilter] = useState<AuctionStatus | "all">("all");
@@ -211,6 +214,20 @@ export default function VendedorPage() {
     }
   }
 
+  async function launchLivestream() {
+    setLaunchingStream(true);
+    try {
+      const now = new Date();
+      const label = now.toLocaleDateString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+      const res = await auctionsApi.create({ title: `Livestream ${label}` });
+      const auctionId = (res.data as any).id;
+      await auctionsApi.start(auctionId);
+      router.push(`/auctions/${auctionId}?stream=1`);
+    } catch {
+      setLaunchingStream(false);
+    }
+  }
+
   const totalRevenue = sellerStats?.totalRevenue ?? 0;
 
   return (
@@ -264,16 +281,24 @@ export default function VendedorPage() {
               </div>
             </div>
 
-            <button
-              onClick={() => setTab("crear")}
-              className="shrink-0 text-sm font-bold text-white px-5 py-2.5 rounded-xl transition-all"
-              style={{
-                background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)",
-                boxShadow: "0 4px 20px rgba(108,58,232,0.35)",
-              }}
-            >
-              + Nueva subasta
-            </button>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={launchLivestream}
+                disabled={launchingStream}
+                className="flex items-center gap-2 text-sm font-black text-white px-5 py-2.5 rounded-xl transition-all disabled:opacity-60"
+                style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 4px 20px rgba(220,38,38,0.4)" }}
+              >
+                <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                {launchingStream ? "Iniciando..." : "Iniciar Livestream"}
+              </button>
+              <button
+                onClick={() => setTab("crear")}
+                className="shrink-0 text-sm font-bold text-white px-5 py-2.5 rounded-xl transition-all"
+                style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 4px 20px rgba(108,58,232,0.35)" }}
+              >
+                + Nueva subasta
+              </button>
+            </div>
           </div>
 
           {/* Tabs */}

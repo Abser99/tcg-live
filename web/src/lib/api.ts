@@ -67,8 +67,10 @@ export const auctionsApi = {
   livekitToken: (auctionId: string) =>
     api.get<{ token: string; wsUrl: string }>(`/auctions/${auctionId}/livekit-token`),
 
-  start: (id: string) => api.patch(`/auctions/${id}/start`),
-  end:   (id: string) => api.patch(`/auctions/${id}/end`),
+  start:   (id: string) => api.patch(`/auctions/${id}/start`),
+  end:     (id: string) => api.patch(`/auctions/${id}/end`),
+  addItem: (id: string, dto: { cardName: string; startingPrice: number; imageUrls?: string[] }) =>
+    api.post<ApiAuction>(`/auctions/${id}/items`, dto),
 };
 
 // ─── Orders ────────────────────────────────────────────────────

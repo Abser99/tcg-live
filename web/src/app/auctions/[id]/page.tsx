@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { Room, RoomEvent, Track } from "livekit-client";
@@ -44,8 +44,10 @@ interface BidRow {
   time: string;
 }
 
-export default function AuctionDetailPage() {
+function AuctionDetailPageInner() {
   const { id } = useParams() as { id: string };
+  const searchParams = useSearchParams();
+  const autoStream = searchParams.get("stream") === "1";
   const [auction, setAuction] = useState<ApiAuction | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -127,7 +129,7 @@ export default function AuctionDetailPage() {
         <div className="mx-auto max-w-7xl px-6 pb-16">
           <div className="grid lg:grid-cols-[1fr_380px] gap-8 items-start">
             <div className="flex flex-col gap-6">
-              <StreamPanel auction={auction} gradient={gradient} glow={glow} />
+              <StreamPanel auction={auction} gradient={gradient} glow={glow} autoStream={autoStream} onAuctionUpdate={setAuction} />
               <CardInfo auction={auction} />
             </div>
             <div className="lg:sticky lg:top-24">
@@ -147,8 +149,22 @@ export default function AuctionDetailPage() {
   );
 }
 
+export default function AuctionDetailPage() {
+  return (
+    <Suspense>
+      <AuctionDetailPageInner />
+    </Suspense>
+  );
+}
+
 /* ─── Stream Panel ──────────────────────────────────────── */
-function StreamPanel({ auction: a, gradient, glow }: { auction: ApiAuction; gradient: string; glow: string }) {
+function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuctionUpdate }: {
+  auction: ApiAuction;
+  gradient: string;
+  glow: string;
+  autoStream?: boolean;
+  onAuctionUpdate?: (a: ApiAuction) => void;
+}) {
   const { user } = useAuth();
   const isSeller = !!user && !!a.seller && (user.id === a.seller.id || user.username === (a.seller.username ?? a.sellerName));
   const isLive   = a.status === "live" || a.status === "ending";
@@ -161,6 +177,12 @@ function StreamPanel({ auction: a, gradient, glow }: { auction: ApiAuction; grad
   const [micMuted,       setMicMuted]       = useState(false);
   const [camOff,         setCamOff]         = useState(false);
   const [streamError,    setStreamError]    = useState<string | null>(null);
+
+  // Panel agregar carta
+  const [cardName,      setCardName]      = useState("");
+  const [cardPrice,     setCardPrice]     = useState("");
+  const [addingCard,    setAddingCard]    = useState(false);
+  const [addCardError,  setAddCardError]  = useState("");
 
   // Viewers auto-connect when auction goes live
   useEffect(() => {
@@ -195,6 +217,33 @@ function StreamPanel({ auction: a, gradient, glow }: { auction: ApiAuction; grad
   }, [isLive, a.id, isSeller]);
 
   useEffect(() => () => { roomRef.current?.disconnect(); }, []);
+
+  // Auto-start stream when seller arrives via "Iniciar Livestream" button
+  useEffect(() => {
+    if (autoStream && isSeller && isLive && !streaming) {
+      startStream();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStream, isSeller, isLive]);
+
+  async function addCard() {
+    if (!cardName.trim() || !cardPrice) return;
+    setAddingCard(true);
+    setAddCardError("");
+    try {
+      const res = await auctionsApi.addItem(a.id, {
+        cardName: cardName.trim(),
+        startingPrice: Math.round(Number(cardPrice) * 100),
+      });
+      onAuctionUpdate?.(res.data);
+      setCardName("");
+      setCardPrice("");
+    } catch (err: any) {
+      setAddCardError(err?.response?.data?.message ?? "Error al agregar la carta");
+    } finally {
+      setAddingCard(false);
+    }
+  }
 
   async function startStream() {
     setConnecting(true);
@@ -367,6 +416,43 @@ function StreamPanel({ auction: a, gradient, glow }: { auction: ApiAuction; grad
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Panel agregar carta (solo vendedor en vivo) ── */}
+      {isSeller && isLive && (
+        <div className="px-4 py-3 border-t border-white/5" style={{ background: "#0d0d14" }}>
+          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Subir carta a subasta</p>
+          {addCardError && <p className="text-xs text-red-400 mb-2">{addCardError}</p>}
+          <div className="flex gap-2">
+            <input
+              value={cardName}
+              onChange={e => setCardName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") addCard(); }}
+              placeholder="Nombre de la carta..."
+              className="flex-1 bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50"
+            />
+            <div className="relative w-28 shrink-0">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-xs">$</span>
+              <input
+                type="number"
+                min={1}
+                value={cardPrice}
+                onChange={e => setCardPrice(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") addCard(); }}
+                placeholder="Precio"
+                className="w-full bg-[#16161E] border border-white/10 rounded-xl pl-6 pr-2 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50"
+              />
+            </div>
+            <button
+              onClick={addCard}
+              disabled={addingCard || !cardName.trim() || !cardPrice}
+              className="px-4 py-2 rounded-xl text-sm font-black text-white disabled:opacity-40"
+              style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+            >
+              {addingCard ? "..." : "+"}
+            </button>
+          </div>
         </div>
       )}
 

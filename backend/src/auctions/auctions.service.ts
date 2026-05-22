@@ -423,6 +423,25 @@ export class AuctionsService {
     }));
   }
 
+  async addItem(auctionId: string, sellerId: string, dto: { cardName: string; startingPrice: number; imageUrls?: string[] }): Promise<Auction> {
+    const auction = await this.auctionsRepo.findOne({ where: { id: auctionId }, relations: ['items'] });
+    if (!auction) throw new NotFoundException('Auction not found');
+    if (auction.sellerId !== sellerId) throw new ForbiddenException();
+    if (auction.status !== AuctionStatus.LIVE && auction.status !== AuctionStatus.SCHEDULED) {
+      throw new BadRequestException('Solo puedes agregar cartas a subastas en vivo o próximas');
+    }
+    const position = auction.items.length;
+    await this.itemsRepo.save(this.itemsRepo.create({
+      auctionId,
+      cardName:     dto.cardName,
+      startingPrice: dto.startingPrice,
+      currentPrice:  dto.startingPrice,
+      imageUrls:    dto.imageUrls ?? [],
+      position,
+    }));
+    return this.findOne(auctionId);
+  }
+
   async getItemBids(itemId: string): Promise<Bid[]> {
     return this.bidsRepo.find({
       where: { auctionItemId: itemId },
