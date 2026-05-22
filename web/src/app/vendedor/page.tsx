@@ -5,7 +5,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 type AuctionStatus = "live" | "ending" | "upcoming" | "ended";
 import { useAuth } from "@/contexts/auth";
-import { auctionsApi, ordersApi, type ApiAuction, type ApiOrder, type SellerStats } from "@/lib/api";
+import { auctionsApi, ordersApi, listingsApi, type ApiAuction, type ApiOrder, type SellerStats, type ApiListing } from "@/lib/api";
 
 const CLOUDINARY_CLOUD  = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dsjhoj5wt";
 const CLOUDINARY_PRESET = "tcg_live";
@@ -21,12 +21,13 @@ async function uploadToCloudinary(file: File): Promise<string> {
   return data.secure_url as string;
 }
 
-type Tab = "dashboard" | "subastas" | "crear" | "ordenes";
+type Tab = "dashboard" | "subastas" | "crear" | "ventas" | "ordenes";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "dashboard", label: "Dashboard"        },
   { key: "subastas",  label: "Mis Subastas"     },
   { key: "crear",     label: "Crear Subasta"    },
+  { key: "ventas",    label: "Mis Ventas"        },
   { key: "ordenes",   label: "Órdenes de Venta" },
 ];
 
@@ -80,6 +81,14 @@ export default function VendedorPage() {
   const [uploadingImg,  setUploadingImg]  = useState(false);
   const [startingId,    setStartingId]    = useState<string | null>(null);
 
+  // Ventas (listings)
+  const [myListings,      setMyListings]      = useState<ApiListing[] | null>(null);
+  const [listingForm,     setListingForm]     = useState({ title: "", price: "", game: "", condition: "", description: "", imageUrl: "" });
+  const [listingUploading, setListingUploading] = useState(false);
+  const [listingCreating,  setListingCreating]  = useState(false);
+  const [listingError,     setListingError]     = useState("");
+  const [listingDone,      setListingDone]      = useState(false);
+
   // Real API data
   const [myAuctions,   setMyAuctions]   = useState<ApiAuction[]>([]);
   const [sellerStats,  setSellerStats]  = useState<SellerStats | null>(null);
@@ -91,10 +100,12 @@ export default function VendedorPage() {
       auctionsApi.my().catch(() => null),
       ordersApi.sellerStats().catch(() => null),
       ordersApi.selling().catch(() => null),
-    ]).then(([auctionsRes, statsRes, ordersRes]) => {
-      if (auctionsRes) setMyAuctions(auctionsRes.data);
-      if (statsRes)    setSellerStats(statsRes.data);
-      if (ordersRes)   setSellerOrders(ordersRes.data);
+      listingsApi.my().catch(() => null),
+    ]).then(([auctionsRes, statsRes, ordersRes, listingsRes]) => {
+      if (auctionsRes)  setMyAuctions(auctionsRes.data);
+      if (statsRes)     setSellerStats(statsRes.data);
+      if (ordersRes)    setSellerOrders(ordersRes.data);
+      if (listingsRes)  setMyListings(listingsRes.data);
     });
   }, [user]);
 
@@ -153,6 +164,51 @@ export default function VendedorPage() {
   function handleReset() {
     setForm(EMPTY_FORM);
     setSubmitted(false);
+  }
+
+  async function handleListingImageUpload(file: File) {
+    setListingUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("upload_preset", CLOUDINARY_PRESET);
+      form.append("folder", "tcg-live/listings");
+      const res  = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, { method: "POST", body: form });
+      const data = await res.json();
+      if (!data.secure_url) throw new Error();
+      setListingForm(f => ({ ...f, imageUrl: data.secure_url }));
+    } catch {
+      setListingError("Error al subir imagen.");
+    } finally {
+      setListingUploading(false);
+    }
+  }
+
+  async function handleListingSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setListingError("");
+    if (!listingForm.title || !listingForm.price || !listingForm.condition) {
+      setListingError("Completa los campos obligatorios.");
+      return;
+    }
+    setListingCreating(true);
+    try {
+      await listingsApi.create({
+        title:       listingForm.title,
+        price:       Math.round(Number(listingForm.price) * 100), // pesos → centavos
+        game:        listingForm.game || undefined,
+        condition:   listingForm.condition || undefined,
+        description: listingForm.description || undefined,
+        imageUrls:   listingForm.imageUrl ? [listingForm.imageUrl] : undefined,
+      });
+      setListingDone(true);
+      const res = await listingsApi.my().catch(() => null);
+      if (res) setMyListings(res.data);
+    } catch (err: any) {
+      setListingError(err?.response?.data?.message ?? "Error al publicar la venta.");
+    } finally {
+      setListingCreating(false);
+    }
   }
 
   const totalRevenue = sellerStats?.totalRevenue ?? 0;
@@ -767,6 +823,144 @@ export default function VendedorPage() {
                   {creating ? "Publicando..." : "Publicar subasta →"}
                 </button>
               </form>
+            )}
+          </div>
+        )}
+
+        {/* ─── MIS VENTAS ─── */}
+        {tab === "ventas" && (
+          <div className="space-y-6">
+
+            {/* Crear nueva venta */}
+            {!listingDone ? (
+              <div className="rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                <h3 className="font-black text-base mb-5">Nueva venta (precio fijo)</h3>
+
+                {listingError && (
+                  <div className="mb-4 px-4 py-3 rounded-xl text-sm text-red-400" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                    {listingError}
+                  </div>
+                )}
+
+                <form onSubmit={handleListingSubmit} className="space-y-4">
+                  {/* Image upload */}
+                  <label className="rounded-xl border-2 border-dashed p-5 flex items-center gap-4 cursor-pointer transition-all hover:border-[#6C3AE8]/50 block"
+                    style={{ borderColor: listingForm.imageUrl ? "rgba(74,222,128,0.4)" : "rgba(255,255,255,0.1)" }}>
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleListingImageUpload(f); }} />
+                    {listingForm.imageUrl
+                      ? <img src={listingForm.imageUrl} alt="" className="w-16 h-20 object-contain rounded-lg shrink-0" />
+                      : <div className="w-16 h-20 rounded-lg flex items-center justify-center text-2xl shrink-0" style={{ background: "rgba(108,58,232,0.1)" }}>📸</div>
+                    }
+                    <div>
+                      <p className="text-sm font-semibold">{listingUploading ? "Subiendo..." : listingForm.imageUrl ? "✓ Imagen lista — clic para cambiar" : "Subir foto de la carta"}</p>
+                      <p className="text-xs text-zinc-600 mt-0.5">PNG, JPG hasta 10 MB</p>
+                    </div>
+                  </label>
+
+                  {/* Title */}
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Nombre de la carta *</label>
+                    <input required value={listingForm.title} onChange={e => setListingForm(f => ({ ...f, title: e.target.value }))}
+                      placeholder="Ej. Charizard EX Rainbow Rare"
+                      className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60" />
+                  </div>
+
+                  {/* Price + Condition */}
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Precio (MXN) *</label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">$</span>
+                        <input required type="number" min={1} value={listingForm.price}
+                          onChange={e => setListingForm(f => ({ ...f, price: e.target.value }))}
+                          placeholder="0"
+                          className="w-full bg-[#0F0F14] border border-white/10 rounded-xl pl-8 pr-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Condición *</label>
+                      <select required value={listingForm.condition} onChange={e => setListingForm(f => ({ ...f, condition: e.target.value }))}
+                        className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#6C3AE8]/60"
+                        style={{ color: listingForm.condition ? "white" : "#52525b" }}>
+                        <option value="" disabled>Seleccionar</option>
+                        {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Game */}
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Juego</label>
+                    <input value={listingForm.game} onChange={e => setListingForm(f => ({ ...f, game: e.target.value }))}
+                      placeholder="Pokémon, Magic, Yu-Gi-Oh!..."
+                      className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60" />
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Descripción</label>
+                    <textarea rows={3} value={listingForm.description} onChange={e => setListingForm(f => ({ ...f, description: e.target.value }))}
+                      placeholder="Estado, características, incluye sleeve, etc..."
+                      className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 resize-none" />
+                  </div>
+
+                  <button type="submit" disabled={listingCreating}
+                    className="w-full py-3.5 rounded-xl font-black text-white text-sm disabled:opacity-60"
+                    style={{ background: "linear-gradient(135deg, #059669, #10b981)", boxShadow: "0 4px 20px rgba(5,150,105,0.35)" }}>
+                    {listingCreating ? "Publicando..." : "Publicar venta →"}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <div className="rounded-2xl p-8 text-center" style={{ background: "#16161E", border: "1px solid rgba(74,222,128,0.3)" }}>
+                <p className="text-3xl mb-3">✅</p>
+                <h3 className="font-black text-lg mb-1">¡Venta publicada!</h3>
+                <p className="text-zinc-500 text-sm mb-6">Ya aparece en la tienda para que los compradores la vean.</p>
+                <button onClick={() => { setListingDone(false); setListingForm({ title: "", price: "", game: "", condition: "", description: "", imageUrl: "" }); }}
+                  className="font-bold text-sm px-6 py-3 rounded-xl text-white"
+                  style={{ background: "linear-gradient(135deg, #059669, #10b981)" }}>
+                  Publicar otra venta
+                </button>
+              </div>
+            )}
+
+            {/* Mis ventas activas */}
+            {(myListings ?? []).length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Mis ventas activas</p>
+                <div className="space-y-3">
+                  {(myListings ?? []).map(l => (
+                    <div key={l.id} className="rounded-2xl p-4 flex items-center gap-4" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                      {l.imageUrls?.[0]
+                        ? <img src={l.imageUrls[0]} alt="" className="w-12 h-16 object-contain rounded-xl shrink-0" />
+                        : <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0">🃏</div>
+                      }
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm truncate">{l.title}</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">{l.game ?? ""} {l.condition ? `· ${l.condition}` : ""}</p>
+                        <span className="mt-1.5 inline-block text-[10px] font-bold px-2 py-0.5 rounded-full"
+                          style={{ background: l.status === "active" ? "rgba(74,222,128,0.12)" : "rgba(113,113,122,0.12)", color: l.status === "active" ? "#4ade80" : "#71717a" }}>
+                          {l.status === "active" ? "Activa" : l.status === "sold" ? "Vendida" : "Cancelada"}
+                        </span>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="font-black text-lg">${((l.price ?? 0) / 100).toLocaleString("es-MX")}</p>
+                        <p className="text-[10px] text-zinc-600">MXN</p>
+                      </div>
+                      {l.status === "active" && (
+                        <button onClick={async () => {
+                          await listingsApi.cancel(l.id).catch(() => {});
+                          const res = await listingsApi.my().catch(() => null);
+                          if (res) setMyListings(res.data);
+                        }} className="text-xs text-zinc-600 hover:text-red-400 transition-colors shrink-0 px-2">
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}

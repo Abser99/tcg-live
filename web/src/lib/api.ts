@@ -108,7 +108,18 @@ export const watchlistApi = {
 export const listingsApi = {
   list: (params?: { q?: string; game?: string }) =>
     api.get<ApiListing[]>("/listings", { params }),
-  get: (id: string) => api.get<ApiListing>(`/listings/${id}`),
+  get:  (id: string) => api.get<ApiListing>(`/listings/${id}`),
+  my:   () => api.get<ApiListing[]>("/listings/mine"),
+  create: (dto: {
+    title: string;
+    price: number;
+    game?: string;
+    condition?: string;
+    description?: string;
+    imageUrls?: string[];
+  }) => api.post<ApiListing>("/listings", dto),
+  markSold: (id: string) => api.patch(`/listings/${id}/sold`),
+  cancel:   (id: string) => api.delete(`/listings/${id}`),
 };
 
 // ─── Users ─────────────────────────────────────────────────────
