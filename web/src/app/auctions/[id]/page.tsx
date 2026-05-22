@@ -268,8 +268,14 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       if (camPub?.track && videoRef.current) camPub.track.attach(videoRef.current);
 
       setStreaming(true);
-    } catch {
-      setStreamError("No se pudo acceder a la cámara. Verifica los permisos del navegador.");
+    } catch (err: any) {
+      console.error("Stream error:", err);
+      const msg: string = err?.message ?? err?.name ?? String(err);
+      if (msg.includes("NotAllowed") || msg.includes("Permission") || msg.includes("permission")) {
+        setStreamError("El navegador bloqueó la cámara. Haz clic en el ícono de cámara en la barra de direcciones y permite el acceso.");
+      } else {
+        setStreamError(`Error al conectar: ${msg}`);
+      }
       roomRef.current?.disconnect();
       roomRef.current = null;
     } finally {
