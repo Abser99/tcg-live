@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { Room, RoomEvent, Track } from "livekit-client";
 import { auctionsApi, watchlistApi, type ApiAuction } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 
@@ -147,54 +148,155 @@ export default function AuctionDetailPage() {
 }
 
 /* ─── Stream Panel ──────────────────────────────────────── */
-function StreamPanel({
-  auction: a,
-  gradient,
-  glow,
-}: {
-  auction: ApiAuction;
-  gradient: string;
-  glow: string;
-}) {
-  const status = STATUS_LABEL[a.status ?? "upcoming"];
-  const title = a.title ?? a.name ?? "Sin título";
+function StreamPanel({ auction: a, gradient, glow }: { auction: ApiAuction; gradient: string; glow: string }) {
+  const { user } = useAuth();
+  const isSeller = !!user && !!a.seller && (user.id === a.seller.id || user.username === (a.seller.username ?? a.sellerName));
+  const isLive   = a.status === "live" || a.status === "ending";
+
+  const roomRef    = useRef<Room | null>(null);
+  const videoRef   = useRef<HTMLVideoElement>(null);
+  const [streaming,      setStreaming]      = useState(false);
+  const [connecting,     setConnecting]     = useState(false);
+  const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
+  const [micMuted,       setMicMuted]       = useState(false);
+  const [camOff,         setCamOff]         = useState(false);
+  const [streamError,    setStreamError]    = useState<string | null>(null);
+
+  // Viewers auto-connect when auction goes live
+  useEffect(() => {
+    if (!isLive || isSeller) return;
+    let alive = true;
+    const room = new Room();
+    roomRef.current = room;
+
+    room.on(RoomEvent.TrackSubscribed, (track: any) => {
+      if (!alive) return;
+      if (track.kind === Track.Kind.Video && videoRef.current) {
+        track.attach(videoRef.current);
+        setHasRemoteVideo(true);
+      }
+    });
+    room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
+      if (track.kind === Track.Kind.Video) {
+        track.detach();
+        if (alive) setHasRemoteVideo(false);
+      }
+    });
+
+    auctionsApi.livekitToken(a.id)
+      .then(({ data }) => { if (alive) return room.connect(data.wsUrl, data.token); })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+      room.disconnect();
+      roomRef.current = null;
+    };
+  }, [isLive, a.id, isSeller]);
+
+  useEffect(() => () => { roomRef.current?.disconnect(); }, []);
+
+  async function startStream() {
+    setConnecting(true);
+    setStreamError(null);
+    try {
+      const { data } = await auctionsApi.livekitToken(a.id);
+      const room = new Room();
+      roomRef.current = room;
+
+      room.on(RoomEvent.LocalTrackPublished, (pub: any) => {
+        if (pub.track?.kind === Track.Kind.Video && videoRef.current) {
+          pub.track.attach(videoRef.current);
+        }
+      });
+
+      await room.connect(data.wsUrl, data.token);
+      await room.localParticipant.setCameraEnabled(true);
+      await room.localParticipant.setMicrophoneEnabled(true);
+
+      // Attach immediately if track already published
+      const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+      if (camPub?.track && videoRef.current) camPub.track.attach(videoRef.current);
+
+      setStreaming(true);
+    } catch {
+      setStreamError("No se pudo acceder a la cámara. Verifica los permisos del navegador.");
+      roomRef.current?.disconnect();
+      roomRef.current = null;
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function stopStream() {
+    roomRef.current?.disconnect();
+    roomRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setStreaming(false);
+  }
+
+  async function toggleMic() {
+    if (!roomRef.current) return;
+    const next = micMuted;
+    await roomRef.current.localParticipant.setMicrophoneEnabled(next);
+    setMicMuted(!next);
+  }
+
+  async function toggleCam() {
+    if (!roomRef.current) return;
+    const next = camOff;
+    await roomRef.current.localParticipant.setCameraEnabled(next);
+    if (!next && videoRef.current) {
+      const pub = roomRef.current.localParticipant.getTrackPublication(Track.Source.Camera);
+      if (pub?.track) pub.track.attach(videoRef.current);
+    }
+    setCamOff(!next);
+  }
+
+  const status     = STATUS_LABEL[a.status ?? "upcoming"];
+  const title      = a.title ?? a.name ?? "Sin título";
   const sellerName = a.seller?.username ?? a.sellerName ?? "—";
-  const verified = a.seller?.verified;
-  const timer = formatTimer(a.endTime);
+  const verified   = a.seller?.verified;
+  const timer      = formatTimer(a.endTime);
+  const showVideo  = streaming || hasRemoteVideo;
 
   return (
-    <div
-      className="rounded-2xl overflow-hidden"
-      style={{ border: "1px solid rgba(255,255,255,0.08)" }}
-    >
+    <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
+
+      {/* ── Video area ── */}
       <div className="relative bg-[#050508] aspect-video flex items-center justify-center overflow-hidden">
-        <div
-          className="absolute inset-0"
-          style={{ background: `radial-gradient(circle at 50% 50%, ${glow} 0%, transparent 65%)`, opacity: 0.5 }}
-        />
-        <div
-          className="absolute inset-0 pointer-events-none opacity-[0.04]"
-          style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, #fff 2px, #fff 3px)" }}
+
+        {/* Video element */}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={isSeller}
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ display: showVideo ? "block" : "none" }}
         />
 
-        <div
-          className={`relative w-36 h-48 rounded-2xl bg-gradient-to-br ${gradient} flex flex-col items-center justify-center gap-2 shadow-2xl`}
-          style={{ boxShadow: `0 0 60px ${glow}` }}
-        >
-          <span className="text-6xl">🃏</span>
-          <span className="text-white text-xs font-black tracking-widest opacity-90 text-center px-2">
-            {title.toUpperCase().slice(0, 12)}
-          </span>
-        </div>
-
-        <div className="absolute top-4 left-4 flex items-center gap-3">
-          <div
-            className="flex items-center gap-1.5 text-white text-xs font-black px-3 py-1.5 rounded-full"
-            style={{ background: status?.bg, boxShadow: `0 0 14px ${status?.bg ?? "#6C3AE8"}80` }}
-          >
-            {a.status === "live" && (
-              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+        {/* Placeholder when no video */}
+        {!showVideo && (
+          <>
+            <div className="absolute inset-0" style={{ background: `radial-gradient(circle at 50% 50%, ${glow} 0%, transparent 65%)`, opacity: 0.5 }} />
+            <div className="absolute inset-0 pointer-events-none opacity-[0.04]" style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, #fff 2px, #fff 3px)" }} />
+            <div className={`relative w-36 h-48 rounded-2xl bg-gradient-to-br ${gradient} flex flex-col items-center justify-center gap-2 shadow-2xl`} style={{ boxShadow: `0 0 60px ${glow}` }}>
+              <span className="text-6xl">🃏</span>
+              <span className="text-white text-xs font-black tracking-widest opacity-90 text-center px-2">{title.toUpperCase().slice(0, 12)}</span>
+            </div>
+            {isLive && !isSeller && (
+              <p className="absolute bottom-16 left-1/2 -translate-x-1/2 text-xs text-zinc-500 whitespace-nowrap animate-pulse">
+                Esperando al vendedor...
+              </p>
             )}
+          </>
+        )}
+
+        {/* Status + viewers */}
+        <div className="absolute top-4 left-4 flex items-center gap-3 z-10">
+          <div className="flex items-center gap-1.5 text-white text-xs font-black px-3 py-1.5 rounded-full" style={{ background: status?.bg, boxShadow: `0 0 14px ${status?.bg ?? "#6C3AE8"}80` }}>
+            {a.status === "live" && <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
             {status?.text ?? a.status}
           </div>
           {a.status !== "upcoming" && (
@@ -204,16 +306,15 @@ function StreamPanel({
           )}
         </div>
 
-        <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-sm text-white font-mono font-black text-lg px-3 py-1 rounded-xl">
+        {/* Timer */}
+        <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-sm text-white font-mono font-black text-lg px-3 py-1 rounded-xl z-10">
           {timer}
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black/80 to-transparent" />
-
-        <div className="absolute bottom-4 left-4 flex items-center gap-2">
-          <Link href={`/tienda/${sellerName}`} className="w-8 h-8 rounded-full bg-[#1E1E2A] border border-white/20 flex items-center justify-center text-sm hover:border-[#6C3AE8]/50 transition-colors">
-            🧑
-          </Link>
+        {/* Seller info */}
+        <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black/80 to-transparent z-10" />
+        <div className="absolute bottom-4 left-4 flex items-center gap-2 z-10">
+          <Link href={`/tienda/${sellerName}`} className="w-8 h-8 rounded-full bg-[#1E1E2A] border border-white/20 flex items-center justify-center text-sm hover:border-[#6C3AE8]/50 transition-colors">🧑</Link>
           <div>
             <Link href={`/tienda/${sellerName}`} className="text-white text-sm font-bold leading-none hover:text-[#a78bfa] transition-colors">
               {sellerName} {verified && <span className="text-[#a78bfa]">✓</span>}
@@ -222,34 +323,59 @@ function StreamPanel({
           </div>
         </div>
 
-        {a.status !== "upcoming" && (
-          <div className="absolute bottom-4 right-4 flex items-center gap-2">
-            <button className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm transition-colors">
-              🔊
+        {/* Seller streaming controls (overlay) */}
+        {isSeller && streaming && (
+          <div className="absolute bottom-4 right-4 flex items-center gap-2 z-20">
+            <button onClick={toggleMic} title={micMuted ? "Activar micrófono" : "Silenciar"} className="w-9 h-9 rounded-xl flex items-center justify-center text-sm transition-all" style={{ background: micMuted ? "rgba(239,68,68,0.8)" : "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)" }}>
+              {micMuted ? "🔇" : "🎤"}
             </button>
-            <button className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-sm transition-colors">
-              ⛶
+            <button onClick={toggleCam} title={camOff ? "Activar cámara" : "Apagar cámara"} className="w-9 h-9 rounded-xl flex items-center justify-center text-sm transition-all" style={{ background: camOff ? "rgba(239,68,68,0.8)" : "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)" }}>
+              {camOff ? "📵" : "📹"}
             </button>
           </div>
         )}
       </div>
 
-      {/* Chat placeholder — real-time via LiveKit/socket to be wired later */}
+      {/* ── Seller start/stop controls ── */}
+      {isSeller && isLive && (
+        <div className="px-4 py-3 border-b border-white/5" style={{ background: "rgba(108,58,232,0.06)" }}>
+          {streamError && (
+            <p className="text-xs text-red-400 mb-2">{streamError}</p>
+          )}
+          {!streaming ? (
+            <button
+              onClick={startStream}
+              disabled={connecting}
+              className="w-full py-3 rounded-xl font-black text-white text-sm flex items-center justify-center gap-2 disabled:opacity-60"
+              style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 4px 20px rgba(220,38,38,0.4)" }}
+            >
+              <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+              {connecting ? "Iniciando stream..." : "Iniciar stream en vivo"}
+            </button>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                <span className="text-xs font-bold text-red-400">TRANSMITIENDO EN VIVO</span>
+              </div>
+              <button
+                onClick={stopStream}
+                className="text-xs font-bold px-4 py-2 rounded-xl transition-all"
+                style={{ background: "rgba(239,68,68,0.15)", color: "#f87171", border: "1px solid rgba(239,68,68,0.3)" }}
+              >
+                Detener stream
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Chat en vivo ── */}
       <div className="bg-[#0d0d14] border-t border-white/5 p-4">
-        <p className="text-xs text-zinc-600 font-semibold uppercase tracking-wider mb-3">
-          Chat en vivo
-        </p>
-        <div className="mt-3 flex gap-2">
-          <input
-            placeholder="Escribe un mensaje..."
-            className="flex-1 bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50"
-          />
-          <button
-            className="px-4 py-2 rounded-xl text-sm font-bold text-white transition-all"
-            style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
-          >
-            →
-          </button>
+        <p className="text-xs text-zinc-600 font-semibold uppercase tracking-wider mb-3">Chat en vivo</p>
+        <div className="flex gap-2">
+          <input placeholder="Escribe un mensaje..." className="flex-1 bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50" />
+          <button className="px-4 py-2 rounded-xl text-sm font-bold text-white" style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}>→</button>
         </div>
       </div>
     </div>

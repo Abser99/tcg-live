@@ -78,6 +78,7 @@ export default function VendedorPage() {
   const [creating,      setCreating]      = useState(false);
   const [createError,   setCreateError]   = useState("");
   const [uploadingImg,  setUploadingImg]  = useState(false);
+  const [startingId,    setStartingId]    = useState<string | null>(null);
 
   // Real API data
   const [myAuctions,   setMyAuctions]   = useState<ApiAuction[]>([]);
@@ -341,10 +342,11 @@ export default function VendedorPage() {
                     </div>
                     <Link
                       href={`/auctions/${a.id}`}
-                      className="mt-4 w-full block text-center text-xs font-bold text-white py-2.5 rounded-xl transition-all"
-                      style={{ background: "rgba(108,58,232,0.2)", border: "1px solid rgba(108,58,232,0.3)" }}
+                      className="mt-4 w-full flex items-center justify-center gap-2 text-xs font-black text-white py-2.5 rounded-xl transition-all"
+                      style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 4px 16px rgba(220,38,38,0.35)" }}
                     >
-                      Ver subasta →
+                      <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                      Ir al stream →
                     </Link>
                   </div>
                 ))}
@@ -495,6 +497,34 @@ export default function VendedorPage() {
 
                       {/* Actions */}
                       <div className="flex flex-col gap-1.5 shrink-0">
+                        {a.status === "upcoming" && (
+                          <button
+                            disabled={startingId === a.id}
+                            onClick={async () => {
+                              setStartingId(a.id);
+                              try {
+                                await auctionsApi.start(a.id);
+                                const res = await auctionsApi.my().catch(() => null);
+                                if (res) setMyAuctions(res.data);
+                              } catch {}
+                              finally { setStartingId(null); }
+                            }}
+                            className="text-xs font-black px-3 py-1.5 rounded-lg text-white text-center disabled:opacity-60"
+                            style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)" }}
+                          >
+                            {startingId === a.id ? "..." : "Iniciar"}
+                          </button>
+                        )}
+                        {(a.status === "live" || a.status === "ending") && (
+                          <Link
+                            href={`/auctions/${a.id}`}
+                            className="text-xs font-black px-3 py-1.5 rounded-lg text-white text-center flex items-center gap-1"
+                            style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 0 12px rgba(220,38,38,0.4)" }}
+                          >
+                            <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                            Stream
+                          </Link>
+                        )}
                         <Link
                           href={`/auctions/${a.id}`}
                           className="text-xs font-semibold px-3 py-1.5 rounded-lg text-center transition-all"
@@ -502,12 +532,6 @@ export default function VendedorPage() {
                         >
                           Ver
                         </Link>
-                        <button
-                          className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
-                          style={{ background: "rgba(255,255,255,0.04)", color: "#71717a", border: "1px solid rgba(255,255,255,0.08)" }}
-                        >
-                          Editar
-                        </button>
                       </div>
                     </div>
                   );
