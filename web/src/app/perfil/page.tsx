@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
-import { ordersApi, auctionsApi, paymentsApi, watchlistApi, messagesApi, sellerApplicationsApi, sellerDocumentsApi, disputesApi, type ApiOrder, type ApiBid, type WatchlistItem, type MessageThread, type SellerApplication, type SellerDocumentRecord, type ApiDispute } from "@/lib/api";
-import { MY_ORDERS, type Order } from "@/lib/mock-data";
+import { ordersApi, auctionsApi, paymentsApi, watchlistApi, messagesApi, sellerApplicationsApi, sellerDocumentsApi, disputesApi, type ApiOrder, type ApiBid, type WatchlistItem, type MessageThread, type SellerApplication, type SellerDocumentRecord, type ApiDispute, type ApiMessage } from "@/lib/api";
+import type { Order } from "@/lib/mock-data";
 
 type Tab = "ordenes" | "watchlist" | "mensajes" | "disputas";
 
@@ -53,7 +53,7 @@ const ORDER_STATUS: Record<string, { label: string; icon: string; color: string 
 };
 
 
-const PAYMENTS_ENABLED = false;
+const PAYMENTS_ENABLED = true;
 
 const CLOUDINARY_CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dsjhoj5wt";
 const CLOUDINARY_PRESET = "tcg_live";
@@ -102,6 +102,13 @@ export default function PerfilPage() {
   const [realMessages,  setRealMessages]  = useState<MessageThread[] | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
+
+  // Chat modal
+  const [chatThread,    setChatThread]    = useState<MessageThread | null>(null);
+  const [chatMessages,  setChatMessages]  = useState<ApiMessage[]>([]);
+  const [chatInput,     setChatInput]     = useState("");
+  const [chatSending,   setChatSending]   = useState(false);
+  const [chatLoading,   setChatLoading]   = useState(false);
 
   // Disputes
   const [disputes,          setDisputes]          = useState<ApiDispute[] | null>(null);
@@ -202,6 +209,32 @@ export default function PerfilPage() {
     }
   }
 
+  async function openChat(thread: MessageThread) {
+    setChatThread(thread);
+    setChatMessages([]);
+    setChatLoading(true);
+    try {
+      const res = await messagesApi.getMessages(thread.orderId);
+      setChatMessages(res.data);
+    } catch {}
+    finally { setChatLoading(false); }
+  }
+
+  async function sendChatMessage() {
+    if (!chatThread || !chatInput.trim() || chatSending) return;
+    setChatSending(true);
+    const body = chatInput.trim();
+    setChatInput("");
+    try {
+      const res = await messagesApi.send(chatThread.orderId, body);
+      setChatMessages(prev => [...prev, res.data]);
+    } catch {
+      setChatInput(body);
+    } finally {
+      setChatSending(false);
+    }
+  }
+
   async function handleCheckout(orderId: string) {
     setCheckingOut(orderId);
     try {
@@ -214,20 +247,18 @@ export default function PerfilPage() {
   if (authLoading || !user) return null;
 
   const initials = user.username.slice(0, 2).toUpperCase();
-  const orders: Order[] = realOrders
-    ? realOrders.map((o) => ({
-        id: o.id,
-        item: o.items?.[0]?.cardName ?? "Carta",
-        emoji: "🃏",
-        gradient: "from-violet-600 to-indigo-800",
-        glow: "rgba(139,92,246,0.4)",
-        amount: o.totalAmount,
-        status: (o.status as Order["status"]) ?? "pendiente_pago",
-        date: new Date(o.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" }),
-        seller: o.seller?.username ?? "—",
-        tracking: o.trackingNumber,
-      }))
-    : MY_ORDERS;
+  const orders: Order[] = (realOrders ?? []).map((o) => ({
+    id: o.id,
+    item: o.items?.[0]?.cardName ?? "Carta",
+    emoji: "🃏",
+    gradient: "from-violet-600 to-indigo-800",
+    glow: "rgba(139,92,246,0.4)",
+    amount: o.totalAmount,
+    status: (o.status as Order["status"]) ?? "pendiente_pago",
+    date: new Date(o.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" }),
+    seller: o.seller?.username ?? "—",
+    tracking: o.trackingNumber,
+  }));
 
   const bidsCount = realBids?.length ?? 0;
   const openDisputesCount = disputes?.filter(d => d.status === "open" || d.status === "under_review").length;
@@ -604,12 +635,17 @@ export default function PerfilPage() {
                     <p className="text-xs text-zinc-600 mt-1">Los mensajes con vendedores aparecerán aquí</p>
                   </div>
                 ) : (realMessages ?? []).map((msg) => {
-                  const initials = (msg.otherUser?.username ?? "?").slice(0, 2).toUpperCase();
+                  const msgInitials = (msg.otherUser?.username ?? "?").slice(0, 2).toUpperCase();
                   const hasUnread = (msg.unreadCount ?? 0) > 0;
                   return (
-                    <div key={msg.id} className="flex items-center gap-4 rounded-2xl p-4 hover:border-[#6C3AE8]/20 transition-all cursor-pointer" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <button
+                      key={msg.id}
+                      onClick={() => openChat(msg)}
+                      className="w-full flex items-center gap-4 rounded-2xl p-4 hover:border-[#6C3AE8]/30 transition-all text-left"
+                      style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
+                    >
                       <div className="relative shrink-0">
-                        <div className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black" style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa" }}>{initials}</div>
+                        <div className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-black" style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa" }}>{msgInitials}</div>
                         {hasUnread && (
                           <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center" style={{ background: "#6C3AE8" }}>{msg.unreadCount}</span>
                         )}
@@ -625,7 +661,7 @@ export default function PerfilPage() {
                           {new Date(msg.lastMessage.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
                         </p>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -633,6 +669,77 @@ export default function PerfilPage() {
           </>
         )}
       </div>
+
+      {/* ── MODAL CHAT ── */}
+      {chatThread && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="relative w-full sm:max-w-md flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh" }}>
+            {/* Header */}
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-white/5 shrink-0">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black shrink-0" style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa" }}>
+                {(chatThread.otherUser?.username ?? "?").slice(0, 2).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm">{chatThread.otherUser?.username ?? "Usuario"}</p>
+                <p className="text-[11px] text-zinc-500 font-mono truncate">Orden {chatThread.orderId.slice(0, 8)}…</p>
+              </div>
+              <button onClick={() => setChatThread(null)} className="text-zinc-500 hover:text-white text-xl shrink-0">✕</button>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 min-h-0">
+              {chatLoading ? (
+                <div className="flex justify-center py-10">
+                  <div className="w-5 h-5 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+                </div>
+              ) : chatMessages.length === 0 ? (
+                <div className="text-center py-10 text-zinc-500 text-sm">Sin mensajes aún. ¡Sé el primero en escribir!</div>
+              ) : chatMessages.map((m) => {
+                const mine = m.senderId === user.id;
+                return (
+                  <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className="max-w-[78%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed"
+                      style={mine
+                        ? { background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", color: "#fff" }
+                        : { background: "rgba(255,255,255,0.06)", color: "#e4e4e7" }
+                      }
+                    >
+                      {!mine && <p className="text-[10px] font-bold mb-1" style={{ color: "#a78bfa" }}>{m.senderUsername}</p>}
+                      <p>{m.body}</p>
+                      <p className="text-[10px] mt-1 opacity-60 text-right">
+                        {new Date(m.createdAt).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Input */}
+            <div className="px-4 py-4 border-t border-white/5 shrink-0">
+              <div className="flex gap-2">
+                <input
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                  placeholder="Escribe un mensaje..."
+                  maxLength={1000}
+                  className="flex-1 bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50"
+                />
+                <button
+                  onClick={sendChatMessage}
+                  disabled={!chatInput.trim() || chatSending}
+                  className="px-4 py-2.5 rounded-xl font-black text-white disabled:opacity-50 transition-all"
+                  style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                >
+                  {chatSending ? "…" : "→"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── MODAL ABRIR DISPUTA ── */}
       {showDisputeModal && (

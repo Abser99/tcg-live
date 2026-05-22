@@ -111,12 +111,14 @@ export const listingsApi = {
 // ─── Users ─────────────────────────────────────────────────────
 export const usersApi = {
   me: () => api.get<ApiUser>("/users/me"),
-  updateProfile: (dto: { username?: string; displayName?: string }) =>
+  updateProfile: (dto: { username?: string; displayName?: string; avatarUrl?: string }) =>
     api.patch<ApiUser>("/users/me", dto),
   changePassword: (currentPassword: string, newPassword: string) =>
     api.patch("/users/me/password", { currentPassword, newPassword }),
   updateAddress: (dto: { zipCode?: string; street?: string; colonia?: string; city?: string; state?: string }) =>
     api.patch<ApiUser>("/users/me/address", dto),
+  publicProfile: (username: string) =>
+    api.get<PublicProfile>(`/users/by-username/${encodeURIComponent(username)}/profile`),
 };
 
 // ─── Disputes ──────────────────────────────────────────────────
@@ -132,6 +134,8 @@ export const disputesApi = {
 // ─── Messages ──────────────────────────────────────────────────
 export const messagesApi = {
   threads: () => api.get<MessageThread[]>("/messages"),
+  getMessages: (orderId: string) => api.get<ApiMessage[]>(`/messages/${orderId}`),
+  send: (orderId: string, body: string) => api.post<ApiMessage>(`/messages/${orderId}`, { body }),
 };
 
 // ─── Seller Applications ───────────────────────────────────────
@@ -276,9 +280,33 @@ export interface ApiDispute {
 
 export interface MessageThread {
   id: string;
+  orderId: string;
   otherUser?: { username: string };
   lastMessage?: { content: string; createdAt: string };
   unreadCount?: number;
+}
+
+export interface ApiMessage {
+  id: string;
+  orderId: string;
+  senderId: string;
+  senderUsername: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface PublicProfile {
+  id: string;
+  username: string;
+  displayName?: string;
+  avatarUrl?: string;
+  role: string;
+  reputationScore: number;
+  totalRatings: number;
+  totalRatingPoints: number;
+  isVerified: boolean;
+  createdAt: string;
+  averageRating: number | null;
 }
 
 export interface ApiListing {

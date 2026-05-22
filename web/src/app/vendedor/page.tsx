@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import { type AuctionStatus } from "@/lib/mock-data";
+type AuctionStatus = "live" | "ending" | "upcoming" | "ended";
 import { useAuth } from "@/contexts/auth";
 import { auctionsApi, ordersApi, type ApiAuction, type ApiOrder, type SellerStats } from "@/lib/api";
 
@@ -50,20 +50,6 @@ const SETS       = ["Brilliant Stars", "Evolving Skies", "Silver Tempest", "Lost
                     "Pokémon GO", "Crown Zenith", "Scarlet & Violet", "Obsidian Flames", "151",
                     "Paradox Rift", "Temporal Forces", "Twilight Masquerade", "Stellar Crown"];
 
-const STATS = [
-  { label: "Ingresos este mes", value: "$11,000", sub: "MXN",          icon: "💰", positive: true  },
-  { label: "Pujas recibidas",   value: "20",      sub: "en 3 subastas",icon: "⚡", positive: true  },
-  { label: "Órdenes pendientes",value: "1",       sub: "por enviar",   icon: "📦", positive: false },
-  { label: "Disputas abiertas", value: "1",       sub: "requiere acción",icon: "⚠️", positive: false },
-];
-
-const ACTIVITY = [
-  { icon: "⚡", text: "Nueva puja de $2,850 en Charizard VMAX Rainbow",  time: "Hace 10s", color: "#a78bfa" },
-  { icon: "💰", text: "Orden ORD-004 pagada — $3,500 MXN",               time: "Hace 2h",  color: "#4ade80" },
-  { icon: "👁", text: "47 espectadores en tu subasta en vivo",            time: "Ahora",    color: "#60a5fa" },
-  { icon: "📦", text: "Orden ORD-002 marcada como entregada por el comprador", time: "Hace 1 día", color: "#4ade80" },
-  { icon: "🔔", text: "Tu subasta Mewtwo V Alt Art empieza en 6 horas",  time: "Hace 2 días", color: "#fbbf24" },
-];
 
 interface AuctionForm {
   name: string;
@@ -201,10 +187,10 @@ export default function VendedorPage() {
             {/* Info */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-black">PokéVault_MX</h1>
-                <span className="text-[#a78bfa] text-sm">✓ Verificado</span>
+                <h1 className="text-2xl font-black">{user?.username ?? "—"}</h1>
+                {user?.role === "SELLER" && <span className="text-[#a78bfa] text-sm">✓ Verificado</span>}
               </div>
-              <p className="text-zinc-500 text-sm mt-0.5">Vendedor profesional · Desde Enero 2025 · 4.9★ (38 reseñas)</p>
+              <p className="text-zinc-500 text-sm mt-0.5">Panel de vendedor</p>
 
               <div className="flex flex-wrap items-center gap-5 mt-4">
                 {[
@@ -267,7 +253,32 @@ export default function VendedorPage() {
 
             {/* Stats grid */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {STATS.map((s) => (
+              {[
+                {
+                  label: "Ingresos totales",
+                  value: `$${(totalRevenue).toLocaleString("es-MX")}`,
+                  sub: "MXN",
+                  icon: "💰",
+                },
+                {
+                  label: "Subastas activas",
+                  value: sellerStats?.activeAuctions ?? myAuctions.filter(a => a.status === "live" || a.status === "ending").length,
+                  sub: "en curso",
+                  icon: "⚡",
+                },
+                {
+                  label: "Pendientes de envío",
+                  value: sellerStats?.pendingOrders ?? (sellerOrders?.filter(o => o.status === "pending" || o.status === "confirmed").length ?? 0),
+                  sub: "por enviar",
+                  icon: "📦",
+                },
+                {
+                  label: "Mis subastas",
+                  value: myAuctions.length,
+                  sub: "historial total",
+                  icon: "🏷",
+                },
+              ].map((s) => (
                 <div
                   key={s.label}
                   className="rounded-2xl p-5"
@@ -339,56 +350,57 @@ export default function VendedorPage() {
                 ))}
               </div>
 
-              {/* Actividad reciente */}
+              {/* Órdenes recientes */}
               <div
                 className="rounded-2xl p-5"
                 style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
               >
-                <h3 className="font-bold text-sm mb-4">Actividad reciente</h3>
-                <div className="space-y-3">
-                  {ACTIVITY.map((a, i) => (
-                    <div key={i} className="flex items-start gap-3">
-                      <span
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0"
-                        style={{ background: "rgba(255,255,255,0.05)" }}
-                      >
-                        {a.icon}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs leading-snug">{a.text}</p>
-                        <p className="text-[10px] text-zinc-600 mt-0.5">{a.time}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <h3 className="font-bold text-sm mb-4">Órdenes recientes</h3>
+                {(sellerOrders ?? []).length === 0 ? (
+                  <p className="text-xs text-zinc-600 text-center py-6">Sin órdenes aún</p>
+                ) : (
+                  <div className="space-y-3">
+                    {(sellerOrders ?? []).slice(0, 5).map((o) => {
+                      const statusIcon: Record<string, string> = { pending: "⏳", confirmed: "✓", shipped: "🚚", delivered: "✅" };
+                      return (
+                        <div key={o.id} className="flex items-start gap-3">
+                          <span className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0" style={{ background: "rgba(255,255,255,0.05)" }}>
+                            {statusIcon[o.status] ?? "📋"}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs leading-snug">
+                              {o.items?.[0]?.cardName ?? "Carta"} — ${o.totalAmount.toLocaleString("es-MX")} MXN
+                            </p>
+                            <p className="text-[10px] text-zinc-600 mt-0.5">
+                              @{o.buyer?.username ?? "comprador"} · {new Date(o.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Revenue bar chart mock */}
+            {/* Revenue summary */}
             <div
               className="rounded-2xl p-5"
               style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
             >
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="font-bold text-sm">Ingresos — Mayo 2026</h3>
-                <span className="text-xs text-zinc-500">Total: $11,000 MXN</span>
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="font-bold text-sm">Resumen de ventas</h3>
+                <span className="text-xs text-zinc-500">Total acumulado</span>
               </div>
-              <div className="flex items-end gap-2 h-24">
-                {[20, 0, 85, 0, 0, 0, 0, 0, 0, 60, 0, 0, 100].map((h, i) => (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                    <div
-                      className="w-full rounded-t-md transition-all"
-                      style={{
-                        height: `${h}%`,
-                        background: h === 100
-                          ? "linear-gradient(180deg, #8B5CF6, #6C3AE8)"
-                          : h > 0
-                          ? "rgba(108,58,232,0.4)"
-                          : "rgba(255,255,255,0.04)",
-                        minHeight: "4px",
-                      }}
-                    />
-                    <p className="text-[9px] text-zinc-700">{i + 1}</p>
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { label: "Ingresos totales", value: `$${totalRevenue.toLocaleString("es-MX")} MXN`, color: "#a78bfa" },
+                  { label: "Órdenes totales",  value: sellerOrders?.length ?? 0,                       color: "#4ade80" },
+                  { label: "Subastas totales", value: myAuctions.length,                               color: "#60a5fa" },
+                ].map(s => (
+                  <div key={s.label} className="rounded-xl p-4 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
+                    <p className="text-xl font-black" style={{ color: s.color }}>{s.value}</p>
+                    <p className="text-[11px] text-zinc-500 mt-1">{s.label}</p>
                   </div>
                 ))}
               </div>

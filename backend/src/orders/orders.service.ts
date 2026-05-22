@@ -90,7 +90,7 @@ export class OrdersService {
   }
 
   async updateStatus(orderId: string, sellerId: string, status: OrderStatus): Promise<Order> {
-    const order = await this.ordersRepo.findOne({ where: { id: orderId, sellerId } });
+    const order = await this.ordersRepo.findOne({ where: { id: orderId, sellerId }, relations: ['items'] });
     if (!order) throw new NotFoundException('Order not found');
     const allowed: Record<OrderStatus, OrderStatus[]> = {
       [OrderStatus.PENDING]:   [OrderStatus.CONFIRMED],
@@ -162,6 +162,7 @@ export class OrdersService {
 
     const paidOrders = await this.ordersRepo.find({
       where: { sellerId, paymentStatus: PaymentStatus.PAID },
+      relations: ['items'],
     });
 
     const allItems = paidOrders.flatMap(o => o.items);
@@ -195,8 +196,15 @@ export class OrdersService {
     return this.ordersRepo.findOne({ where: { id: orderId } });
   }
 
+  async getOrdersForUser(userId: string): Promise<Order[]> {
+    return this.ordersRepo.find({
+      where: [{ buyerId: userId }, { sellerId: userId }],
+      order: { updatedAt: 'DESC' },
+    });
+  }
+
   async getOrderForCheckout(orderId: string, buyerId: string): Promise<Order> {
-    const order = await this.ordersRepo.findOne({ where: { id: orderId, buyerId } });
+    const order = await this.ordersRepo.findOne({ where: { id: orderId, buyerId }, relations: ['items'] });
     if (!order) throw new NotFoundException('Order not found');
     if (order.paymentStatus === PaymentStatus.PAID) throw new BadRequestException('Order already paid');
     return order;

@@ -51,10 +51,13 @@ export default function Navbar() {
                   className="flex items-center gap-2 text-sm font-semibold text-white px-3 py-2 rounded-xl transition-all border border-white/10 hover:border-[#6C3AE8]/40 hover:bg-[#6C3AE8]/10"
                 >
                   <span
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black"
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black overflow-hidden"
                     style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
                   >
-                    {initials}
+                    {user.avatarUrl
+                      ? <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
+                      : initials
+                    }
                   </span>
                   <span className="hidden sm:inline">{user.username}</span>
                 </Link>

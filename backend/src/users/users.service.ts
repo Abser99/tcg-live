@@ -52,6 +52,7 @@ export class UsersService {
     await this.usersRepo.update(id, {
       ...(dto.username    !== undefined && { username:    dto.username    }),
       ...(dto.displayName !== undefined && { displayName: dto.displayName }),
+      ...(dto.avatarUrl   !== undefined && { avatarUrl:   dto.avatarUrl   }),
     });
     return this.findById(id);
   }
@@ -79,6 +80,16 @@ export class UsersService {
 
   async getPublicProfile(id: string): Promise<Partial<User> & { averageRating: number | null }> {
     const user = await this.findById(id);
+    return this.buildPublicProfile(user);
+  }
+
+  async getPublicProfileByUsername(username: string): Promise<Partial<User> & { averageRating: number | null }> {
+    const user = await this.usersRepo.findOne({ where: { username } });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+    return this.buildPublicProfile(user);
+  }
+
+  private buildPublicProfile(user: User): Partial<User> & { averageRating: number | null } {
     const { passwordHash, email, balance, zipCode, street, colonia, city, state, ...pub } = user as any;
     const averageRating = user.totalRatings
       ? Math.round((user.totalRatingPoints / user.totalRatings) * 10) / 10

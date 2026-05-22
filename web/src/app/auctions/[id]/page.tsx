@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import { auctionsApi, type ApiAuction } from "@/lib/api";
+import { auctionsApi, watchlistApi, type ApiAuction } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 
 const STATUS_LABEL: Record<string, { text: string; bg: string }> = {
@@ -54,6 +54,14 @@ export default function AuctionDetailPage() {
       .catch(() => setAuction(null))
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    if (!auction || (auction.status !== 'live' && auction.status !== 'ending')) return;
+    const timer = setInterval(() => {
+      auctionsApi.get(id).then(r => setAuction(r.data)).catch(() => {});
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [id, auction?.status]);
 
   if (loading) {
     return (
@@ -203,13 +211,13 @@ function StreamPanel({
         <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black/80 to-transparent" />
 
         <div className="absolute bottom-4 left-4 flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-[#1E1E2A] border border-white/20 flex items-center justify-center text-sm">
+          <Link href={`/tienda/${sellerName}`} className="w-8 h-8 rounded-full bg-[#1E1E2A] border border-white/20 flex items-center justify-center text-sm hover:border-[#6C3AE8]/50 transition-colors">
             🧑
-          </div>
+          </Link>
           <div>
-            <p className="text-white text-sm font-bold leading-none">
+            <Link href={`/tienda/${sellerName}`} className="text-white text-sm font-bold leading-none hover:text-[#a78bfa] transition-colors">
               {sellerName} {verified && <span className="text-[#a78bfa]">✓</span>}
-            </p>
+            </Link>
             <p className="text-zinc-400 text-xs">Vendedor</p>
           </div>
         </div>
@@ -284,15 +292,15 @@ function CardInfo({ auction: a }: { auction: ApiAuction }) {
           style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
         >
           <p className="text-xs text-zinc-600 mb-1">Vendedor</p>
-          <div className="flex items-center gap-2">
+          <Link href={`/tienda/${sellerName}`} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <span className="text-lg">🧑</span>
             <div>
-              <p className="text-sm font-bold">
-                {sellerName} {verified && <span className="text-[#a78bfa]">✓</span>}
+              <p className="text-sm font-bold text-[#a78bfa]">
+                {sellerName} {verified && <span>✓</span>}
               </p>
-              {verified && <p className="text-xs text-zinc-600">Vendedor verificado</p>}
+              <p className="text-xs text-zinc-600">{verified ? "Vendedor verificado" : "Ver tienda"}</p>
             </div>
-          </div>
+          </Link>
         </div>
         <div
           className="rounded-xl p-4"
@@ -328,8 +336,21 @@ function BidPanel({
   const [bidAmount, setBidAmount] = useState(Math.max(initialCurrentBid + 50, startingBid));
   const [justBid, setJustBid] = useState(false);
   const [placing, setPlacing] = useState(false);
+  const [watchlisted, setWatchlisted] = useState(false);
+  const [watchloading, setWatchloading] = useState(false);
+  const [bidError, setBidError] = useState<string | null>(null);
 
   const currentBid = bids[0]?.amount ?? initialCurrentBid;
+
+  async function toggleWatchlist() {
+    if (!user || watchloading) return;
+    setWatchloading(true);
+    try {
+      await watchlistApi.add(a.id);
+      setWatchlisted(true);
+    } catch {}
+    finally { setWatchloading(false); }
+  }
 
   async function placeBid() {
     if (bidAmount <= currentBid || placing) return;
@@ -342,8 +363,10 @@ function BidPanel({
       setBidAmount(bidAmount + 50);
       setJustBid(true);
       setTimeout(() => setJustBid(false), 2500);
-    } catch {
-      // 401 handled globally by interceptor
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Error al enviar la puja. Intenta de nuevo.";
+      setBidError(msg);
+      setTimeout(() => setBidError(null), 3000);
     } finally {
       setPlacing(false);
     }
@@ -402,6 +425,11 @@ function BidPanel({
               ✓ ¡Puja enviada!
             </div>
           )}
+          {bidError && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-semibold rounded-xl px-4 py-2.5 text-center">
+              {bidError}
+            </div>
+          )}
 
           <p className="text-xs text-zinc-600">Tu puja (mín. ${(currentBid + 50).toLocaleString("es-MX")})</p>
 
@@ -455,8 +483,16 @@ function BidPanel({
         </div>
       ) : (
         <div className="p-5">
-          <button className="w-full py-4 rounded-xl font-bold text-white border border-[#6C3AE8]/40 bg-[#6C3AE8]/10 hover:bg-[#6C3AE8]/20 transition-all text-sm">
-            🔔 Recordarme cuando inicie
+          <button
+            onClick={toggleWatchlist}
+            disabled={watchloading || watchlisted}
+            className="w-full py-4 rounded-xl font-bold text-white border transition-all text-sm disabled:opacity-60"
+            style={watchlisted
+              ? { background: "rgba(74,222,128,0.1)", borderColor: "rgba(74,222,128,0.3)", color: "#4ade80" }
+              : { background: "rgba(108,58,232,0.1)", borderColor: "rgba(108,58,232,0.4)" }
+            }
+          >
+            {watchlisted ? "✓ En tu watchlist" : watchloading ? "Guardando..." : "🔔 Recordarme cuando inicie"}
           </button>
           <p className="text-xs text-zinc-600 text-center mt-3">
             Inicia en {formatTimer(a.endTime)}

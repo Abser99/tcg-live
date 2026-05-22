@@ -1,4 +1,4 @@
-import { IsOptional, IsString, Length, Matches } from 'class-validator';
+import { IsOptional, IsString, Length, Matches, IsUrl } from 'class-validator';
 
 export class UpdateProfileDto {
   @IsOptional()
@@ -11,4 +11,8 @@ export class UpdateProfileDto {
   @IsString()
   @Length(2, 60)
   displayName?: string;
+
+  @IsOptional()
+  @IsUrl()
+  avatarUrl?: string;
 }

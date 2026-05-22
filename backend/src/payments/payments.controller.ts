@@ -1,10 +1,23 @@
-import { Body, Controller, Get, Param, Post, UseGuards, Logger } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, UseGuards, Logger } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { ConfigService } from '@nestjs/config';
+import { createHmac } from 'crypto';
 import { PaymentsService } from './payments.service';
 import { OrdersService } from '../orders/orders.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../users/user.entity';
 import { Order } from '../orders/entities/order.entity';
+
+function verifyMpSignature(secret: string, headers: Record<string, string>, paymentId: string): boolean {
+  const sig = headers['x-signature'] ?? '';
+  const reqId = headers['x-request-id'] ?? '';
+  const tsMatch = sig.match(/ts=(\d+)/);
+  const v1Match = sig.match(/v1=([a-f0-9]+)/);
+  if (!tsMatch || !v1Match) return false;
+  const message = `id:${paymentId};request-id:${reqId};ts:${tsMatch[1]}`;
+  const hash = createHmac('sha256', secret).update(message).digest('hex');
+  return hash === v1Match[1];
+}
 
 @Controller('payments')
 export class PaymentsController {
@@ -13,6 +26,7 @@ export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
     private readonly ordersService: OrdersService,
+    private readonly config: ConfigService,
   ) {}
 
   /** Buyer initiates checkout for a won order */
@@ -39,8 +53,15 @@ export class PaymentsController {
 
   /** Mercado Pago calls this webhook — no JWT, MP calls directly */
   @Post('webhook')
-  async webhook(@Body() body: any) {
+  async webhook(@Body() body: any, @Headers() headers: Record<string, string>) {
     if (body.type !== 'payment' || !body.data?.id) return { received: true };
+
+    const secret = this.config.get<string>('MERCADOPAGO_WEBHOOK_SECRET');
+    if (secret && !verifyMpSignature(secret, headers, String(body.data.id))) {
+      this.logger.warn('Webhook rejected: invalid MP signature');
+      return { received: true };
+    }
+
     try {
       const status = await this.paymentsService.getPaymentStatus(String(body.data.id));
       if (status.status === 'approved' && status.orderId) {

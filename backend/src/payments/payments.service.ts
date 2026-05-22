@@ -64,6 +64,9 @@ export class PaymentsService {
     const data = await res.json();
     if (!data.id) {
       this.logger.error('MP preference creation failed', data);
+      if (this.config.get('NODE_ENV') === 'production') {
+        throw new Error('El proveedor de pagos no está disponible. Intenta de nuevo.');
+      }
       return this.mockPreference(params.orderId);
     }
     return {

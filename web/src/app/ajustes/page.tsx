@@ -127,6 +127,8 @@ export default function AjustesPage() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [profileError, setProfileError] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   // Password form
   const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
@@ -162,6 +164,7 @@ export default function AjustesPage() {
       if (meRes) {
         setFullUser(meRes.data);
         setProfileForm({ username: meRes.data.username, displayName: meRes.data.displayName ?? "" });
+        if (meRes.data.avatarUrl) setAvatarUrl(meRes.data.avatarUrl);
         setAddrForm({
           street:  meRes.data.street  ?? "",
           colonia: meRes.data.colonia ?? "",
@@ -180,6 +183,27 @@ export default function AjustesPage() {
       if (saved) setNotifs(JSON.parse(saved));
     } catch {}
   }, [user]);
+
+  async function handleAvatarUpload(file: File) {
+    setAvatarUploading(true);
+    setProfileError("");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("upload_preset", CLOUDINARY_PRESET);
+      form.append("folder", "tcg-live/avatars");
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, { method: "POST", body: form });
+      const data = await res.json();
+      if (!data.secure_url) throw new Error("Error al subir imagen");
+      const url = data.secure_url as string;
+      setAvatarUrl(url);
+      await usersApi.updateProfile({ avatarUrl: url });
+    } catch {
+      setProfileError("Error al subir foto. Intenta de nuevo.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  }
 
   async function saveProfile() {
     setProfileError("");
@@ -384,12 +408,29 @@ export default function AjustesPage() {
               <>
                 <SectionCard title="Información personal">
                   <div className="flex items-center gap-4 mb-6 pb-6 border-b border-white/5">
-                    <div
-                      className="w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-black shrink-0"
-                      style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 0 24px rgba(108,58,232,0.4)" }}
-                    >
-                      {initials}
-                    </div>
+                    <label className="relative cursor-pointer group shrink-0">
+                      <div
+                        className="w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-black overflow-hidden"
+                        style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 0 24px rgba(108,58,232,0.4)" }}
+                      >
+                        {avatarUrl
+                          ? <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                          : initials
+                        }
+                      </div>
+                      <div className="absolute inset-0 rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-white text-center leading-tight px-1">
+                          {avatarUploading ? "Subiendo..." : "Cambiar"}
+                        </span>
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleAvatarUpload(f); e.target.value = ""; }}
+                        disabled={avatarUploading}
+                      />
+                    </label>
                     <div>
                       <p className="font-bold">{fullUser?.displayName ?? user.username}</p>
                       <p className="text-xs text-zinc-500 mt-0.5">Miembro desde {memberSince}</p>
@@ -399,6 +440,7 @@ export default function AjustesPage() {
                       >
                         {roleLabel[user.role] ?? user.role}
                       </span>
+                      <p className="text-[10px] text-zinc-600 mt-1">Haz clic en la foto para cambiarla</p>
                     </div>
                   </div>
 
