@@ -367,6 +367,6 @@ export interface CreateAuctionPayload {
   title: string;
   game?: string;
   description?: string;
-  items: { cardName: string; cardSet?: string; condition?: string; startingPrice: number; binPrice?: number; imageUrls?: string[] }[];
+  items?: { cardName: string; cardSet?: string; condition?: string; startingPrice: number; binPrice?: number; imageUrls?: string[] }[];
   scheduledAt?: string;
 }
