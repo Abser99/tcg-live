@@ -69,7 +69,7 @@ export const auctionsApi = {
 
   start:   (id: string) => api.patch(`/auctions/${id}/start`),
   end:     (id: string) => api.patch(`/auctions/${id}/end`),
-  addItem: (id: string, dto: { cardName: string; startingPrice: number; imageUrls?: string[] }) =>
+  addItem: (id: string, dto: { cardName: string; startingPrice: number; imageUrls?: string[]; durationSeconds?: number; category?: string }) =>
     api.post<ApiAuction>(`/auctions/${id}/items`, dto),
   maxBid: (itemId: string, maxAmount: number) =>
     api.post(`/auctions/items/${itemId}/max-bid`, { maxAmount }),
@@ -227,6 +227,10 @@ export interface ApiAuctionItem {
   condition: string;
   startingBid: number;
   currentBid?: number;
+  category?: string;
+  status?: string;
+  closesAt?: string;
+  winnerId?: string;
   bids?: ApiBid[];
 }
 

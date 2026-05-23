@@ -423,7 +423,7 @@ export class AuctionsService {
     }));
   }
 
-  async addItem(auctionId: string, sellerId: string, dto: { cardName: string; startingPrice: number; imageUrls?: string[] }): Promise<Auction> {
+  async addItem(auctionId: string, sellerId: string, dto: { cardName: string; startingPrice: number; imageUrls?: string[]; durationSeconds?: number; category?: string }): Promise<Auction> {
     const auction = await this.auctionsRepo.findOne({ where: { id: auctionId }, relations: ['items'] });
     if (!auction) throw new NotFoundException('Subasta no encontrada');
     if (auction.sellerId !== sellerId) throw new ForbiddenException();
@@ -434,10 +434,10 @@ export class AuctionsService {
     const isLive = auction.status === AuctionStatus.LIVE;
     const hasActiveItem = auction.items.some(i => i.status === AuctionItemStatus.ACTIVE);
 
-    // If auction is live and no item is currently active, activate this one immediately
-    const newStatus = isLive && !hasActiveItem ? AuctionItemStatus.ACTIVE : AuctionItemStatus.PENDING;
-    const closesAt  = newStatus === AuctionItemStatus.ACTIVE
-      ? new Date(Date.now() + ITEM_TIMER_MS)
+    const durationMs = (dto.durationSeconds ?? 60) * 1000;
+    const newStatus  = isLive && !hasActiveItem ? AuctionItemStatus.ACTIVE : AuctionItemStatus.PENDING;
+    const closesAt   = newStatus === AuctionItemStatus.ACTIVE
+      ? new Date(Date.now() + durationMs)
       : undefined;
 
     await this.itemsRepo.save(this.itemsRepo.create({
@@ -449,6 +449,7 @@ export class AuctionsService {
       position,
       status:        newStatus,
       closesAt,
+      category:      dto.category ?? null,
     }));
     return this.findOne(auctionId);
   }

@@ -109,7 +109,7 @@ export class AuctionsController {
   addItem(
     @Param('id') id: string,
     @CurrentUser() user: User,
-    @Body() body: { cardName: string; startingPrice: number; imageUrls?: string[] },
+    @Body() body: { cardName: string; startingPrice: number; imageUrls?: string[]; durationSeconds?: number; category?: string },
   ) {
     return this.auctionsService.addItem(id, user.id, body);
   }

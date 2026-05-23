@@ -91,6 +91,9 @@ export class AuctionItem {
   @Column({ type: 'varchar', length: 10, nullable: true })
   grade: string | null; // e.g. "9", "9.5", "10"
 
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  category: string | null; // carta, paquete, caja, expansion, otro
+
   @Column({ default: false })
   autoRelist: boolean;
 

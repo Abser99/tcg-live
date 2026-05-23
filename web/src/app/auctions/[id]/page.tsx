@@ -186,8 +186,17 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   // Panel agregar carta
   const [cardName,      setCardName]      = useState("");
   const [cardPrice,     setCardPrice]     = useState("");
+  const [cardDuration,  setCardDuration]  = useState("60");
+  const [cardCategory,  setCardCategory]  = useState("carta");
   const [addingCard,    setAddingCard]    = useState(false);
   const [addCardError,  setAddCardError]  = useState("");
+
+  // Panel minijuego
+  const [showMinigame,    setShowMinigame]    = useState(false);
+  const [streamWinners,   setStreamWinners]   = useState<{ username: string; category: string; itemName: string }[]>([]);
+  const [mgCategory,      setMgCategory]      = useState("todos");
+  const [mgSpinning,      setMgSpinning]      = useState(false);
+  const [mgWinner,        setMgWinner]        = useState<string | null>(null);
 
   // Chat en vivo
   const [chatMessages, setChatMessages] = useState<{ username: string; text: string; ts: number }[]>([]);
@@ -277,8 +286,10 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     setAddCardError("");
     try {
       const res = await auctionsApi.addItem(a.id, {
-        cardName: cardName.trim(),
-        startingPrice: Math.round(Number(cardPrice) * 100),
+        cardName:        cardName.trim(),
+        startingPrice:   Math.round(Number(cardPrice) * 100),
+        durationSeconds: Number(cardDuration),
+        category:        cardCategory,
       });
       onAuctionUpdate?.(res.data);
       setCardName("");
@@ -288,6 +299,54 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     } finally {
       setAddingCard(false);
     }
+  }
+
+  // Track buyers who win items during this stream (poll auction items for new winners)
+  useEffect(() => {
+    if (!isLive || !isSeller) return;
+    const items = a.items ?? [];
+    const newWinners: typeof streamWinners = [];
+    for (const item of items) {
+      if (item.winnerId && item.bids && item.bids.length > 0) {
+        const topBid = [...item.bids].sort((x, y) => y.amount - x.amount)[0];
+        const username = topBid?.bidder?.username;
+        if (username && !streamWinners.find(w => w.username === username && w.itemName === item.cardName)) {
+          newWinners.push({ username, category: (item as any).category ?? "carta", itemName: item.cardName });
+        }
+      }
+    }
+    if (newWinners.length > 0) {
+      setStreamWinners(prev => {
+        const combined = [...prev];
+        for (const w of newWinners) {
+          if (!combined.find(c => c.username === w.username && c.itemName === w.itemName)) {
+            combined.push(w);
+          }
+        }
+        return combined;
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [a.items]);
+
+  function spinMinigame() {
+    const pool = mgCategory === "todos"
+      ? streamWinners
+      : streamWinners.filter(w => w.category === mgCategory);
+    if (pool.length === 0) return;
+    setMgSpinning(true);
+    setMgWinner(null);
+    let ticks = 0;
+    const total = 20 + Math.floor(Math.random() * 15);
+    const interval = setInterval(() => {
+      const random = pool[Math.floor(Math.random() * pool.length)];
+      setMgWinner(random.username);
+      ticks++;
+      if (ticks >= total) {
+        clearInterval(interval);
+        setMgSpinning(false);
+      }
+    }, 80);
   }
 
   async function startStream() {
@@ -519,40 +578,155 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         </div>
       )}
 
-      {/* ── Panel agregar carta (solo vendedor en vivo) ── */}
+      {/* ── Panel agregar carta + minijuego (solo vendedor en vivo) ── */}
       {isSeller && isLive && (
-        <div className="px-4 py-3 border-t border-white/5" style={{ background: "#0d0d14" }}>
-          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Subir carta a subasta</p>
-          {addCardError && <p className="text-xs text-red-400 mb-2">{addCardError}</p>}
-          <div className="flex gap-2">
-            <input
-              value={cardName}
-              onChange={e => setCardName(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") addCard(); }}
-              placeholder="Nombre de la carta..."
-              className="flex-1 bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50"
-            />
-            <div className="relative w-28 shrink-0">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-xs">$</span>
-              <input
-                type="number"
-                min={1}
-                value={cardPrice}
-                onChange={e => setCardPrice(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") addCard(); }}
-                placeholder="Precio"
-                className="w-full bg-[#16161E] border border-white/10 rounded-xl pl-6 pr-2 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50"
-              />
-            </div>
-            <button
-              onClick={addCard}
-              disabled={addingCard || !cardName.trim() || !cardPrice}
-              className="px-4 py-2 rounded-xl text-sm font-black text-white disabled:opacity-40"
-              style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
-            >
-              {addingCard ? "..." : "+"}
-            </button>
+        <div className="border-t border-white/5" style={{ background: "#0d0d14" }}>
+
+          {/* Tab toggle */}
+          <div className="flex border-b border-white/5">
+            {[
+              { key: false, label: "🃏 Agregar carta" },
+              { key: true,  label: `🎲 Minijuego${streamWinners.length > 0 ? ` (${streamWinners.length})` : ""}` },
+            ].map(({ key, label }) => (
+              <button
+                key={String(key)}
+                onClick={() => setShowMinigame(key)}
+                className="flex-1 py-2.5 text-xs font-bold transition-all"
+                style={showMinigame === key
+                  ? { color: "#a78bfa", borderBottom: "2px solid #6C3AE8" }
+                  : { color: "#52525b", borderBottom: "2px solid transparent" }}
+              >
+                {label}
+              </button>
+            ))}
           </div>
+
+          {/* ── Agregar carta ── */}
+          {!showMinigame && (
+            <div className="p-3 flex flex-col gap-2">
+              {addCardError && <p className="text-xs text-red-400">{addCardError}</p>}
+
+              {/* Nombre + precio */}
+              <div className="flex gap-2">
+                <input
+                  value={cardName}
+                  onChange={e => setCardName(e.target.value)}
+                  placeholder="Nombre de la carta..."
+                  className="flex-1 bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50"
+                />
+                <div className="relative w-28 shrink-0">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-xs">$</span>
+                  <input
+                    type="number" min={1}
+                    value={cardPrice}
+                    onChange={e => setCardPrice(e.target.value)}
+                    placeholder="Precio"
+                    className="w-full bg-[#16161E] border border-white/10 rounded-xl pl-6 pr-2 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50"
+                  />
+                </div>
+              </div>
+
+              {/* Categoría + duración */}
+              <div className="flex gap-2">
+                <select
+                  value={cardCategory}
+                  onChange={e => setCardCategory(e.target.value)}
+                  className="flex-1 bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6C3AE8]/50"
+                >
+                  {["carta", "paquete", "caja", "expansión", "otro"].map(c => (
+                    <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                  ))}
+                </select>
+                <select
+                  value={cardDuration}
+                  onChange={e => setCardDuration(e.target.value)}
+                  className="flex-1 bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#6C3AE8]/50"
+                >
+                  {[
+                    { label: "30 seg", value: "30" },
+                    { label: "1 min",  value: "60" },
+                    { label: "2 min",  value: "120" },
+                    { label: "5 min",  value: "300" },
+                    { label: "10 min", value: "600" },
+                  ].map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                </select>
+                <button
+                  onClick={addCard}
+                  disabled={addingCard || !cardName.trim() || !cardPrice}
+                  className="px-4 py-2 rounded-xl text-sm font-black text-white disabled:opacity-40"
+                  style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                >
+                  {addingCard ? "…" : "+ Subir"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Minijuego ── */}
+          {showMinigame && (
+            <div className="p-3 flex flex-col gap-3">
+              {streamWinners.length === 0 ? (
+                <p className="text-xs text-zinc-600 text-center py-4">
+                  Los compradores que ganen cartas en este stream aparecerán aquí.
+                </p>
+              ) : (
+                <>
+                  {/* Filtro por categoría */}
+                  <div className="flex gap-1.5 flex-wrap">
+                    {["todos", ...Array.from(new Set(streamWinners.map(w => w.category)))].map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setMgCategory(cat)}
+                        className="px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all"
+                        style={mgCategory === cat
+                          ? { background: "rgba(108,58,232,0.3)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.5)" }
+                          : { background: "rgba(255,255,255,0.05)", color: "#71717a", border: "1px solid rgba(255,255,255,0.08)" }}
+                      >
+                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                        {" "}({cat === "todos" ? streamWinners.length : streamWinners.filter(w => w.category === cat).length})
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Lista de elegibles */}
+                  <div className="max-h-24 overflow-y-auto flex flex-col gap-1">
+                    {(mgCategory === "todos" ? streamWinners : streamWinners.filter(w => w.category === mgCategory)).map((w, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs px-2 py-1 rounded-lg" style={{ background: "rgba(255,255,255,0.03)" }}>
+                        <span className="font-bold text-[#a78bfa]">@{w.username}</span>
+                        <span className="text-zinc-600">{w.itemName} · {w.category}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Resultado del spin */}
+                  {mgWinner && (
+                    <div
+                      className="rounded-xl py-3 text-center"
+                      style={{ background: mgSpinning ? "rgba(255,255,255,0.04)" : "rgba(74,222,128,0.1)", border: `1px solid ${mgSpinning ? "rgba(255,255,255,0.08)" : "rgba(74,222,128,0.3)"}` }}
+                    >
+                      {mgSpinning
+                        ? <p className="text-sm font-black text-zinc-400 animate-pulse">@{mgWinner}</p>
+                        : <>
+                            <p className="text-[10px] text-green-400 font-bold uppercase tracking-widest mb-0.5">¡Ganador!</p>
+                            <p className="text-lg font-black text-white">@{mgWinner}</p>
+                          </>
+                      }
+                    </div>
+                  )}
+
+                  {/* Botón girar */}
+                  <button
+                    onClick={spinMinigame}
+                    disabled={mgSpinning}
+                    className="w-full py-2.5 rounded-xl font-black text-sm text-white disabled:opacity-60 transition-all"
+                    style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)", boxShadow: "0 4px 16px rgba(245,158,11,0.35)" }}
+                  >
+                    {mgSpinning ? "Girando…" : "🎲 Girar para elegir ganador"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
