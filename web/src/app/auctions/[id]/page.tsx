@@ -192,7 +192,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   // Chat en vivo
   const [chatMessages, setChatMessages] = useState<{ username: string; text: string; ts: number }[]>([]);
   const [chatInput,    setChatInput]    = useState("");
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatBoxRef = useRef<HTMLDivElement>(null);
 
   // Everyone (seller + viewers) auto-connect for chat when auction is live
   useEffect(() => {
@@ -235,7 +235,8 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   useEffect(() => () => { roomRef.current?.disconnect(); }, []);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const box = chatBoxRef.current;
+    if (box) box.scrollTop = box.scrollHeight;
   }, [chatMessages]);
 
   function attachChatListener(room: Room) {
@@ -559,6 +560,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       <div className="bg-[#0d0d14] border-t border-white/5 p-4">
         <p className="text-xs text-zinc-600 font-semibold uppercase tracking-wider mb-3">Chat en vivo</p>
         <div
+          ref={chatBoxRef}
           className="h-36 overflow-y-auto flex flex-col gap-1.5 mb-3 pr-1"
           style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.06) transparent" }}
         >
@@ -576,7 +578,6 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
               </div>
             ))
           )}
-          <div ref={chatEndRef} />
         </div>
         <div className="flex gap-2">
           <input
