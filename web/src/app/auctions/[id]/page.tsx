@@ -432,10 +432,12 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           )}
         </div>
 
-        {/* Timer */}
-        <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-sm text-white font-mono font-black text-lg px-3 py-1 rounded-xl z-10">
-          {timer}
-        </div>
+        {/* Timer — only when there's a real countdown */}
+        {a.endTime && (
+          <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-sm text-white font-mono font-black text-lg px-3 py-1 rounded-xl z-10">
+            {timer}
+          </div>
+        )}
 
         {/* Seller info */}
         <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black/80 to-transparent z-10" />
