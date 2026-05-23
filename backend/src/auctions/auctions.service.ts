@@ -139,7 +139,7 @@ export class AuctionsService {
       where: { id },
       relations: ['seller', 'items'],
     });
-    if (!auction) throw new NotFoundException('Auction not found');
+    if (!auction) throw new NotFoundException('Subasta no encontrada');
     return auction;
   }
 
@@ -147,7 +147,7 @@ export class AuctionsService {
     const auction = await this.findOne(id);
     this.assertOwner(auction.sellerId, sellerId);
     if (auction.status !== AuctionStatus.SCHEDULED) {
-      throw new BadRequestException('Auction is not in scheduled state');
+      throw new BadRequestException('La subasta no está en estado programado');
     }
 
     auction.status = AuctionStatus.LIVE;
@@ -176,7 +176,7 @@ export class AuctionsService {
     const auction = await this.findOne(id);
     this.assertOwner(auction.sellerId, sellerId);
     if (auction.status !== AuctionStatus.LIVE) {
-      throw new BadRequestException('Auction is not live');
+      throw new BadRequestException('La subasta no está en vivo');
     }
 
     auction.status = AuctionStatus.ENDED;
@@ -195,17 +195,17 @@ export class AuctionsService {
         lock: { mode: 'pessimistic_write' },
       });
 
-      if (!item) throw new NotFoundException('Item not found');
+      if (!item) throw new NotFoundException('Artículo no encontrado');
       if (item.status !== AuctionItemStatus.ACTIVE) {
-        throw new BadRequestException('Item is not currently active');
+        throw new BadRequestException('Este artículo no está activo en este momento');
       }
 
       const auction = await manager.findOne(Auction, { where: { id: item.auctionId } });
       if (auction!.status !== AuctionStatus.LIVE) {
-        throw new BadRequestException('Auction is not live');
+        throw new BadRequestException('La subasta no está en vivo');
       }
       if (auction!.sellerId === bidderId) {
-        throw new ForbiddenException('Seller cannot bid on their own items');
+        throw new ForbiddenException('El vendedor no puede pujar en sus propios artículos');
       }
       if (dto.amount <= item.currentPrice) {
         throw new BadRequestException(
@@ -299,9 +299,9 @@ export class AuctionsService {
 
   async setMaxBid(itemId: string, userId: string, dto: SetMaxBidDto): Promise<void> {
     const item = await this.itemsRepo.findOne({ where: { id: itemId } });
-    if (!item) throw new NotFoundException('Item not found');
+    if (!item) throw new NotFoundException('Artículo no encontrado');
     if (item.status !== AuctionItemStatus.ACTIVE) {
-      throw new BadRequestException('Item is not currently active');
+      throw new BadRequestException('Este artículo no está activo en este momento');
     }
     if (dto.maxAmount <= item.currentPrice) {
       throw new BadRequestException(
@@ -326,10 +326,10 @@ export class AuctionsService {
       relations: ['auction'],
     });
 
-    if (!item) throw new NotFoundException('Item not found');
+    if (!item) throw new NotFoundException('Artículo no encontrado');
     this.assertOwner(item.auction.sellerId, sellerId);
     if (item.status !== AuctionItemStatus.ACTIVE) {
-      throw new BadRequestException('Item is not active');
+      throw new BadRequestException('El artículo no está activo');
     }
 
     item.status = item.winnerId ? AuctionItemStatus.SOLD : AuctionItemStatus.UNSOLD;
@@ -425,19 +425,30 @@ export class AuctionsService {
 
   async addItem(auctionId: string, sellerId: string, dto: { cardName: string; startingPrice: number; imageUrls?: string[] }): Promise<Auction> {
     const auction = await this.auctionsRepo.findOne({ where: { id: auctionId }, relations: ['items'] });
-    if (!auction) throw new NotFoundException('Auction not found');
+    if (!auction) throw new NotFoundException('Subasta no encontrada');
     if (auction.sellerId !== sellerId) throw new ForbiddenException();
     if (auction.status !== AuctionStatus.LIVE && auction.status !== AuctionStatus.SCHEDULED) {
       throw new BadRequestException('Solo puedes agregar cartas a subastas en vivo o próximas');
     }
     const position = auction.items.length;
+    const isLive = auction.status === AuctionStatus.LIVE;
+    const hasActiveItem = auction.items.some(i => i.status === AuctionItemStatus.ACTIVE);
+
+    // If auction is live and no item is currently active, activate this one immediately
+    const newStatus = isLive && !hasActiveItem ? AuctionItemStatus.ACTIVE : AuctionItemStatus.PENDING;
+    const closesAt  = newStatus === AuctionItemStatus.ACTIVE
+      ? new Date(Date.now() + ITEM_TIMER_MS)
+      : undefined;
+
     await this.itemsRepo.save(this.itemsRepo.create({
       auctionId,
-      cardName:     dto.cardName,
+      cardName:      dto.cardName,
       startingPrice: dto.startingPrice,
       currentPrice:  dto.startingPrice,
-      imageUrls:    dto.imageUrls ?? [],
+      imageUrls:     dto.imageUrls ?? [],
       position,
+      status:        newStatus,
+      closesAt,
     }));
     return this.findOne(auctionId);
   }

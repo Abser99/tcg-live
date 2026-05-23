@@ -24,7 +24,7 @@ export class ListingsService {
 
   async findOne(id: string) {
     const listing = await this.repo.findOne({ where: { id }, relations: ['seller'] });
-    if (!listing) throw new NotFoundException('Listing not found');
+    if (!listing) throw new NotFoundException('Venta no encontrada');
     return listing;
   }
 
@@ -54,10 +54,10 @@ export class ListingsService {
   async createOffer(listingId: string, buyerId: string, dto: CreateOfferDto): Promise<ListingOffer> {
     const listing = await this.findOne(listingId);
     if (listing.status !== ListingStatus.ACTIVE) {
-      throw new BadRequestException('Listing is not active');
+      throw new BadRequestException('La venta no está activa');
     }
     if (listing.sellerId === buyerId) {
-      throw new ForbiddenException('Cannot make an offer on your own listing');
+      throw new ForbiddenException('No puedes hacer oferta en tu propia venta');
     }
     const existing = await this.offersRepo.findOne({
       where: { listingId, buyerId, status: OfferStatus.PENDING },

@@ -84,14 +84,14 @@ export class OrdersService {
 
   async setShippingChoice(orderId: string, buyerId: string, choice: 'combined' | 'individual'): Promise<Order> {
     const order = await this.ordersRepo.findOne({ where: { id: orderId, buyerId } });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException('Orden no encontrada');
     order.shippingChoice = choice;
     return this.ordersRepo.save(order);
   }
 
   async updateStatus(orderId: string, sellerId: string, status: OrderStatus): Promise<Order> {
     const order = await this.ordersRepo.findOne({ where: { id: orderId, sellerId }, relations: ['items'] });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException('Orden no encontrada');
     const allowed: Record<OrderStatus, OrderStatus[]> = {
       [OrderStatus.PENDING]:   [OrderStatus.CONFIRMED],
       [OrderStatus.CONFIRMED]: [OrderStatus.SHIPPED],
@@ -118,7 +118,7 @@ export class OrdersService {
 
   async confirmReceived(orderId: string, buyerId: string): Promise<Order> {
     const order = await this.ordersRepo.findOne({ where: { id: orderId, buyerId } });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException('Orden no encontrada');
     if (order.status !== OrderStatus.SHIPPED) {
       throw new BadRequestException('El pedido aún no ha sido marcado como enviado');
     }
@@ -130,9 +130,9 @@ export class OrdersService {
   }
 
   async rateOrder(orderId: string, buyerId: string, rating: number, note?: string): Promise<Order> {
-    if (rating < 1 || rating > 5) throw new BadRequestException('Rating must be 1–5');
+    if (rating < 1 || rating > 5) throw new BadRequestException('La calificación debe ser entre 1 y 5');
     const order = await this.ordersRepo.findOne({ where: { id: orderId, buyerId } });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException('Orden no encontrada');
     if (order.status !== OrderStatus.DELIVERED) {
       throw new BadRequestException('Solo puedes calificar órdenes entregadas');
     }
@@ -151,7 +151,7 @@ export class OrdersService {
     labelUrl: string;
   }): Promise<Order> {
     const order = await this.ordersRepo.findOne({ where: { id: orderId, sellerId } });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException('Orden no encontrada');
     Object.assign(order, data);
     return this.ordersRepo.save(order);
   }
@@ -205,14 +205,14 @@ export class OrdersService {
 
   async getOrderForCheckout(orderId: string, buyerId: string): Promise<Order> {
     const order = await this.ordersRepo.findOne({ where: { id: orderId, buyerId }, relations: ['items'] });
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.paymentStatus === PaymentStatus.PAID) throw new BadRequestException('Order already paid');
+    if (!order) throw new NotFoundException('Orden no encontrada');
+    if (order.paymentStatus === PaymentStatus.PAID) throw new BadRequestException('La orden ya fue pagada');
     return order;
   }
 
   async storePreference(orderId: string, mpPreferenceId: string, autoApprove: boolean): Promise<Order> {
     const order = await this.ordersRepo.findOne({ where: { id: orderId } });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException('Orden no encontrada');
     order.mpPreferenceId = mpPreferenceId;
     if (autoApprove) {
       order.paymentStatus = PaymentStatus.PAID;
