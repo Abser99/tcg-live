@@ -74,6 +74,9 @@ export default function VendedorPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("dashboard");
   const [launchingStream, setLaunchingStream] = useState(false);
+  const [showStreamForm, setShowStreamForm] = useState(false);
+  const [streamTitle, setStreamTitle] = useState("");
+  const [streamGame, setStreamGame] = useState("pokemon");
   const [form, setForm] = useState<AuctionForm>(EMPTY_FORM);
   const [submitted, setSubmitted] = useState(false);
   const [saleFilter, setSaleFilter] = useState<AuctionStatus | "all">("all");
@@ -215,11 +218,11 @@ export default function VendedorPage() {
   }
 
   async function launchLivestream() {
+    if (!streamTitle.trim()) return;
+    setShowStreamForm(false);
     setLaunchingStream(true);
     try {
-      const now = new Date();
-      const label = now.toLocaleDateString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-      const res = await auctionsApi.create({ title: `Livestream ${label}` });
+      const res = await auctionsApi.create({ title: streamTitle.trim(), game: streamGame as any });
       const auctionId = (res.data as any).id;
       await auctionsApi.start(auctionId);
       router.push(`/auctions/${auctionId}?stream=1`);
@@ -230,9 +233,80 @@ export default function VendedorPage() {
 
   const totalRevenue = sellerStats?.totalRevenue ?? 0;
 
+  const GAMES = [
+    { value: "pokemon",    label: "Pokémon" },
+    { value: "onepiece",   label: "One Piece" },
+    { value: "yugioh",     label: "Yu-Gi-Oh!" },
+    { value: "mtg",        label: "Magic: The Gathering" },
+    { value: "lorcana",    label: "Disney Lorcana" },
+    { value: "dragonball", label: "Dragon Ball Super" },
+    { value: "sports",     label: "Deportes / Sports Cards" },
+    { value: "other",      label: "Otro / Mixto" },
+  ];
+
   return (
     <div className="min-h-screen bg-[#0F0F14] text-white">
       <Navbar />
+
+      {/* Stream setup modal */}
+      {showStreamForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div
+            className="w-full max-w-sm rounded-2xl p-6"
+            style={{ background: "#16161E", border: "1px solid rgba(108,58,232,0.3)" }}
+          >
+            <h2 className="text-lg font-black text-white mb-1">Configura tu livestream</h2>
+            <p className="text-xs text-zinc-500 mb-5">Este nombre aparecerá en la lista de subastas en vivo.</p>
+
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs text-zinc-400 font-semibold mb-1.5 block">Título del stream</label>
+                <input
+                  autoFocus
+                  type="text"
+                  value={streamTitle}
+                  onChange={e => setStreamTitle(e.target.value)}
+                  placeholder="Ej: Subastas Pokémon SV Stellar Crown"
+                  maxLength={80}
+                  className="w-full bg-[#0F0F14] border border-white/15 rounded-xl px-4 py-3 text-white text-sm placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60"
+                  onKeyDown={e => e.key === "Enter" && streamTitle.trim() && launchLivestream()}
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-zinc-400 font-semibold mb-1.5 block">Categoría</label>
+                <select
+                  value={streamGame}
+                  onChange={e => setStreamGame(e.target.value)}
+                  className="w-full bg-[#0F0F14] border border-white/15 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#6C3AE8]/60"
+                >
+                  {GAMES.map(g => (
+                    <option key={g.value} value={g.value}>{g.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => setShowStreamForm(false)}
+                  className="flex-1 py-3 rounded-xl text-sm font-bold text-zinc-400 border border-white/10 hover:text-white transition-colors"
+                  style={{ background: "rgba(255,255,255,0.04)" }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={launchLivestream}
+                  disabled={!streamTitle.trim()}
+                  className="flex-1 py-3 rounded-xl text-sm font-black text-white transition-all disabled:opacity-40"
+                  style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)" }}
+                >
+                  🔴 Ir en vivo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="pt-24 pb-0 border-b border-white/5">
@@ -283,7 +357,7 @@ export default function VendedorPage() {
 
             <div className="flex items-center gap-3 shrink-0">
               <button
-                onClick={launchLivestream}
+                onClick={() => setShowStreamForm(true)}
                 disabled={launchingStream}
                 className="flex items-center gap-2 text-sm font-black text-white px-5 py-2.5 rounded-xl transition-all disabled:opacity-60"
                 style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 4px 20px rgba(220,38,38,0.4)" }}

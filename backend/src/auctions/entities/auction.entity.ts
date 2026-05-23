@@ -19,12 +19,14 @@ export enum AuctionStatus {
 }
 
 export enum AuctionGame {
-  POKEMON  = 'pokemon',
-  MTG      = 'mtg',
-  YUGIOH   = 'yugioh',
-  ONEPIECE = 'onepiece',
-  LORCANA  = 'lorcana',
-  OTHER    = 'other',
+  POKEMON     = 'pokemon',
+  MTG         = 'mtg',
+  YUGIOH      = 'yugioh',
+  ONEPIECE    = 'onepiece',
+  LORCANA     = 'lorcana',
+  DRAGONBALL  = 'dragonball',
+  SPORTS      = 'sports',
+  OTHER       = 'other',
 }
 
 @Entity('auctions')

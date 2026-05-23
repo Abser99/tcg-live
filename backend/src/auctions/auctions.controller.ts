@@ -9,6 +9,13 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { User, UserRole } from '../users/user.entity';
 import { LivekitService } from '../livekit/livekit.service';
+import { AuctionGame } from './entities/auction.entity';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
+
+class UpdateAuctionDto {
+  @IsString() @IsOptional() title?: string;
+  @IsEnum(AuctionGame) @IsOptional() game?: AuctionGame;
+}
 
 @Controller('auctions')
 export class AuctionsController {
@@ -71,6 +78,13 @@ export class AuctionsController {
   @Roles(UserRole.SELLER, UserRole.ADMIN)
   create(@CurrentUser() user: User, @Body() dto: CreateAuctionDto) {
     return this.auctionsService.create(user.id, dto);
+  }
+
+  @Patch(':id')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  update(@Param('id') id: string, @CurrentUser() user: User, @Body() dto: UpdateAuctionDto) {
+    return this.auctionsService.update(id, user.id, dto);
   }
 
   @Get(':id/livekit-token')

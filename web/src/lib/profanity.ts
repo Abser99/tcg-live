@@ -24,6 +24,26 @@ const BAD_WORDS = [
   "marica", "maricas",
   "perra madre",
   "put@", "cul@",
+  // Insultos adicionales
+  "pito", "pitos",
+  "joto", "jotos",
+  "maricón", "maricon", "maricones", "maricona", "mariconas",
+  "jotito", "jotitos",
+  "putito", "putitos",
+  "culito",
+  "ojete", "ojetes",
+  "naco", "nacos", "naca", "nacas",
+  "güey", "buey",
+  "cholo", "cholos",
+  "panocha", "panochita",
+  "choto", "chotos",
+  "huevón", "huevon", "huevones",
+  "güevón", "guevon",
+  "cagate", "cagada",
+  "cagar",
+  "mamada", "mamadas",
+  "chupame",
+  "pinches",
   // English
   "fuck", "fucker", "fucking", "fucked",
   "shit", "bullshit",
@@ -35,6 +55,8 @@ const BAD_WORDS = [
   "cock",
   "whore",
   "nigger", "nigga",
+  "faggot", "fag",
+  "retard",
 ];
 
 // Build regex once at module load — match whole-word occurrences, case-insensitive
@@ -44,7 +66,5 @@ const pattern = new RegExp(
 );
 
 export function censorText(text: string): string {
-  return text.replace(pattern, (match) =>
-    match[0] + "*".repeat(Math.max(match.length - 1, 1))
-  );
+  return text.replace(pattern, (match) => "*".repeat(match.length));
 }

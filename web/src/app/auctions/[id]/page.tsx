@@ -60,10 +60,11 @@ function AuctionDetailPageInner() {
   }, [id]);
 
   useEffect(() => {
-    if (!auction || (auction.status !== 'live' && auction.status !== 'ending')) return;
+    if (!auction) return;
+    const ms = (auction.status === 'live' || auction.status === 'ending') ? 2000 : 5000;
     const timer = setInterval(() => {
       auctionsApi.get(id).then(r => setAuction(r.data)).catch(() => {});
-    }, 3000);
+    }, ms);
     return () => clearInterval(timer);
   }, [id, auction?.status]);
 
@@ -138,11 +139,12 @@ function AuctionDetailPageInner() {
 
         <div className="mx-auto max-w-7xl px-4 sm:px-6 pb-16">
           <div className="grid lg:grid-cols-[1fr_360px] gap-6 items-start">
-            <div className="flex flex-col gap-4">
+            {/* Stream — always first */}
+            <div className="order-1 lg:col-start-1 lg:row-start-1">
               <StreamPanel auction={auction} gradient={gradient} glow={glow} autoStream={autoStream} onAuctionUpdate={setAuction} />
-              <CardInfo auction={auction} isSeller={isSeller} />
             </div>
-            <div className="lg:sticky lg:top-20">
+            {/* Bid panel — second on mobile (before card info), sticky on desktop */}
+            <div className="order-2 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-20">
               <BidPanel
                 auction={auction}
                 initialBids={initialBids}
@@ -153,6 +155,10 @@ function AuctionDetailPageInner() {
                 isSeller={isSeller}
                 activeItem={item}
               />
+            </div>
+            {/* Card info — third on mobile, second column-row on desktop */}
+            <div className="order-3 lg:col-start-1 lg:row-start-2">
+              <CardInfo auction={auction} isSeller={isSeller} />
             </div>
           </div>
         </div>

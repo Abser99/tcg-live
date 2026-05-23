@@ -129,6 +129,10 @@ export class AuctionsGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.to(`auction:${auctionId}`).emit('auction:ended', { auctionId });
   }
 
+  emitItemActivated(auctionId: string, payload: ItemActivatedPayload) {
+    this.server.to(`auction:${auctionId}`).emit('item:activated', payload);
+  }
+
   private emitViewerCount(auctionId: string) {
     const count = this.viewers.get(auctionId)?.size ?? 0;
     this.server.to(`auction:${auctionId}`).emit('viewer:count', { count });
@@ -159,4 +163,12 @@ export interface ItemClosedPayload {
 export interface AuctionStartedPayload {
   auctionId: string;
   firstItemId: string;
+}
+
+export interface ItemActivatedPayload {
+  auctionId: string;
+  itemId: string;
+  cardName: string;
+  startingPrice: number;
+  closesAt: string;
 }

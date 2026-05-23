@@ -75,6 +75,8 @@ export const auctionsApi = {
     api.post(`/auctions/items/${itemId}/max-bid`, { maxAmount }),
   closeItem: (itemId: string) =>
     api.patch(`/auctions/items/${itemId}/close`),
+  update: (id: string, dto: { title?: string; game?: string }) =>
+    api.patch<ApiAuction>(`/auctions/${id}`, dto),
 };
 
 // ─── Orders ────────────────────────────────────────────────────

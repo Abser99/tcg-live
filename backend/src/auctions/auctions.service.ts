@@ -168,6 +168,18 @@ export class AuctionsService implements OnModuleInit {
     return auction;
   }
 
+  async update(id: string, sellerId: string, dto: { title?: string; game?: AuctionGame }): Promise<Auction> {
+    const auction = await this.findOne(id);
+    this.assertOwner(auction.sellerId, sellerId);
+    if (auction.status === AuctionStatus.ENDED || auction.status === AuctionStatus.CANCELLED) {
+      throw new BadRequestException('No se puede editar una subasta terminada');
+    }
+    if (dto.title) auction.title = dto.title;
+    if (dto.game)  auction.game  = dto.game;
+    await this.auctionsRepo.save(auction);
+    return this.findOne(id);
+  }
+
   async start(id: string, sellerId: string): Promise<Auction> {
     const auction = await this.findOne(id);
     this.assertOwner(auction.sellerId, sellerId);
@@ -468,7 +480,7 @@ export class AuctionsService implements OnModuleInit {
       ? new Date(Date.now() + durationMs)
       : undefined;
 
-    await this.itemsRepo.save(this.itemsRepo.create({
+    const savedItem = await this.itemsRepo.save(this.itemsRepo.create({
       auctionId,
       cardName:      dto.cardName,
       startingPrice: dto.startingPrice,
@@ -479,6 +491,17 @@ export class AuctionsService implements OnModuleInit {
       closesAt,
       category:      dto.category ?? null,
     }));
+
+    if (newStatus === AuctionItemStatus.ACTIVE && closesAt) {
+      this.gateway.emitItemActivated(auctionId, {
+        auctionId,
+        itemId:        savedItem.id,
+        cardName:      dto.cardName,
+        startingPrice: dto.startingPrice,
+        closesAt:      closesAt.toISOString(),
+      });
+    }
+
     return this.findOne(auctionId);
   }
 
