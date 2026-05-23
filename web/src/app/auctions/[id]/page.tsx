@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { Room, RoomEvent, Track } from "livekit-client";
-import { auctionsApi, watchlistApi, usersApi, type ApiAuction } from "@/lib/api";
+import { auctionsApi, watchlistApi, usersApi, type ApiAuction, type ApiAuctionItem } from "@/lib/api";
 import { censorText } from "@/lib/profanity";
 import { useAuth } from "@/contexts/auth";
 
@@ -98,11 +98,20 @@ function AuctionDetailPageInner() {
     );
   }
 
+  const { user } = useAuth();
+  const isSeller = !!user && (
+    user.id === (auction as any).sellerId ||
+    user.id === auction.seller?.id ||
+    user.username === (auction.seller?.username ?? auction.sellerName)
+  );
+
   const hashIdx = auction.id.charCodeAt(0) % GRADIENTS.length;
   const gradient = GRADIENTS[hashIdx];
   const glow = GLOWS[hashIdx];
 
-  const item = auction.items?.[0];
+  // Use the active item during live auctions, fall back to first item
+  const item: ApiAuctionItem | undefined =
+    auction.items?.find(i => i.status === "active") ?? auction.items?.[0];
   const currentBid = item?.currentBid ?? auction.currentBid ?? auction.startingBid ?? 0;
   const startingBid = item?.startingBid ?? auction.startingBid ?? 0;
   const totalBids = item?.bids?.length ?? auction.totalBids ?? 0;
@@ -118,7 +127,7 @@ function AuctionDetailPageInner() {
     <div className="min-h-screen bg-[#0F0F14] text-white">
       <Navbar />
       <div className="pt-20">
-        <div className="mx-auto max-w-7xl px-6 py-4">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-4">
           <Link
             href="/auctions"
             className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white transition-colors"
@@ -127,13 +136,13 @@ function AuctionDetailPageInner() {
           </Link>
         </div>
 
-        <div className="mx-auto max-w-7xl px-6 pb-16">
-          <div className="grid lg:grid-cols-[1fr_380px] gap-8 items-start">
-            <div className="flex flex-col gap-6">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 pb-16">
+          <div className="grid lg:grid-cols-[1fr_360px] gap-6 items-start">
+            <div className="flex flex-col gap-4">
               <StreamPanel auction={auction} gradient={gradient} glow={glow} autoStream={autoStream} onAuctionUpdate={setAuction} />
-              <CardInfo auction={auction} />
+              <CardInfo auction={auction} isSeller={isSeller} />
             </div>
-            <div className="lg:sticky lg:top-24">
+            <div className="lg:sticky lg:top-20">
               <BidPanel
                 auction={auction}
                 initialBids={initialBids}
@@ -141,6 +150,8 @@ function AuctionDetailPageInner() {
                 startingBid={startingBid}
                 totalBids={totalBids}
                 itemId={itemId}
+                isSeller={isSeller}
+                activeItem={item}
               />
             </div>
           </div>
@@ -506,7 +517,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
             {a.status === "live" && <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
             {status?.text ?? a.status}
           </div>
-          {a.status !== "upcoming" && (
+          {a.status !== "upcoming" && isSeller && (
             <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-zinc-300 text-xs px-2.5 py-1.5 rounded-full">
               👁 {a.viewers ?? 0} viendo
             </div>
@@ -832,24 +843,24 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 }
 
 /* ─── Card Info ─────────────────────────────────────────── */
-function CardInfo({ auction: a }: { auction: ApiAuction }) {
+function CardInfo({ auction: a, isSeller }: { auction: ApiAuction; isSeller?: boolean }) {
   const title = a.title ?? a.name ?? "Sin título";
   const sellerName = a.seller?.username ?? a.sellerName ?? "—";
   const verified = a.seller?.verified;
 
   return (
     <div
-      className="rounded-2xl p-6"
+      className="rounded-2xl p-4"
       style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
     >
-      <div className="flex items-start justify-between gap-4 mb-4">
+      <div className="flex items-start justify-between gap-4 mb-2">
         <div>
-          <h1 className="text-2xl font-black">{title}</h1>
-          <p className="text-zinc-500 mt-1">{a.game ?? ""}</p>
+          <h1 className="text-xl font-black">{title}</h1>
+          <p className="text-zinc-500 text-sm">{a.game ?? ""}</p>
         </div>
         {a.condition && (
           <span
-            className="shrink-0 text-sm font-bold px-3 py-1 rounded-lg"
+            className="shrink-0 text-xs font-bold px-2.5 py-1 rounded-lg"
             style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.25)" }}
           >
             {a.condition}
@@ -858,33 +869,35 @@ function CardInfo({ auction: a }: { auction: ApiAuction }) {
       </div>
 
       {a.description && (
-        <p className="text-zinc-400 leading-relaxed text-sm mb-6">{a.description}</p>
+        <p className="text-zinc-500 text-xs mb-3 leading-relaxed">{a.description}</p>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className={`grid gap-3 ${isSeller ? "grid-cols-2" : "grid-cols-1"}`}>
         <div
-          className="rounded-xl p-4"
+          className="rounded-xl px-3 py-2.5"
           style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
         >
-          <p className="text-xs text-zinc-600 mb-1">Vendedor</p>
+          <p className="text-[10px] text-zinc-600 mb-1">Vendedor</p>
           <Link href={`/tienda/${sellerName}`} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <span className="text-lg">🧑</span>
+            <span className="text-base">🧑</span>
             <div>
               <p className="text-sm font-bold text-[#a78bfa]">
                 {sellerName} {verified && <span>✓</span>}
               </p>
-              <p className="text-xs text-zinc-600">{verified ? "Vendedor verificado" : "Ver tienda"}</p>
+              <p className="text-[10px] text-zinc-600">{verified ? "Verificado" : "Ver tienda"}</p>
             </div>
           </Link>
         </div>
-        <div
-          className="rounded-xl p-4"
-          style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
-        >
-          <p className="text-xs text-zinc-600 mb-1">Total de pujas</p>
-          <p className="text-2xl font-black">{a.totalBids ?? 0}</p>
-          <p className="text-xs text-zinc-600">participantes</p>
-        </div>
+        {isSeller && (
+          <div
+            className="rounded-xl px-3 py-2.5"
+            style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
+          >
+            <p className="text-[10px] text-zinc-600 mb-1">Total de pujas</p>
+            <p className="text-2xl font-black">{a.totalBids ?? 0}</p>
+            <p className="text-[10px] text-zinc-600">participantes</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -898,6 +911,8 @@ function BidPanel({
   startingBid,
   totalBids,
   itemId,
+  isSeller,
+  activeItem,
 }: {
   auction: ApiAuction;
   initialBids: BidRow[];
@@ -905,6 +920,8 @@ function BidPanel({
   startingBid: number;
   totalBids: number;
   itemId?: string;
+  isSeller?: boolean;
+  activeItem?: ApiAuctionItem;
 }) {
   const { user } = useAuth();
   const [bids, setBids] = useState<BidRow[]>(initialBids);
@@ -975,174 +992,178 @@ function BidPanel({
     }
   }
 
+  const isLiveOrEnding = a.status === "live" || a.status === "ending";
+
   return (
     <div
       className="rounded-2xl overflow-hidden"
       style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}
     >
-      <div className="p-5 border-b border-white/5">
-        <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
-          {a.status === "upcoming" ? "Precio inicial" : "Puja más alta"}
-        </p>
-        <p className="text-4xl font-black">
-          ${currentBid.toLocaleString("es-MX")}{" "}
-          <span className="text-lg text-zinc-500 font-normal">MXN</span>
-        </p>
-        <div className="flex items-center gap-3 mt-2">
-          <span className="text-sm text-zinc-500">{bids.length || totalBids} pujas</span>
-          <span className="text-zinc-700">·</span>
-          <span className="text-sm font-mono font-bold text-white">⏱ {formatTimer(a.endTime)}</span>
-        </div>
-      </div>
-
-      {bids.length > 0 && (
-        <div className="p-5 border-b border-white/5">
-          <p className="text-xs text-zinc-600 uppercase tracking-wider mb-3">Historial</p>
-          <div className="flex flex-col gap-2">
-            {bids.slice(0, 5).map((b, i) => (
-              <div key={i} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {i === 0 && (
-                    <span className="text-[10px] bg-[#6C3AE8]/20 text-[#a78bfa] px-1.5 py-0.5 rounded font-bold">
-                      TOP
-                    </span>
-                  )}
-                  <p className={`text-sm font-semibold ${b.user === (user?.username ?? "Tú") ? "text-[#a78bfa]" : "text-white"}`}>
-                    {b.user}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold">${b.amount.toLocaleString("es-MX")}</p>
-                  <p className="text-[10px] text-zinc-600">{b.time}</p>
-                </div>
-              </div>
-            ))}
+      {/* ── Carta activa ── */}
+      {activeItem && isLiveOrEnding && (
+        <div className="px-4 pt-3 pb-2 border-b border-white/5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[10px] text-zinc-600 uppercase tracking-widest mb-0.5">En subasta ahora</p>
+              <p className="font-black text-base truncate text-white">{activeItem.cardName}</p>
+            </div>
+            {activeItem.category && (
+              <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa" }}>
+                {activeItem.category}
+              </span>
+            )}
           </div>
         </div>
       )}
 
-      {a.status !== "upcoming" ? (
-        <div className="p-5 flex flex-col gap-3">
+      {/* ── Precio + timer ── */}
+      <div className="px-4 py-3 border-b border-white/5 flex items-end justify-between gap-3">
+        <div>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">
+            {a.status === "upcoming" ? "Precio inicial" : "Puja más alta"}
+          </p>
+          <p className="text-3xl font-black leading-none">
+            ${currentBid.toLocaleString("es-MX")}
+            <span className="text-sm text-zinc-500 font-normal ml-1">MXN</span>
+          </p>
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-lg font-mono font-black text-white">{formatTimer(a.endTime ?? activeItem?.closesAt)}</p>
+          {isSeller && (
+            <p className="text-[10px] text-zinc-600 mt-0.5">{bids.length || totalBids} puja{(bids.length || totalBids) !== 1 ? "s" : ""}</p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Top bidder (solo si hay pujas) ── */}
+      {bids.length > 0 && (
+        <div className="px-4 py-2 border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] bg-[#6C3AE8]/20 text-[#a78bfa] px-1.5 py-0.5 rounded font-black uppercase">TOP</span>
+            <span className={`text-sm font-bold ${bids[0].user === (user?.username ?? "") ? "text-[#a78bfa]" : "text-white"}`}>
+              {bids[0].user}
+            </span>
+          </div>
+          <span className="text-sm font-black">${bids[0].amount.toLocaleString("es-MX")}</span>
+        </div>
+      )}
+
+      {/* ── Acciones ── */}
+      {isLiveOrEnding ? (
+        <div className="p-3 flex flex-col gap-2">
           {justBid && (
-            <div className="bg-green-500/10 border border-green-500/20 text-green-400 text-sm font-semibold rounded-xl px-4 py-2.5 text-center">
+            <div className="bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-bold rounded-lg px-3 py-2 text-center">
               ✓ ¡Puja enviada!
             </div>
           )}
           {bidError && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-semibold rounded-xl px-4 py-2.5 text-center">
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold rounded-lg px-3 py-2 text-center">
               {bidError}
             </div>
           )}
 
-          <p className="text-xs text-zinc-600">Tu puja (mín. ${(currentBid + 50).toLocaleString("es-MX")})</p>
-
-          <div className="flex gap-2">
-            {[50, 100, 200].map((inc) => (
+          {/* Quick increments */}
+          <div className="flex gap-1.5">
+            {[50, 100, 200, 500].map((inc) => (
               <button
                 key={inc}
-                onClick={() => setBidAmount((prev) => Math.max(currentBid + inc, prev + inc))}
+                onClick={() => setBidAmount((prev) => Math.max(currentBid + 50, prev + inc))}
                 className="flex-1 py-1.5 rounded-lg text-xs font-bold text-zinc-300 transition-colors"
                 style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}
               >
-                +${inc}
+                +{inc}
               </button>
             ))}
           </div>
 
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-bold">$</span>
-            <input
-              type="number"
-              value={bidAmount}
-              onChange={(e) => setBidAmount(Number(e.target.value))}
-              className="w-full bg-[#0F0F14] border border-white/15 rounded-xl pl-8 pr-4 py-3.5 text-white font-bold text-lg focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
-              min={currentBid + 50}
-              step={50}
-            />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-600 text-sm">MXN</span>
+          {/* Input + button inline */}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-bold text-sm">$</span>
+              <input
+                type="number"
+                value={bidAmount}
+                onChange={(e) => setBidAmount(Number(e.target.value))}
+                className="w-full bg-[#0F0F14] border border-white/15 rounded-xl pl-7 pr-2 py-3 text-white font-bold text-base focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
+                min={currentBid + 50}
+                step={50}
+              />
+            </div>
+            {!user ? (
+              <Link
+                href="/login"
+                className="shrink-0 px-4 py-3 rounded-xl font-black text-white text-sm flex items-center"
+                style={{ background: "rgba(108,58,232,0.4)", border: "1px solid rgba(108,58,232,0.5)" }}
+              >
+                Login →
+              </Link>
+            ) : hasAddress === false ? (
+              <Link
+                href="/ajustes"
+                className="shrink-0 px-3 py-3 rounded-xl font-black text-white text-xs flex items-center text-center leading-tight"
+                style={{ background: "rgba(108,58,232,0.3)", border: "1px solid rgba(108,58,232,0.4)" }}
+              >
+                + Dirección
+              </Link>
+            ) : (
+              <button
+                onClick={placeBid}
+                disabled={bidAmount <= currentBid || placing || hasAddress === null}
+                className="shrink-0 px-5 py-3 rounded-xl font-black text-white text-sm transition-all active:scale-95 disabled:opacity-40"
+                style={{
+                  background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)",
+                  boxShadow: bidAmount > currentBid ? "0 4px 16px rgba(108,58,232,0.45)" : "none",
+                }}
+              >
+                {placing ? "…" : hasAddress === null ? "…" : "Pujar →"}
+              </button>
+            )}
           </div>
 
-          {!user ? (
-            <Link
-              href="/login"
-              className="w-full py-4 rounded-xl font-black text-white text-center block transition-all"
-              style={{ background: "rgba(108,58,232,0.25)", border: "1px solid rgba(108,58,232,0.4)" }}
-            >
-              Inicia sesión para pujar →
-            </Link>
-          ) : hasAddress === false ? (
-            <Link
-              href="/ajustes"
-              className="w-full py-4 rounded-xl font-black text-white text-center block transition-all"
-              style={{ background: "rgba(108,58,232,0.25)", border: "1px solid rgba(108,58,232,0.4)" }}
-            >
-              Agrega dirección y forma de pago →
-            </Link>
-          ) : (
-          <button
-            onClick={placeBid}
-            disabled={bidAmount <= currentBid || placing || hasAddress === null}
-            className="w-full py-4 rounded-xl font-black text-white transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{
-              background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)",
-              boxShadow: bidAmount > currentBid ? "0 8px 25px rgba(108,58,232,0.4)" : "none",
-            }}
-          >
-            {placing ? "Enviando..." : hasAddress === null ? "Verificando..." : `Pujar $${bidAmount.toLocaleString("es-MX")} MXN →`}
-          </button>
-          )}
-
+          {/* Puja automática */}
           {activeMaxBid ? (
             <div
-              className="rounded-xl px-4 py-3 flex items-center justify-between"
+              className="rounded-lg px-3 py-2 flex items-center justify-between"
               style={{ background: "rgba(108,58,232,0.1)", border: "1px solid rgba(108,58,232,0.25)" }}
             >
               <div>
-                <p className="text-xs text-[#a78bfa] font-bold">Puja automática activa</p>
-                <p className="text-sm text-white font-semibold">hasta ${activeMaxBid.toLocaleString("es-MX")} MXN</p>
+                <p className="text-[10px] text-[#a78bfa] font-bold">⚡ Auto-puja activa</p>
+                <p className="text-xs text-white font-semibold">hasta ${activeMaxBid.toLocaleString("es-MX")}</p>
               </div>
-              <button
-                onClick={() => { setActiveMaxBid(null); setMaxBidAmount(0); }}
-                className="text-xs text-zinc-500 hover:text-red-400 transition-colors"
-              >
-                Cancelar
+              <button onClick={() => { setActiveMaxBid(null); setMaxBidAmount(0); }} className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors">
+                ✕ Cancelar
               </button>
             </div>
           ) : (
             <div>
               <button
                 onClick={() => setShowMaxBid((v) => !v)}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold text-zinc-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
-                style={{ background: "rgba(255,255,255,0.03)" }}
+                className="w-full py-2 rounded-lg text-xs font-semibold text-zinc-500 hover:text-zinc-300 border border-white/8 hover:border-white/15 transition-all"
+                style={{ background: "rgba(255,255,255,0.02)" }}
               >
-                {showMaxBid ? "✕ Cancelar puja automática" : "⚡ Configurar puja automática"}
+                {showMaxBid ? "✕ Cerrar" : "⚡ Puja automática"}
               </button>
-
               {showMaxBid && (
-                <div className="mt-3 flex flex-col gap-3">
-                  <p className="text-xs text-zinc-500">
-                    Puja automáticamente hasta tu límite. Si alguien puja más, te supera automáticamente hasta tu máximo.
-                  </p>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-bold">$</span>
+                <div className="mt-2 flex gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-bold text-sm">$</span>
                     <input
                       type="number"
                       value={maxBidAmount || ""}
                       onChange={(e) => setMaxBidAmount(Number(e.target.value))}
                       placeholder={String(currentBid + 200)}
-                      className="w-full bg-[#0F0F14] border border-white/15 rounded-xl pl-8 pr-16 py-3 text-white font-bold focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
+                      className="w-full bg-[#0F0F14] border border-white/15 rounded-xl pl-7 pr-2 py-2.5 text-white font-bold text-sm focus:outline-none focus:border-[#6C3AE8]/60"
                       min={currentBid + 50}
                       step={50}
                     />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-600 text-sm">MXN</span>
                   </div>
                   <button
                     onClick={submitMaxBid}
                     disabled={maxBidAmount <= currentBid || settingMaxBid}
-                    className="w-full py-3 rounded-xl font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="shrink-0 px-4 py-2.5 rounded-xl font-bold text-white text-xs disabled:opacity-40"
                     style={{ background: "rgba(108,58,232,0.5)", border: "1px solid rgba(108,58,232,0.4)" }}
                   >
-                    {settingMaxBid ? "Guardando..." : `Activar puja hasta $${maxBidAmount ? maxBidAmount.toLocaleString("es-MX") : "—"}`}
+                    {settingMaxBid ? "…" : "Activar"}
                   </button>
                 </div>
               )}
@@ -1150,21 +1171,17 @@ function BidPanel({
           )}
 
           {a.binPrice && (
-            <button className="w-full py-3 rounded-xl font-semibold text-white border border-white/15 hover:bg-white/5 transition-all text-sm">
+            <button className="w-full py-2 rounded-lg font-semibold text-white border border-white/10 hover:bg-white/5 transition-all text-xs">
               Comprar ya — ${a.binPrice.toLocaleString("es-MX")} MXN
             </button>
           )}
-
-          <p className="text-[10px] text-zinc-700 text-center">
-            Pagos procesados con Mercado Pago · Compra protegida
-          </p>
         </div>
       ) : (
-        <div className="p-5">
+        <div className="p-3">
           <button
             onClick={toggleWatchlist}
             disabled={watchloading || watchlisted}
-            className="w-full py-4 rounded-xl font-bold text-white border transition-all text-sm disabled:opacity-60"
+            className="w-full py-3.5 rounded-xl font-bold text-white border transition-all text-sm disabled:opacity-60"
             style={watchlisted
               ? { background: "rgba(74,222,128,0.1)", borderColor: "rgba(74,222,128,0.3)", color: "#4ade80" }
               : { background: "rgba(108,58,232,0.1)", borderColor: "rgba(108,58,232,0.4)" }
@@ -1172,9 +1189,9 @@ function BidPanel({
           >
             {watchlisted ? "✓ En tu watchlist" : watchloading ? "Guardando..." : "🔔 Recordarme cuando inicie"}
           </button>
-          <p className="text-xs text-zinc-600 text-center mt-3">
-            Inicia en {formatTimer(a.endTime)}
-          </p>
+          {a.endTime && (
+            <p className="text-xs text-zinc-600 text-center mt-2">Inicia en {formatTimer(a.endTime)}</p>
+          )}
         </div>
       )}
     </div>
