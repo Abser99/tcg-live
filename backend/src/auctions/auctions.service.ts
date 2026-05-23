@@ -2,10 +2,12 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, LessThan, Repository } from 'typeorm';
 import { Auction, AuctionGame, AuctionStatus } from './entities/auction.entity';
 import { AuctionItem, AuctionItemStatus } from './entities/auction-item.entity';
 import { Bid } from './entities/bid.entity';
@@ -24,7 +26,9 @@ const ITEM_TIMER_MS = 60_000;   // 60s per item
 const ANTI_SNIPE_MS = 10_000;   // extend if bid within last 10s
 
 @Injectable()
-export class AuctionsService {
+export class AuctionsService implements OnModuleInit {
+  private readonly logger = new Logger(AuctionsService.name);
+
   constructor(
     @InjectRepository(Auction)
     private readonly auctionsRepo: Repository<Auction>,
@@ -41,6 +45,27 @@ export class AuctionsService {
     private readonly watchlistService: WatchlistService,
     private readonly followsService: FollowsService,
   ) {}
+
+  onModuleInit() {
+    // Auto-close auction items whose timer has expired (runs every 10 seconds)
+    setInterval(() => this.autoCloseExpiredItems().catch(() => {}), 10_000);
+  }
+
+  private async autoCloseExpiredItems(): Promise<void> {
+    const expired = await this.itemsRepo.find({
+      where: { status: AuctionItemStatus.ACTIVE, closesAt: LessThan(new Date()) },
+    });
+    for (const item of expired) {
+      try {
+        item.status = item.winnerId ? AuctionItemStatus.SOLD : AuctionItemStatus.UNSOLD;
+        const saved = await this.itemsRepo.save(item);
+        await this.handleItemClosed(saved);
+        this.logger.log(`Auto-closed item ${item.id} (${item.cardName})`);
+      } catch (err) {
+        this.logger.warn(`Failed to auto-close item ${item.id}: ${err}`);
+      }
+    }
+  }
 
   async create(sellerId: string, dto: CreateAuctionDto): Promise<Auction> {
     const auction = this.auctionsRepo.create({
