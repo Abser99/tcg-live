@@ -319,10 +319,15 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     } catch (err: any) {
       console.error("Stream error:", err);
       const msg: string = err?.message ?? err?.name ?? String(err);
-      if (msg.includes("NotAllowed") || msg.includes("Permission") || msg.includes("permission")) {
+      const name: string = err?.name ?? "";
+      if (name === "NotFoundError" || msg.toLowerCase().includes("not found") || msg.includes("object can not be found")) {
+        setStreamError("No se encontró cámara. Conecta una cámara (webcam o celular) y vuelve a intentarlo.");
+      } else if (name === "NotAllowedError" || msg.includes("NotAllowed") || msg.toLowerCase().includes("permission")) {
         setStreamError("El navegador bloqueó la cámara. Haz clic en el ícono de cámara en la barra de direcciones y permite el acceso.");
+      } else if (name === "NotReadableError" || msg.includes("in use")) {
+        setStreamError("La cámara está en uso por otra aplicación. Ciérrala y vuelve a intentarlo.");
       } else {
-        setStreamError(`Error al conectar: ${msg}`);
+        setStreamError(`Error al iniciar stream: ${msg}`);
       }
     } finally {
       setConnecting(false);
