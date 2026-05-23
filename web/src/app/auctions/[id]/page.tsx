@@ -194,26 +194,29 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [chatInput,    setChatInput]    = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Viewers auto-connect when auction goes live
+  // Everyone (seller + viewers) auto-connect for chat when auction is live
   useEffect(() => {
-    if (!isLive || isSeller) return;
+    if (!isLive || !user) return;
     let alive = true;
     const room = new Room();
     roomRef.current = room;
 
-    room.on(RoomEvent.TrackSubscribed, (track: any) => {
-      if (!alive) return;
-      if (track.kind === Track.Kind.Video && videoRef.current) {
-        track.attach(videoRef.current);
-        setHasRemoteVideo(true);
-      }
-    });
-    room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
-      if (track.kind === Track.Kind.Video) {
-        track.detach();
-        if (alive) setHasRemoteVideo(false);
-      }
-    });
+    // Viewers subscribe to video tracks
+    if (!isSeller) {
+      room.on(RoomEvent.TrackSubscribed, (track: any) => {
+        if (!alive) return;
+        if (track.kind === Track.Kind.Video && videoRef.current) {
+          track.attach(videoRef.current);
+          setHasRemoteVideo(true);
+        }
+      });
+      room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
+        if (track.kind === Track.Kind.Video) {
+          track.detach();
+          if (alive) setHasRemoteVideo(false);
+        }
+      });
+    }
 
     attachChatListener(room);
 
@@ -227,7 +230,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       roomRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLive, a.id, isSeller]);
+  }, [isLive, a.id]);
 
   useEffect(() => () => { roomRef.current?.disconnect(); }, []);
 
@@ -290,9 +293,15 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     setConnecting(true);
     setStreamError(null);
     try {
-      const { data } = await auctionsApi.livekitToken(a.id);
-      const room = new Room();
-      roomRef.current = room;
+      // Reuse existing room connection (auto-connected for chat); create new one only if needed
+      let room = roomRef.current;
+      if (!room) {
+        const { data } = await auctionsApi.livekitToken(a.id);
+        room = new Room();
+        roomRef.current = room;
+        attachChatListener(room);
+        await room.connect(data.wsUrl, data.token);
+      }
 
       room.on(RoomEvent.LocalTrackPublished, (pub: any) => {
         if (pub.track?.kind === Track.Kind.Video && videoRef.current) {
@@ -300,12 +309,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         }
       });
 
-      attachChatListener(room);
-      await room.connect(data.wsUrl, data.token);
       await room.localParticipant.setCameraEnabled(true);
       await room.localParticipant.setMicrophoneEnabled(true);
 
-      // Attach immediately if track already published
       const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
       if (camPub?.track && videoRef.current) camPub.track.attach(videoRef.current);
 
@@ -318,16 +324,19 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       } else {
         setStreamError(`Error al conectar: ${msg}`);
       }
-      roomRef.current?.disconnect();
-      roomRef.current = null;
     } finally {
       setConnecting(false);
     }
   }
 
   async function stopStream() {
-    roomRef.current?.disconnect();
-    roomRef.current = null;
+    // Disable camera/mic but keep room alive for chat
+    if (roomRef.current) {
+      try {
+        await roomRef.current.localParticipant.setCameraEnabled(false);
+        await roomRef.current.localParticipant.setMicrophoneEnabled(false);
+      } catch {}
+    }
     if (videoRef.current) videoRef.current.srcObject = null;
     setStreaming(false);
   }

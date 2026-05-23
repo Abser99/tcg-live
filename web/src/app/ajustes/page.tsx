@@ -32,13 +32,14 @@ const REQUIRED_DOCS: { type: string; label: string; hint: string; needsDate: boo
 
 const ESTADOS_MX = ["Aguascalientes","Baja California","Baja California Sur","Campeche","Chiapas","Chihuahua","Ciudad de México","Coahuila","Colima","Durango","Guanajuato","Guerrero","Hidalgo","Jalisco","México","Michoacán","Morelos","Nayarit","Nuevo León","Oaxaca","Puebla","Querétaro","Quintana Roo","San Luis Potosí","Sinaloa","Sonora","Tabasco","Tamaulipas","Tlaxcala","Veracruz","Yucatán","Zacatecas"];
 
-type Section = "cuenta" | "seguridad" | "direccion" | "notificaciones" | "verificacion";
+type Section = "cuenta" | "seguridad" | "direccion" | "pago" | "notificaciones" | "verificacion";
 
 const SECTIONS: { key: Section; label: string; icon: string }[] = [
   { key: "cuenta",         label: "Información personal", icon: "👤" },
   { key: "verificacion",   label: "Cuenta de vendedor",    icon: "🏪" },
   { key: "seguridad",      label: "Contraseña",            icon: "🔒" },
   { key: "direccion",      label: "Dirección de envío",    icon: "📦" },
+  { key: "pago",           label: "Forma de pago",         icon: "💳" },
   { key: "notificaciones", label: "Notificaciones",         icon: "🔔" },
 ];
 
@@ -869,6 +870,47 @@ export default function AjustesPage() {
                 <div className="flex justify-end mt-4">
                   <SaveButton loading={addrLoading} saved={addrSaved} onClick={saveAddress} />
                 </div>
+              </SectionCard>
+            )}
+
+            {/* ── FORMA DE PAGO ── */}
+            {activeSection === "pago" && (
+              <SectionCard title="Forma de pago">
+                <p className="text-xs text-zinc-500 mb-5">
+                  Los pagos en TCG Subastas se procesan con Mercado Pago — no necesitas guardar una tarjeta aquí.
+                  Al ganar una subasta o comprar una carta, recibirás un enlace de pago donde puedes usar
+                  tarjeta de crédito/débito, transferencia o saldo de Mercado Pago.
+                </p>
+                <div
+                  className="rounded-xl p-4 flex items-center gap-4"
+                  style={{ background: "rgba(0,174,240,0.06)", border: "1px solid rgba(0,174,240,0.2)" }}
+                >
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0"
+                    style={{ background: "rgba(0,174,240,0.12)" }}
+                  >
+                    💳
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-white">Mercado Pago</p>
+                    <p className="text-xs text-zinc-400 mt-0.5">Pago seguro al momento de confirmar tu compra</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {["Visa", "Mastercard", "OXXO", "SPEI", "Saldo MP"].map(m => (
+                        <span
+                          key={m}
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded"
+                          style={{ background: "rgba(255,255,255,0.07)", color: "#a1a1aa" }}
+                        >
+                          {m}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-zinc-600 mt-4">
+                  Para pujar en subastas primero necesitas tener tu dirección de envío guardada.
+                  Esto garantiza que podamos enviarte la carta si ganas.
+                </p>
               </SectionCard>
             )}
 
