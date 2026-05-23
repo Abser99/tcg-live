@@ -825,13 +825,13 @@ function BidPanel({
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-600 text-sm">MXN</span>
           </div>
 
-          {!user?.zipCode ? (
+          {!user ? (
             <Link
-              href="/ajustes"
+              href="/login"
               className="w-full py-4 rounded-xl font-black text-white text-center block transition-all"
               style={{ background: "rgba(108,58,232,0.25)", border: "1px solid rgba(108,58,232,0.4)" }}
             >
-              Agrega dirección y forma de pago →
+              Inicia sesión para pujar →
             </Link>
           ) : (
           <button
