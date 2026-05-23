@@ -6,6 +6,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { Room, RoomEvent, Track } from "livekit-client";
 import { auctionsApi, watchlistApi, usersApi, type ApiAuction } from "@/lib/api";
+import { censorText } from "@/lib/profanity";
 import { useAuth } from "@/contexts/auth";
 
 const STATUS_LABEL: Record<string, { text: string; bg: string }> = {
@@ -253,7 +254,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       try {
         const msg = JSON.parse(new TextDecoder().decode(data));
         if (msg.type === "chat") {
-          setChatMessages(prev => [...prev, { username: msg.username, text: msg.text, ts: msg.ts }]);
+          setChatMessages(prev => [...prev, { username: msg.username, text: censorText(msg.text), ts: msg.ts }]);
         }
       } catch {}
     });
@@ -261,13 +262,14 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   async function sendChat() {
     if (!chatInput.trim() || !roomRef.current || !user) return;
-    const msg = { type: "chat", username: user.username, text: chatInput.trim(), ts: Date.now() };
+    const clean = censorText(chatInput.trim());
+    const msg = { type: "chat", username: user.username, text: clean, ts: Date.now() };
     try {
       await roomRef.current.localParticipant.publishData(
         new TextEncoder().encode(JSON.stringify(msg)),
         { reliable: true }
       );
-      setChatMessages(prev => [...prev, { username: user.username, text: chatInput.trim(), ts: Date.now() }]);
+      setChatMessages(prev => [...prev, { username: user.username, text: clean, ts: Date.now() }]);
     } catch {}
     setChatInput("");
   }
