@@ -52,6 +52,10 @@ function AuctionDetailPageInner() {
   const [auction, setAuction] = useState<ApiAuction | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // All hooks must be called unconditionally before any early returns
+  // (React Rules of Hooks). useAuth must come before the loading/null guards.
+  const { user } = useAuth();
+
   useEffect(() => {
     auctionsApi.get(id)
       .then((r) => setAuction(r.data))
@@ -99,11 +103,9 @@ function AuctionDetailPageInner() {
     );
   }
 
-  const { user } = useAuth();
   const isSeller = !!user && (
     user.id === (auction as any).sellerId ||
-    user.id === auction.seller?.id ||
-    user.username === (auction.seller?.username ?? auction.sellerName)
+    user.id === auction.seller?.id
   );
 
   const hashIdx = auction.id.charCodeAt(0) % GRADIENTS.length;
@@ -184,10 +186,11 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   onAuctionUpdate?: (a: ApiAuction) => void;
 }) {
   const { user } = useAuth();
+  // Only use stable IDs for seller detection — username comparison is unreliable
+  // (username changes, collisions, case sensitivity).
   const isSeller = !!user && (
     user.id === (a as any).sellerId ||
-    user.id === a.seller?.id ||
-    user.username === (a.seller?.username ?? a.sellerName)
+    user.id === a.seller?.id
   );
   const isLive   = a.status === "live" || a.status === "ending";
 
@@ -281,7 +284,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   async function sendChat() {
     if (!chatInput.trim() || !roomRef.current || !user) return;
-    const clean = censorText(chatInput.trim());
+    // Enforce the same 200-char limit the backend socket.io handler uses
+    const clean = censorText(chatInput.trim().slice(0, 200));
+    if (!clean) { setChatInput(""); return; }
     const msg = { type: "chat", username: user.username, text: clean, ts: Date.now() };
     try {
       await roomRef.current.localParticipant.publishData(
@@ -1176,8 +1181,27 @@ function BidPanel({
             </div>
           )}
 
-          {a.binPrice && (
-            <button className="w-full py-2 rounded-lg font-semibold text-white border border-white/10 hover:bg-white/5 transition-all text-xs">
+          {a.binPrice && itemId && (
+            <button
+              onClick={async () => {
+                if (!user || placing) return;
+                setPlacing(true);
+                try {
+                  await auctionsApi.bid(itemId, a.binPrice!);
+                  setBids([{ user: user.username, amount: a.binPrice!, time: "ahora" }, ...bids]);
+                  setJustBid(true);
+                  setTimeout(() => setJustBid(false), 2500);
+                } catch (err: any) {
+                  const msg = err?.response?.data?.message ?? "Error al comprar. Intenta de nuevo.";
+                  setBidError(msg);
+                  setTimeout(() => setBidError(null), 3000);
+                } finally {
+                  setPlacing(false);
+                }
+              }}
+              disabled={placing || !user || hasAddress === false || hasAddress === null}
+              className="w-full py-2 rounded-lg font-semibold text-white border border-white/10 hover:bg-white/5 transition-all text-xs disabled:opacity-40"
+            >
               Comprar ya — ${a.binPrice.toLocaleString("es-MX")} MXN
             </button>
           )}

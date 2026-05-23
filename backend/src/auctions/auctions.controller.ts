@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { IsArray, IsEnum, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
 import { AuctionsService } from './auctions.service';
 import { CreateAuctionDto } from './dto/create-auction.dto';
 import { PlaceBidDto } from './dto/place-bid.dto';
@@ -10,11 +11,37 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { User, UserRole } from '../users/user.entity';
 import { LivekitService } from '../livekit/livekit.service';
 import { AuctionGame } from './entities/auction.entity';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
 
 class UpdateAuctionDto {
-  @IsString() @IsOptional() title?: string;
+  @IsString() @IsOptional() @MaxLength(120) title?: string;
   @IsEnum(AuctionGame) @IsOptional() game?: AuctionGame;
+}
+
+class AddItemDto {
+  @IsString()
+  @MaxLength(120)
+  cardName: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(100_000_000)
+  startingPrice: number; // MXN cents
+
+  @IsArray()
+  @IsUrl({}, { each: true })
+  @IsOptional()
+  imageUrls?: string[];
+
+  @IsInt()
+  @Min(10)
+  @Max(3600)
+  @IsOptional()
+  durationSeconds?: number;
+
+  @IsString()
+  @MaxLength(40)
+  @IsOptional()
+  category?: string;
 }
 
 @Controller('auctions')
@@ -49,6 +76,7 @@ export class AuctionsController {
   }
 
   @Get('items/:itemId/bids')
+  @UseGuards(AuthGuard('jwt'))
   getItemBids(@Param('itemId') itemId: string) {
     return this.auctionsService.getItemBids(itemId);
   }
@@ -123,7 +151,7 @@ export class AuctionsController {
   addItem(
     @Param('id') id: string,
     @CurrentUser() user: User,
-    @Body() body: { cardName: string; startingPrice: number; imageUrls?: string[]; durationSeconds?: number; category?: string },
+    @Body() body: AddItemDto,
   ) {
     return this.auctionsService.addItem(id, user.id, body);
   }

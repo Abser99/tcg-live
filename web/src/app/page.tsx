@@ -245,7 +245,7 @@ function Footer() {
     { label: "Shop",     href: "/shop" },
     { label: "Términos", href: "/terminos" },
     { label: "Privacidad", href: "/privacidad" },
-    { label: "Soporte",  href: "mailto:vs15220163@gmail.com" },
+    { label: "Soporte",  href: "mailto:tcgsubastas@gmail.com" },
   ];
   return (
     <footer className="border-t border-white/5 py-10">

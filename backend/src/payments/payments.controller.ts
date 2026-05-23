@@ -57,8 +57,21 @@ export class PaymentsController {
     if (body.type !== 'payment' || !body.data?.id) return { received: true };
 
     const secret = this.config.get<string>('MERCADOPAGO_WEBHOOK_SECRET');
-    if (secret && !verifyMpSignature(secret, headers, String(body.data.id))) {
-      this.logger.warn('Webhook rejected: invalid MP signature');
+
+    // In production, reject webhooks that lack a valid signature when a
+    // secret is configured. Log a warning but always return 200 so MP
+    // doesn't keep retrying — we just don't process the invalid payload.
+    if (secret) {
+      if (!verifyMpSignature(secret, headers, String(body.data.id))) {
+        this.logger.warn('Webhook rejected: invalid MP signature');
+        return { received: true };
+      }
+    } else if (this.config.get('NODE_ENV') === 'production') {
+      // Webhook secret is mandatory in production — refuse unsigned requests
+      this.logger.error(
+        'MERCADOPAGO_WEBHOOK_SECRET is not set in production. ' +
+        'Ignoring webhook to prevent unauthenticated payment confirmation.',
+      );
       return { received: true };
     }
 

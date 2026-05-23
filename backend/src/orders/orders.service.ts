@@ -160,35 +160,61 @@ export class OrdersService {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const paidOrders = await this.ordersRepo.find({
-      where: { sellerId, paymentStatus: PaymentStatus.PAID },
-      relations: ['items'],
-    });
+    // Use aggregate queries instead of loading all rows into memory
+    const [totalStats, weekStats, pendingShipments, bestCardRow] = await Promise.all([
+      // All-time: total revenue + items sold
+      this.itemsRepo
+        .createQueryBuilder('oi')
+        .select('COALESCE(SUM(oi."finalPrice"), 0)', 'revenue')
+        .addSelect('COUNT(oi.id)', 'sold')
+        .innerJoin('oi.order', 'o')
+        .where('o."sellerId" = :sellerId', { sellerId })
+        .andWhere('o."paymentStatus" = :paid', { paid: PaymentStatus.PAID })
+        .getRawOne<{ revenue: string; sold: string }>(),
 
-    const allItems = paidOrders.flatMap(o => o.items);
-    const weekItems = paidOrders
-      .filter(o => new Date(o.createdAt) >= weekAgo)
-      .flatMap(o => o.items);
+      // This week: revenue + items sold
+      this.itemsRepo
+        .createQueryBuilder('oi')
+        .select('COALESCE(SUM(oi."finalPrice"), 0)', 'revenue')
+        .addSelect('COUNT(oi.id)', 'sold')
+        .innerJoin('oi.order', 'o')
+        .where('o."sellerId" = :sellerId', { sellerId })
+        .andWhere('o."paymentStatus" = :paid', { paid: PaymentStatus.PAID })
+        .andWhere('o."createdAt" >= :weekAgo', { weekAgo })
+        .getRawOne<{ revenue: string; sold: string }>(),
 
-    const pendingShipments = paidOrders.filter(
-      o => o.status !== OrderStatus.DELIVERED,
-    ).length;
+      // Count pending shipments (paid, not yet delivered)
+      this.ordersRepo.count({
+        where: {
+          sellerId,
+          paymentStatus: PaymentStatus.PAID,
+        },
+      }).then(total =>
+        this.ordersRepo.count({
+          where: { sellerId, paymentStatus: PaymentStatus.PAID, status: OrderStatus.DELIVERED },
+        }).then(delivered => total - delivered)
+      ),
 
-    const bestCard = allItems.reduce<{ cardName: string; priceCents: number } | null>(
-      (best, item) =>
-        !best || item.finalPrice > best.priceCents
-          ? { cardName: item.cardName, priceCents: item.finalPrice }
-          : best,
-      null,
-    );
+      // Best card by final price
+      this.itemsRepo
+        .createQueryBuilder('oi')
+        .select('oi."cardName"', 'cardName')
+        .addSelect('oi."finalPrice"', 'priceCents')
+        .innerJoin('oi.order', 'o')
+        .where('o."sellerId" = :sellerId', { sellerId })
+        .andWhere('o."paymentStatus" = :paid', { paid: PaymentStatus.PAID })
+        .orderBy('oi."finalPrice"', 'DESC')
+        .limit(1)
+        .getRawOne<{ cardName: string; priceCents: number }>(),
+    ]);
 
     return {
-      totalRevenueCents: allItems.reduce((s, i) => s + i.finalPrice, 0),
-      weekRevenueCents:  weekItems.reduce((s, i) => s + i.finalPrice, 0),
-      totalSold:         allItems.length,
-      weekSold:          weekItems.length,
+      totalRevenueCents: parseInt(totalStats?.revenue ?? '0', 10),
+      weekRevenueCents:  parseInt(weekStats?.revenue ?? '0', 10),
+      totalSold:         parseInt(totalStats?.sold ?? '0', 10),
+      weekSold:          parseInt(weekStats?.sold ?? '0', 10),
       pendingShipments,
-      bestCard,
+      bestCard:          bestCardRow ?? null,
     };
   }
 

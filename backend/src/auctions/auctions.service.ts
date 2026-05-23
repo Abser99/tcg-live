@@ -57,8 +57,29 @@ export class AuctionsService implements OnModuleInit {
     });
     for (const item of expired) {
       try {
-        item.status = item.winnerId ? AuctionItemStatus.SOLD : AuctionItemStatus.UNSOLD;
-        const saved = await this.itemsRepo.save(item);
+        // Use a conditional UPDATE to atomically claim this item — prevents double-close
+        // in multi-instance deployments. Only the instance that rows-affected=1 proceeds.
+        const result = await this.itemsRepo
+          .createQueryBuilder()
+          .update(AuctionItem)
+          .set({
+            status: item.winnerId ? AuctionItemStatus.SOLD : AuctionItemStatus.UNSOLD,
+          })
+          .where('id = :id AND status = :active', {
+            id: item.id,
+            active: AuctionItemStatus.ACTIVE,
+          })
+          .execute();
+
+        if (result.affected === 0) {
+          // Another instance already closed this item
+          continue;
+        }
+
+        // Re-fetch to get the authoritative saved state
+        const saved = await this.itemsRepo.findOne({ where: { id: item.id } });
+        if (!saved) continue;
+
         await this.handleItemClosed(saved);
         this.logger.log(`Auto-closed item ${item.id} (${item.cardName})`);
       } catch (err) {
@@ -156,7 +177,11 @@ export class AuctionsService implements OnModuleInit {
       );
     }
 
-    return qb.orderBy('a.status', 'DESC').addOrderBy('a.scheduledAt', 'ASC').getMany();
+    return qb
+      .orderBy('a.status', 'DESC')
+      .addOrderBy('a.scheduledAt', 'ASC')
+      .take(100) // safety cap — paginate if catalog grows
+      .getMany();
   }
 
   async findOne(id: string): Promise<Auction> {
@@ -346,6 +371,12 @@ export class AuctionsService implements OnModuleInit {
       );
     }
 
+    // Sellers cannot place auto-bids on their own items
+    const auction = await this.auctionsRepo.findOne({ where: { id: item.auctionId } });
+    if (auction?.sellerId === userId) {
+      throw new ForbiddenException('El vendedor no puede pujar en sus propios artículos');
+    }
+
     await this.maxBidsRepo.upsert(
       { auctionItemId: itemId, userId, maxAmountCents: dto.maxAmount },
       { conflictPaths: ['auctionItemId', 'userId'] },
@@ -372,16 +403,31 @@ export class AuctionsService implements OnModuleInit {
       throw new BadRequestException('No puedes cerrar un artículo que ya tiene pujas — espera a que termine el tiempo');
     }
 
-    item.status = item.winnerId ? AuctionItemStatus.SOLD : AuctionItemStatus.UNSOLD;
-    const saved = await this.itemsRepo.save(item);
+    const newStatus = item.winnerId ? AuctionItemStatus.SOLD : AuctionItemStatus.UNSOLD;
 
-    await this.handleItemClosed(saved);
+    // Atomic status transition — prevents double-close if auto-close fires simultaneously
+    const result = await this.itemsRepo
+      .createQueryBuilder()
+      .update(AuctionItem)
+      .set({ status: newStatus })
+      .where('id = :id AND status = :active', {
+        id: item.id,
+        active: AuctionItemStatus.ACTIVE,
+      })
+      .execute();
 
-    if (saved.status === AuctionItemStatus.UNSOLD && saved.autoRelist) {
-      this.scheduleAutoRelist(saved, item.auction.sellerId).catch(() => {});
+    if (result.affected === 0) {
+      throw new BadRequestException('El artículo ya fue cerrado por otro proceso');
     }
 
-    return saved;
+    item.status = newStatus;
+    await this.handleItemClosed(item);
+
+    if (item.status === AuctionItemStatus.UNSOLD && item.autoRelist) {
+      this.scheduleAutoRelist(item, item.auction.sellerId).catch(() => {});
+    }
+
+    return item;
   }
 
   private async handleItemClosed(item: AuctionItem): Promise<void> {
@@ -510,6 +556,7 @@ export class AuctionsService implements OnModuleInit {
       where: { auctionItemId: itemId },
       relations: ['bidder'],
       order: { createdAt: 'DESC' },
+      take: 50, // cap to last 50 bids — sufficient for UI display
     });
   }
 
@@ -518,6 +565,7 @@ export class AuctionsService implements OnModuleInit {
       where: { bidderId: userId },
       relations: ['auctionItem', 'auctionItem.auction'],
       order: { createdAt: 'DESC' },
+      take: 500, // cap to most recent 500 bids; adequate for the UI
     });
 
     // One entry per item — keep highest bid

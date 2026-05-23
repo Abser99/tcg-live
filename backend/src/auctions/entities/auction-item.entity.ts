@@ -7,6 +7,7 @@ import {
   JoinColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 import { Auction } from './auction.entity';
 import { User } from '../../users/user.entity';
@@ -27,6 +28,10 @@ export enum AuctionItemStatus {
   UNSOLD = 'unsold',
 }
 
+// Composite index used by the auto-close poller (runs every 10s)
+@Index('idx_auction_items_status_closes_at', ['status', 'closesAt'])
+// Index used when advancing to the next item in an auction
+@Index('idx_auction_items_auction_status_position', ['auctionId', 'status', 'position'])
 @Entity('auction_items')
 export class AuctionItem {
   @PrimaryGeneratedColumn('uuid')

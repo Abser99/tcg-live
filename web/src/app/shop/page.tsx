@@ -160,9 +160,22 @@ export default function ShopPage() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-24 text-zinc-600">
-            <p className="text-4xl mb-3">🔍</p>
-            <p className="text-lg font-medium text-zinc-400">Sin resultados</p>
+          <div className="text-center py-24">
+            <p className="text-5xl mb-4">🔍</p>
+            <p className="text-lg font-bold text-zinc-300 mb-1">Sin resultados</p>
+            <p className="text-sm text-zinc-600 mb-6">
+              {search ? `No encontramos cartas para "${search}"` : "No hay cartas disponibles en este momento"}
+            </p>
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="text-sm font-semibold px-5 py-2.5 rounded-xl transition-all"
+                style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.3)" }}
+              >
+                Limpiar búsqueda
+              </button>
+            )}
+            <p className="text-xs text-zinc-700 mt-6">Los vendedores agregan cartas constantemente — vuelve pronto.</p>
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">

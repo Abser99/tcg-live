@@ -23,11 +23,15 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {
-    this.redis = new Redis({
-      host: process.env.REDIS_HOST ?? 'localhost',
-      port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
-      lazyConnect: true,
-    });
+    // Support both REDIS_URL (Railway / Heroku) and individual REDIS_HOST/PORT vars
+    const redisUrl = process.env.REDIS_URL;
+    this.redis = redisUrl
+      ? new Redis(redisUrl, { lazyConnect: true })
+      : new Redis({
+          host: process.env.REDIS_HOST ?? 'localhost',
+          port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
+          lazyConnect: true,
+        });
   }
 
   async register(dto: RegisterDto) {

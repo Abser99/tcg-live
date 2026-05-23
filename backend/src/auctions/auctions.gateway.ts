@@ -15,7 +15,28 @@ import { UsersService } from '../users/users.service';
 import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 import { extractWsToken } from '../common/utils/ws.utils';
 
-@WebSocketGateway({ cors: { origin: '*' }, namespace: '/auctions' })
+@WebSocketGateway({
+  cors: {
+    // In production use WEB_URL; in dev allow all localhost origins.
+    // Mirrors the HTTP CORS policy in main.ts.
+    origin: (origin: string | undefined, callback: (err: Error | null, allow: boolean) => void) => {
+      const webUrl = (process.env.WEB_URL ?? '').replace(/\/$/, '');
+      if (
+        !origin ||
+        !webUrl ||
+        origin === webUrl ||
+        /\.vercel\.app$/.test(origin) ||
+        /^http:\/\/localhost(:\d+)?$/.test(origin)
+      ) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
+    credentials: true,
+  },
+  namespace: '/auctions',
+})
 export class AuctionsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;

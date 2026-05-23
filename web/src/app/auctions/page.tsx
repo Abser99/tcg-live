@@ -63,6 +63,14 @@ export default function AuctionsPage() {
       .then((r) => setAuctions(r.data))
       .catch(() => setAuctions([]))
       .finally(() => setLoading(false));
+
+    const interval = setInterval(() => {
+      auctionsApi.list()
+        .then((r) => setAuctions(r.data))
+        .catch(() => {});
+    }, 30_000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const filtered = auctions.filter((a) => {

@@ -5,10 +5,13 @@ import {
   ManyToOne,
   JoinColumn,
   CreateDateColumn,
+  Index,
 } from 'typeorm';
 import { AuctionItem } from './auction-item.entity';
 import { User } from '../../users/user.entity';
 
+@Index('idx_bids_bidder_created', ['bidderId', 'createdAt'])
+@Index('idx_bids_item_created', ['auctionItemId', 'createdAt'])
 @Entity('bids')
 export class Bid {
   @PrimaryGeneratedColumn('uuid')

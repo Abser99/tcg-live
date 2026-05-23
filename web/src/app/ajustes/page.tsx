@@ -389,8 +389,8 @@ export default function AjustesPage() {
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all text-left"
                     style={
                       activeSection === s.key
-                        ? { background: "rgba(108,58,232,0.15)", color: "#a78bfa" }
-                        : { color: "#71717a" }
+                        ? { background: "rgba(108,58,232,0.15)", color: "#a78bfa", borderLeft: "3px solid #6C3AE8", paddingLeft: "9px" }
+                        : { color: "#71717a", borderLeft: "3px solid transparent", paddingLeft: "9px" }
                     }
                   >
                     <span>{s.icon}</span>
