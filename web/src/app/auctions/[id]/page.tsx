@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { Room, RoomEvent, Track } from "livekit-client";
-import { auctionsApi, watchlistApi, type ApiAuction } from "@/lib/api";
+import { auctionsApi, watchlistApi, usersApi, type ApiAuction } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 
 const STATUS_LABEL: Record<string, { text: string; bg: string }> = {
@@ -685,6 +685,14 @@ function BidPanel({
   const [watchlisted, setWatchlisted] = useState(false);
   const [watchloading, setWatchloading] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
+  const [hasAddress, setHasAddress] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!user) { setHasAddress(false); return; }
+    usersApi.me()
+      .then(r => setHasAddress(!!r.data.zipCode))
+      .catch(() => setHasAddress(false));
+  }, [user?.id]);
   const [showMaxBid, setShowMaxBid] = useState(false);
   const [maxBidAmount, setMaxBidAmount] = useState(0);
   const [settingMaxBid, setSettingMaxBid] = useState(false);
@@ -833,17 +841,25 @@ function BidPanel({
             >
               Inicia sesión para pujar →
             </Link>
+          ) : hasAddress === false ? (
+            <Link
+              href="/ajustes"
+              className="w-full py-4 rounded-xl font-black text-white text-center block transition-all"
+              style={{ background: "rgba(108,58,232,0.25)", border: "1px solid rgba(108,58,232,0.4)" }}
+            >
+              Agrega dirección y forma de pago →
+            </Link>
           ) : (
           <button
             onClick={placeBid}
-            disabled={bidAmount <= currentBid || placing}
+            disabled={bidAmount <= currentBid || placing || hasAddress === null}
             className="w-full py-4 rounded-xl font-black text-white transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
               background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)",
               boxShadow: bidAmount > currentBid ? "0 8px 25px rgba(108,58,232,0.4)" : "none",
             }}
           >
-            {placing ? "Enviando..." : `Pujar $${bidAmount.toLocaleString("es-MX")} MXN →`}
+            {placing ? "Enviando..." : hasAddress === null ? "Verificando..." : `Pujar $${bidAmount.toLocaleString("es-MX")} MXN →`}
           </button>
           )}
 
