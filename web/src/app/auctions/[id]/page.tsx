@@ -191,6 +191,8 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [cardCategory,  setCardCategory]  = useState("carta");
   const [addingCard,    setAddingCard]    = useState(false);
   const [addCardError,  setAddCardError]  = useState("");
+  const [closingItem,   setClosingItem]   = useState(false);
+  const [closeItemMsg,  setCloseItemMsg]  = useState("");
 
   // Panel minijuego
   const [showMinigame,    setShowMinigame]    = useState(false);
@@ -330,6 +332,23 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [a.items]);
+
+  async function closeActiveItem(itemId: string) {
+    setClosingItem(true);
+    setCloseItemMsg("");
+    try {
+      await auctionsApi.closeItem(itemId);
+      const { data } = await auctionsApi.get(a.id);
+      onAuctionUpdate?.(data);
+      setCloseItemMsg("✓ Carta cerrada — pasando a la siguiente");
+      setTimeout(() => setCloseItemMsg(""), 3000);
+    } catch (err: any) {
+      setCloseItemMsg(err?.response?.data?.message ?? "Error al cerrar el artículo");
+      setTimeout(() => setCloseItemMsg(""), 4000);
+    } finally {
+      setClosingItem(false);
+    }
+  }
 
   function spinMinigame() {
     const pool = mgCategory === "todos"
@@ -583,6 +602,40 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       {/* ── Panel agregar carta + minijuego (solo vendedor en vivo) ── */}
       {isSeller && isLive && (
         <div className="border-t border-white/5" style={{ background: "#0d0d14" }}>
+
+          {/* Carta activa actual */}
+          {(() => {
+            const activeItem = a.items?.find(i => i.status === "active");
+            if (!activeItem) return null;
+            const hasBids = (activeItem.currentBid ?? 0) > (activeItem.startingBid ?? 0) || (activeItem.bids?.length ?? 0) > 0;
+            return (
+              <div className="px-3 pt-3 pb-2">
+                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl" style={{ background: "rgba(108,58,232,0.08)", border: "1px solid rgba(108,58,232,0.15)" }}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">En subasta</p>
+                    <p className="text-sm font-bold text-white truncate">{activeItem.cardName}</p>
+                    <p className="text-xs text-[#a78bfa]">${(activeItem.currentBid ?? activeItem.startingBid ?? 0).toLocaleString("es-MX")}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    {closeItemMsg && (
+                      <p className="text-[11px] mb-1" style={{ color: closeItemMsg.startsWith("✓") ? "#4ade80" : "#f87171" }}>{closeItemMsg}</p>
+                    )}
+                    <button
+                      onClick={() => !hasBids && closeActiveItem(activeItem.id)}
+                      disabled={closingItem || hasBids}
+                      title={hasBids ? "Tiene pujas — espera a que termine el tiempo" : "Cerrar sin ganador y pasar a la siguiente carta"}
+                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all disabled:opacity-50"
+                      style={hasBids
+                        ? { background: "rgba(255,255,255,0.04)", color: "#52525b", cursor: "not-allowed" }
+                        : { background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.2)" }}
+                    >
+                      {closingItem ? "..." : hasBids ? "🔒 Tiene pujas" : "Saltar carta"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Tab toggle */}
           <div className="flex border-b border-white/5">

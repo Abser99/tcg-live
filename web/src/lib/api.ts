@@ -73,6 +73,8 @@ export const auctionsApi = {
     api.post<ApiAuction>(`/auctions/${id}/items`, dto),
   maxBid: (itemId: string, maxAmount: number) =>
     api.post(`/auctions/items/${itemId}/max-bid`, { maxAmount }),
+  closeItem: (itemId: string) =>
+    api.patch(`/auctions/items/${itemId}/close`),
 };
 
 // ─── Orders ────────────────────────────────────────────────────
@@ -90,6 +92,8 @@ export const ordersApi = {
     api.patch(`/orders/${id}/status`, { status }),
 
   markReceived: (id: string) => api.patch(`/orders/${id}/received`),
+  rateOrder: (id: string, rating: number, note?: string) =>
+    api.post<ApiOrder>(`/orders/${id}/rate`, { rating, note }),
 };
 
 // ─── Payments ──────────────────────────────────────────────────
@@ -250,6 +254,8 @@ export interface ApiOrder {
   totalAmount: number;
   createdAt: string;
   trackingNumber?: string;
+  sellerRating?: number;
+  sellerRatingNote?: string;
   seller?: { username: string };
   buyer?: { username: string };
   items?: { cardName: string; finalPrice: number }[];

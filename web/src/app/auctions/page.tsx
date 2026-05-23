@@ -166,11 +166,7 @@ export default function AuctionsPage() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-24">
-            <p className="text-4xl mb-3">🔍</p>
-            <p className="text-lg font-medium text-zinc-400">Sin resultados</p>
-            <p className="text-sm text-zinc-600 mt-1">Intenta buscar algo diferente</p>
-          </div>
+          <AuctionsEmptyState search={search} filter={filter} />
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {filtered.map((a, idx) => {
@@ -271,6 +267,29 @@ export default function AuctionsPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+const AUCTIONS_EMPTY = [
+  { icon: "🎴", title: "Sin subastas en este momento", sub: "El estadio está en calma. Los duelos comienzan pronto." },
+  { icon: "⏳", title: "Nada por aquí aún", sub: "Como buscar una carta holográfica — hay que tener paciencia." },
+  { icon: "🌙", title: "El mercado descansa", sub: "Vuelve pronto para ver las próximas subastas en vivo." },
+  { icon: "🔍", title: "Sin resultados", sub: "Intenta buscar con otras palabras o quita los filtros." },
+];
+
+function AuctionsEmptyState({ search, filter }: { search: string; filter: string }) {
+  const msg = search
+    ? AUCTIONS_EMPTY[3]
+    : AUCTIONS_EMPTY[Math.floor(Math.random() * 3)];
+  return (
+    <div className="text-center py-24">
+      <p className="text-5xl mb-4">{msg.icon}</p>
+      <p className="text-lg font-bold text-zinc-300">{msg.title}</p>
+      <p className="text-sm text-zinc-600 mt-1">{msg.sub}</p>
+      {filter !== "all" && (
+        <p className="text-xs text-zinc-700 mt-3">Prueba cambiando el filtro a "Todas"</p>
+      )}
     </div>
   );
 }

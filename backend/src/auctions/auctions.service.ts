@@ -323,13 +323,16 @@ export class AuctionsService {
   async closeItem(itemId: string, sellerId: string): Promise<AuctionItem> {
     const item = await this.itemsRepo.findOne({
       where: { id: itemId },
-      relations: ['auction'],
+      relations: ['auction', 'bids'],
     });
 
     if (!item) throw new NotFoundException('Artículo no encontrado');
     this.assertOwner(item.auction.sellerId, sellerId);
     if (item.status !== AuctionItemStatus.ACTIVE) {
       throw new BadRequestException('El artículo no está activo');
+    }
+    if (item.bids && item.bids.length > 0) {
+      throw new BadRequestException('No puedes cerrar un artículo que ya tiene pujas — espera a que termine el tiempo');
     }
 
     item.status = item.winnerId ? AuctionItemStatus.SOLD : AuctionItemStatus.UNSOLD;

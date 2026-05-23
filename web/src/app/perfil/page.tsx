@@ -1,11 +1,39 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
 import { ordersApi, auctionsApi, paymentsApi, watchlistApi, messagesApi, sellerApplicationsApi, sellerDocumentsApi, disputesApi, type ApiOrder, type ApiBid, type WatchlistItem, type MessageThread, type SellerApplication, type SellerDocumentRecord, type ApiDispute, type ApiMessage } from "@/lib/api";
+
+// ─── TCG-themed empty state messages ───────────────────────
+const TCG_EMPTY = {
+  orders:   [
+    { icon: "🎒", title: "Tu mochila está vacía", sub: "Gana tu primera subasta para ver tus órdenes aquí" },
+    { icon: "🃏", title: "Sin órdenes todavía", sub: "El camino del maestro comienza con la primera carta" },
+    { icon: "📦", title: "Nada por aquí aún", sub: "¡Únete a una subasta en vivo y llévate tu primera carta!" },
+  ],
+  watchlist:[
+    { icon: "👁", title: "Tu Pokédex de subastas está vacío", sub: "Guarda subastas para no perderlas" },
+    { icon: "⭐", title: "Sin favoritos todavía", sub: "Explora las subastas y guarda las que más te interesen" },
+    { icon: "🔖", title: "Lista vacía", sub: "Como un mazo sin cartas clave — ¡agrega subastas!" },
+  ],
+  messages: [
+    { icon: "💬", title: "Sin mensajes todavía", sub: "El primer movimiento siempre es tuyo" },
+    { icon: "📨", title: "Bandeja vacía", sub: "Tu próximo intercambio épico comienza aquí" },
+    { icon: "🗺️", title: "Silencio en el estadio", sub: "Completa una orden para chatear con el vendedor" },
+  ],
+  disputes: [
+    { icon: "🛡️", title: "Sin disputas", sub: "Todas tus batallas han terminado en paz" },
+    { icon: "✨", title: "Historial limpio", sub: "El código del entrenador honorable vive en ti" },
+    { icon: "🏆", title: "Sin conflictos", sub: "Raro como un Charizard Shiny — y igual de valioso" },
+  ],
+};
+function pickEmpty(key: keyof typeof TCG_EMPTY) {
+  const arr = TCG_EMPTY[key];
+  return arr[Math.floor(Math.random() * arr.length)];
+}
 import type { Order } from "@/lib/mock-data";
 
 type Tab = "ordenes" | "watchlist" | "mensajes" | "disputas";
@@ -109,6 +137,14 @@ export default function PerfilPage() {
   const [chatInput,     setChatInput]     = useState("");
   const [chatSending,   setChatSending]   = useState(false);
   const [chatLoading,   setChatLoading]   = useState(false);
+
+  // Rating
+  const [ratingOrderId,    setRatingOrderId]    = useState<string | null>(null);
+  const [ratingStars,      setRatingStars]      = useState(5);
+  const [ratingNote,       setRatingNote]       = useState("");
+  const [ratingHover,      setRatingHover]      = useState(0);
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const [ratingError,      setRatingError]      = useState("");
 
   // Disputes
   const [disputes,          setDisputes]          = useState<ApiDispute[] | null>(null);
@@ -243,6 +279,29 @@ export default function PerfilPage() {
       setCheckingOut(null);
     }
   }
+
+  async function handleRateOrder() {
+    if (!ratingOrderId) return;
+    setRatingSubmitting(true);
+    setRatingError("");
+    try {
+      const { data } = await ordersApi.rateOrder(ratingOrderId, ratingStars, ratingNote || undefined);
+      setRealOrders(prev => prev?.map(o => o.id === ratingOrderId ? { ...o, sellerRating: data.sellerRating } : o) ?? prev);
+      setRatingOrderId(null);
+      setRatingStars(5);
+      setRatingNote("");
+    } catch (err: any) {
+      setRatingError(err?.response?.data?.message ?? "Error al enviar calificación.");
+    } finally {
+      setRatingSubmitting(false);
+    }
+  }
+
+  // Stable random empty state messages (chosen once per mount)
+  const emptyOrders   = useMemo(() => pickEmpty("orders"),   []);
+  const emptyWatch    = useMemo(() => pickEmpty("watchlist"), []);
+  const emptyMessages = useMemo(() => pickEmpty("messages"),  []);
+  const emptyDisputes = useMemo(() => pickEmpty("disputes"),  []);
 
   if (authLoading || !user) return null;
 
@@ -475,10 +534,22 @@ export default function PerfilPage() {
                   </>
                 )}
 
+                {/* Órdenes — empty state */}
+                {orders.length === 0 && !realBids?.length && (
+                  <div className="text-center py-16">
+                    <p className="text-4xl mb-3">{emptyOrders.icon}</p>
+                    <p className="text-zinc-300 font-bold">{emptyOrders.title}</p>
+                    <p className="text-xs text-zinc-600 mt-1">{emptyOrders.sub}</p>
+                  </div>
+                )}
+
                 {/* Órdenes */}
                 {orders.map((order) => {
+                  const rawOrder = realOrders?.find(o => o.id === order.id);
                   const s = ORDER_STATUS[order.status] ?? { label: order.status, icon: "📋", color: "#71717a" };
                   const isPending = order.status === "pendiente_pago" || order.status === "pending_payment";
+                  const isDelivered = order.status === "entregado" || order.status === "delivered";
+                  const alreadyRated = !!rawOrder?.sellerRating;
                   return (
                     <div key={order.id} className="rounded-2xl p-5" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
                       <div className="flex items-start gap-4">
@@ -500,20 +571,39 @@ export default function PerfilPage() {
                           {order.tracking && (
                             <p className="text-[11px] text-zinc-600 mt-1.5 font-mono">Rastreo: {order.tracking}</p>
                           )}
-                          {!isPending && order.status !== "entregado" && order.status !== "delivered" && (
-                            <button
-                              onClick={() => {
-                                setDisputeOrderId(order.id);
-                                setDisputeReason("");
-                                setDisputeDesc("");
-                                setDisputeError("");
-                                setShowDisputeModal(true);
-                              }}
-                              className="mt-3 text-[11px] font-semibold text-zinc-500 hover:text-red-400 transition-colors"
-                            >
-                              ⚠ Reportar problema
-                            </button>
-                          )}
+                          <div className="flex flex-wrap items-center gap-2 mt-3">
+                            {!isPending && !isDelivered && (
+                              <button
+                                onClick={() => {
+                                  setDisputeOrderId(order.id);
+                                  setDisputeReason("");
+                                  setDisputeDesc("");
+                                  setDisputeError("");
+                                  setShowDisputeModal(true);
+                                }}
+                                className="text-[11px] font-semibold text-zinc-500 hover:text-red-400 transition-colors"
+                              >
+                                ⚠ Reportar problema
+                              </button>
+                            )}
+                            {isDelivered && !alreadyRated && (
+                              <button
+                                onClick={() => { setRatingOrderId(order.id); setRatingStars(5); setRatingNote(""); setRatingError(""); }}
+                                className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all"
+                                style={{ background: "rgba(251,191,36,0.1)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.2)" }}
+                              >
+                                ⭐ Calificar vendedor
+                              </button>
+                            )}
+                            {isDelivered && alreadyRated && (
+                              <div className="flex items-center gap-1">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                  <span key={i} style={{ color: i < (rawOrder?.sellerRating ?? 0) ? "#fbbf24" : "#3f3f46", fontSize: "12px" }}>★</span>
+                                ))}
+                                <span className="text-[11px] text-zinc-600 ml-1">Tu calificación</span>
+                              </div>
+                            )}
+                          </div>
                           {isPending && (
                             PAYMENTS_ENABLED ? (
                               <button
@@ -548,9 +638,9 @@ export default function PerfilPage() {
               <div className="grid sm:grid-cols-2 gap-4">
                 {(realWatchlist ?? []).length === 0 ? (
                   <div className="col-span-2 text-center py-16">
-                    <p className="text-3xl mb-3">♡</p>
-                    <p className="text-zinc-400 font-medium">Sin items en tu watchlist</p>
-                    <p className="text-xs text-zinc-600 mt-1">Guarda subastas para no perderlas</p>
+                    <p className="text-4xl mb-3">{emptyWatch.icon}</p>
+                    <p className="text-zinc-300 font-bold">{emptyWatch.title}</p>
+                    <p className="text-xs text-zinc-600 mt-1">{emptyWatch.sub}</p>
                   </div>
                 ) : (realWatchlist ?? []).map((w) => {
                   const a = w.auction;
@@ -590,9 +680,9 @@ export default function PerfilPage() {
                 </div>
                 {(disputes ?? []).length === 0 ? (
                   <div className="text-center py-16">
-                    <p className="text-3xl mb-3">🛡</p>
-                    <p className="text-zinc-400 font-medium">Sin disputas</p>
-                    <p className="text-xs text-zinc-600 mt-1">Si tienes un problema con una orden, reportarlo desde "Mis Órdenes"</p>
+                    <p className="text-4xl mb-3">{emptyDisputes.icon}</p>
+                    <p className="text-zinc-300 font-bold">{emptyDisputes.title}</p>
+                    <p className="text-xs text-zinc-600 mt-1">{emptyDisputes.sub}</p>
                   </div>
                 ) : (disputes ?? []).map(d => {
                   const s = DISPUTE_STATUS_STYLE[d.status] ?? DISPUTE_STATUS_STYLE.open;
@@ -630,9 +720,9 @@ export default function PerfilPage() {
               <div className="space-y-2">
                 {(realMessages ?? []).length === 0 ? (
                   <div className="text-center py-16">
-                    <p className="text-3xl mb-3">💬</p>
-                    <p className="text-zinc-400 font-medium">Sin mensajes aún</p>
-                    <p className="text-xs text-zinc-600 mt-1">Los mensajes con vendedores aparecerán aquí</p>
+                    <p className="text-4xl mb-3">{emptyMessages.icon}</p>
+                    <p className="text-zinc-300 font-bold">{emptyMessages.title}</p>
+                    <p className="text-xs text-zinc-600 mt-1">{emptyMessages.sub}</p>
                   </div>
                 ) : (realMessages ?? []).map((msg) => {
                   const msgInitials = (msg.otherUser?.username ?? "?").slice(0, 2).toUpperCase();
@@ -796,6 +886,64 @@ export default function PerfilPage() {
               style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)" }}
             >
               {disputeSubmitting ? "Enviando..." : "Abrir disputa"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL CALIFICAR VENDEDOR ── */}
+      {ratingOrderId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="relative w-full max-w-sm rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <button onClick={() => setRatingOrderId(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
+            <h2 className="text-xl font-black mb-1">Calificar vendedor</h2>
+            <p className="text-xs text-zinc-500 mb-5">¿Cómo fue tu experiencia con esta orden?</p>
+
+            {ratingError && (
+              <div className="mb-4 px-4 py-3 rounded-xl text-sm text-red-400" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                {ratingError}
+              </div>
+            )}
+
+            {/* Stars */}
+            <div className="flex items-center justify-center gap-2 mb-5">
+              {Array.from({ length: 5 }).map((_, i) => {
+                const val = i + 1;
+                const filled = val <= (ratingHover || ratingStars);
+                return (
+                  <button
+                    key={i}
+                    onMouseEnter={() => setRatingHover(val)}
+                    onMouseLeave={() => setRatingHover(0)}
+                    onClick={() => setRatingStars(val)}
+                    className="text-4xl transition-transform hover:scale-110"
+                    style={{ color: filled ? "#fbbf24" : "#3f3f46" }}
+                  >
+                    ★
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-center text-sm text-zinc-400 mb-4">
+              {["", "Muy malo", "Malo", "Regular", "Bueno", "Excelente"][ratingStars]}
+            </p>
+
+            <textarea
+              value={ratingNote}
+              onChange={e => setRatingNote(e.target.value)}
+              rows={3}
+              placeholder="Comentario opcional (ej: envío rápido, excelente empaque...)"
+              maxLength={300}
+              className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 resize-none mb-4"
+            />
+
+            <button
+              onClick={handleRateOrder}
+              disabled={ratingSubmitting}
+              className="w-full py-3.5 rounded-xl font-black text-white disabled:opacity-60"
+              style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)", boxShadow: "0 4px 16px rgba(245,158,11,0.3)" }}
+            >
+              {ratingSubmitting ? "Enviando..." : "Enviar calificación"}
             </button>
           </div>
         </div>
