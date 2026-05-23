@@ -814,7 +814,7 @@ function BidPanel({
               className="w-full py-4 rounded-xl font-black text-white text-center block transition-all"
               style={{ background: "rgba(108,58,232,0.25)", border: "1px solid rgba(108,58,232,0.4)" }}
             >
-              Agrega tu dirección para pujar →
+              Agrega dirección y forma de pago →
             </Link>
           ) : (
           <button
