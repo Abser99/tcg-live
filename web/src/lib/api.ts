@@ -71,6 +71,8 @@ export const auctionsApi = {
   end:     (id: string) => api.patch(`/auctions/${id}/end`),
   addItem: (id: string, dto: { cardName: string; startingPrice: number; imageUrls?: string[] }) =>
     api.post<ApiAuction>(`/auctions/${id}/items`, dto),
+  maxBid: (itemId: string, maxAmount: number) =>
+    api.post(`/auctions/items/${itemId}/max-bid`, { maxAmount }),
 };
 
 // ─── Orders ────────────────────────────────────────────────────
@@ -199,6 +201,7 @@ export interface ApiUser {
 
 export interface ApiAuction {
   id: string;
+  sellerId?: string;
   status: "live" | "ending" | "upcoming" | "ended";
   title?: string;
   name?: string;

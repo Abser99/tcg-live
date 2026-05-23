@@ -166,7 +166,11 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   onAuctionUpdate?: (a: ApiAuction) => void;
 }) {
   const { user } = useAuth();
-  const isSeller = !!user && !!a.seller && (user.id === a.seller.id || user.username === (a.seller.username ?? a.sellerName));
+  const isSeller = !!user && (
+    user.id === (a as any).sellerId ||
+    user.id === a.seller?.id ||
+    user.username === (a.seller?.username ?? a.sellerName)
+  );
   const isLive   = a.status === "live" || a.status === "ending";
 
   const roomRef    = useRef<Room | null>(null);
@@ -177,12 +181,18 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [micMuted,       setMicMuted]       = useState(false);
   const [camOff,         setCamOff]         = useState(false);
   const [streamError,    setStreamError]    = useState<string | null>(null);
+  const [endingAuction,  setEndingAuction]  = useState(false);
 
   // Panel agregar carta
   const [cardName,      setCardName]      = useState("");
   const [cardPrice,     setCardPrice]     = useState("");
   const [addingCard,    setAddingCard]    = useState(false);
   const [addCardError,  setAddCardError]  = useState("");
+
+  // Chat en vivo
+  const [chatMessages, setChatMessages] = useState<{ username: string; text: string; ts: number }[]>([]);
+  const [chatInput,    setChatInput]    = useState("");
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Viewers auto-connect when auction goes live
   useEffect(() => {
@@ -205,6 +215,8 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       }
     });
 
+    attachChatListener(room);
+
     auctionsApi.livekitToken(a.id)
       .then(({ data }) => { if (alive) return room.connect(data.wsUrl, data.token); })
       .catch(() => {});
@@ -214,9 +226,38 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       room.disconnect();
       roomRef.current = null;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLive, a.id, isSeller]);
 
   useEffect(() => () => { roomRef.current?.disconnect(); }, []);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  function attachChatListener(room: Room) {
+    room.on(RoomEvent.DataReceived, (data: Uint8Array) => {
+      try {
+        const msg = JSON.parse(new TextDecoder().decode(data));
+        if (msg.type === "chat") {
+          setChatMessages(prev => [...prev, { username: msg.username, text: msg.text, ts: msg.ts }]);
+        }
+      } catch {}
+    });
+  }
+
+  async function sendChat() {
+    if (!chatInput.trim() || !roomRef.current || !user) return;
+    const msg = { type: "chat", username: user.username, text: chatInput.trim(), ts: Date.now() };
+    try {
+      await roomRef.current.localParticipant.publishData(
+        new TextEncoder().encode(JSON.stringify(msg)),
+        { reliable: true }
+      );
+      setChatMessages(prev => [...prev, { username: user.username, text: chatInput.trim(), ts: Date.now() }]);
+    } catch {}
+    setChatInput("");
+  }
 
   // Auto-start stream when seller arrives via "Iniciar Livestream" button
   useEffect(() => {
@@ -259,6 +300,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         }
       });
 
+      attachChatListener(room);
       await room.connect(data.wsUrl, data.token);
       await room.localParticipant.setCameraEnabled(true);
       await room.localParticipant.setMicrophoneEnabled(true);
@@ -288,6 +330,20 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     roomRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setStreaming(false);
+  }
+
+  async function endAuction() {
+    if (endingAuction) return;
+    setEndingAuction(true);
+    try {
+      await stopStream();
+      const { data } = await auctionsApi.end(a.id);
+      onAuctionUpdate?.(data as any);
+    } catch (err: any) {
+      setStreamError(err?.response?.data?.message ?? "Error al terminar la subasta.");
+    } finally {
+      setEndingAuction(false);
+    }
   }
 
   async function toggleMic() {
@@ -327,6 +383,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           autoPlay
           playsInline
           muted={isSeller}
+          disablePictureInPicture
           className="absolute inset-0 w-full h-full object-cover"
           style={{ display: showVideo ? "block" : "none" }}
         />
@@ -398,28 +455,48 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
             <p className="text-xs text-red-400 mb-2">{streamError}</p>
           )}
           {!streaming ? (
-            <button
-              onClick={startStream}
-              disabled={connecting}
-              className="w-full py-3 rounded-xl font-black text-white text-sm flex items-center justify-center gap-2 disabled:opacity-60"
-              style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 4px 20px rgba(220,38,38,0.4)" }}
-            >
-              <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-              {connecting ? "Iniciando stream..." : "Iniciar stream en vivo"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={startStream}
+                disabled={connecting}
+                className="flex-1 py-3 rounded-xl font-black text-white text-sm flex items-center justify-center gap-2 disabled:opacity-60"
+                style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 4px 20px rgba(220,38,38,0.4)" }}
+              >
+                <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                {connecting ? "Iniciando..." : "Iniciar stream"}
+              </button>
+              <button
+                onClick={endAuction}
+                disabled={endingAuction}
+                className="px-4 py-3 rounded-xl font-bold text-sm disabled:opacity-60 transition-all"
+                style={{ background: "rgba(113,113,122,0.15)", color: "#a1a1aa", border: "1px solid rgba(113,113,122,0.25)" }}
+              >
+                {endingAuction ? "..." : "Terminar subasta"}
+              </button>
+            </div>
           ) : (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                <span className="text-xs font-bold text-red-400">TRANSMITIENDO EN VIVO</span>
+                <span className="text-xs font-bold text-red-400">EN VIVO</span>
               </div>
-              <button
-                onClick={stopStream}
-                className="text-xs font-bold px-4 py-2 rounded-xl transition-all"
-                style={{ background: "rgba(239,68,68,0.15)", color: "#f87171", border: "1px solid rgba(239,68,68,0.3)" }}
-              >
-                Detener stream
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={stopStream}
+                  className="text-xs font-bold px-3 py-2 rounded-xl transition-all"
+                  style={{ background: "rgba(239,68,68,0.15)", color: "#f87171", border: "1px solid rgba(239,68,68,0.3)" }}
+                >
+                  Pausar stream
+                </button>
+                <button
+                  onClick={endAuction}
+                  disabled={endingAuction}
+                  className="text-xs font-bold px-3 py-2 rounded-xl transition-all disabled:opacity-60"
+                  style={{ background: "rgba(113,113,122,0.15)", color: "#a1a1aa", border: "1px solid rgba(113,113,122,0.25)" }}
+                >
+                  {endingAuction ? "..." : "Terminar"}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -465,9 +542,43 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       {/* ── Chat en vivo ── */}
       <div className="bg-[#0d0d14] border-t border-white/5 p-4">
         <p className="text-xs text-zinc-600 font-semibold uppercase tracking-wider mb-3">Chat en vivo</p>
+        <div
+          className="h-36 overflow-y-auto flex flex-col gap-1.5 mb-3 pr-1"
+          style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.06) transparent" }}
+        >
+          {chatMessages.length === 0 ? (
+            <p className="text-xs text-zinc-700 text-center mt-4">
+              {isLive ? "Sé el primero en escribir…" : "El chat estará activo durante el stream"}
+            </p>
+          ) : (
+            chatMessages.slice(-50).map((m, i) => (
+              <div key={i} className="text-xs leading-snug">
+                <span className="font-bold" style={{ color: m.username === user?.username ? "#a78bfa" : "#60a5fa" }}>
+                  {m.username}
+                </span>
+                <span className="text-zinc-300 ml-1.5">{m.text}</span>
+              </div>
+            ))
+          )}
+          <div ref={chatEndRef} />
+        </div>
         <div className="flex gap-2">
-          <input placeholder="Escribe un mensaje..." className="flex-1 bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50" />
-          <button className="px-4 py-2 rounded-xl text-sm font-bold text-white" style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}>→</button>
+          <input
+            value={chatInput}
+            onChange={e => setChatInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") sendChat(); }}
+            placeholder={!user ? "Inicia sesión para chatear" : !roomRef.current ? "Conéctate al stream para chatear" : "Escribe un mensaje…"}
+            disabled={!user || !roomRef.current}
+            className="flex-1 bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50 disabled:opacity-40"
+          />
+          <button
+            onClick={sendChat}
+            disabled={!user || !roomRef.current || !chatInput.trim()}
+            className="px-4 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-40 transition-all"
+            style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+          >
+            Enviar
+          </button>
         </div>
       </div>
     </div>
@@ -557,6 +668,10 @@ function BidPanel({
   const [watchlisted, setWatchlisted] = useState(false);
   const [watchloading, setWatchloading] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
+  const [showMaxBid, setShowMaxBid] = useState(false);
+  const [maxBidAmount, setMaxBidAmount] = useState(0);
+  const [settingMaxBid, setSettingMaxBid] = useState(false);
+  const [activeMaxBid, setActiveMaxBid] = useState<number | null>(null);
 
   const currentBid = bids[0]?.amount ?? initialCurrentBid;
 
@@ -587,6 +702,22 @@ function BidPanel({
       setTimeout(() => setBidError(null), 3000);
     } finally {
       setPlacing(false);
+    }
+  }
+
+  async function submitMaxBid() {
+    if (!itemId || maxBidAmount <= currentBid || settingMaxBid) return;
+    setSettingMaxBid(true);
+    try {
+      await auctionsApi.maxBid(itemId, maxBidAmount);
+      setActiveMaxBid(maxBidAmount);
+      setShowMaxBid(false);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Error al configurar puja máxima.";
+      setBidError(msg);
+      setTimeout(() => setBidError(null), 3000);
+    } finally {
+      setSettingMaxBid(false);
     }
   }
 
@@ -677,6 +808,15 @@ function BidPanel({
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-600 text-sm">MXN</span>
           </div>
 
+          {!user?.zipCode ? (
+            <Link
+              href="/ajustes"
+              className="w-full py-4 rounded-xl font-black text-white text-center block transition-all"
+              style={{ background: "rgba(108,58,232,0.25)", border: "1px solid rgba(108,58,232,0.4)" }}
+            >
+              Agrega tu dirección para pujar →
+            </Link>
+          ) : (
           <button
             onClick={placeBid}
             disabled={bidAmount <= currentBid || placing}
@@ -688,6 +828,64 @@ function BidPanel({
           >
             {placing ? "Enviando..." : `Pujar $${bidAmount.toLocaleString("es-MX")} MXN →`}
           </button>
+          )}
+
+          {activeMaxBid ? (
+            <div
+              className="rounded-xl px-4 py-3 flex items-center justify-between"
+              style={{ background: "rgba(108,58,232,0.1)", border: "1px solid rgba(108,58,232,0.25)" }}
+            >
+              <div>
+                <p className="text-xs text-[#a78bfa] font-bold">Puja automática activa</p>
+                <p className="text-sm text-white font-semibold">hasta ${activeMaxBid.toLocaleString("es-MX")} MXN</p>
+              </div>
+              <button
+                onClick={() => { setActiveMaxBid(null); setMaxBidAmount(0); }}
+                className="text-xs text-zinc-500 hover:text-red-400 transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <div>
+              <button
+                onClick={() => setShowMaxBid((v) => !v)}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold text-zinc-400 hover:text-white border border-white/10 hover:border-white/20 transition-all"
+                style={{ background: "rgba(255,255,255,0.03)" }}
+              >
+                {showMaxBid ? "✕ Cancelar puja automática" : "⚡ Configurar puja automática"}
+              </button>
+
+              {showMaxBid && (
+                <div className="mt-3 flex flex-col gap-3">
+                  <p className="text-xs text-zinc-500">
+                    Puja automáticamente hasta tu límite. Si alguien puja más, te supera automáticamente hasta tu máximo.
+                  </p>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-bold">$</span>
+                    <input
+                      type="number"
+                      value={maxBidAmount || ""}
+                      onChange={(e) => setMaxBidAmount(Number(e.target.value))}
+                      placeholder={String(currentBid + 200)}
+                      className="w-full bg-[#0F0F14] border border-white/15 rounded-xl pl-8 pr-16 py-3 text-white font-bold focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
+                      min={currentBid + 50}
+                      step={50}
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-600 text-sm">MXN</span>
+                  </div>
+                  <button
+                    onClick={submitMaxBid}
+                    disabled={maxBidAmount <= currentBid || settingMaxBid}
+                    className="w-full py-3 rounded-xl font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ background: "rgba(108,58,232,0.5)", border: "1px solid rgba(108,58,232,0.4)" }}
+                  >
+                    {settingMaxBid ? "Guardando..." : `Activar puja hasta $${maxBidAmount ? maxBidAmount.toLocaleString("es-MX") : "—"}`}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {a.binPrice && (
             <button className="w-full py-3 rounded-xl font-semibold text-white border border-white/15 hover:bg-white/5 transition-all text-sm">

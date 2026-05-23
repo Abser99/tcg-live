@@ -28,7 +28,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "dashboard", label: "Dashboard"        },
   { key: "subastas",  label: "Mis Subastas"     },
   { key: "crear",     label: "Crear Subasta"    },
-  { key: "ventas",    label: "Mis Ventas"        },
+  { key: "ventas",    label: "Mis Ventas"        },  // Crear Venta + activas
   { key: "ordenes",   label: "Órdenes de Venta" },
 ];
 
@@ -496,9 +496,9 @@ export default function VendedorPage() {
           <div className="space-y-4">
             {/* Filter */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              {(["all", "live", "ending", "upcoming"] as const).map((f) => {
+              {(["all", "live", "ending", "upcoming", "ended"] as const).map((f) => {
                 const count = f === "all" ? myAuctions.length : myAuctions.filter(a => a.status === f).length;
-                const labels = { all: "Todas", live: "En vivo", ending: "Cerrando", upcoming: "Próximas" };
+                const labels: Record<string, string> = { all: "Todas", live: "En vivo", ending: "Cerrando", upcoming: "Próximas", ended: "Terminadas" };
                 const active = saleFilter === f;
                 return (
                   <button

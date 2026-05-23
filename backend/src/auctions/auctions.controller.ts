@@ -46,19 +46,7 @@ export class AuctionsController {
     return this.auctionsService.getItemBids(itemId);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.auctionsService.findOne(id);
-  }
-
-  // --- Authenticated endpoints ---
-
-  @Post()
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.ADMIN)
-  create(@CurrentUser() user: User, @Body() dto: CreateAuctionDto) {
-    return this.auctionsService.create(user.id, dto);
-  }
+  // --- Authenticated endpoints (must come before :id to avoid route shadowing) ---
 
   @Get('my')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -71,6 +59,18 @@ export class AuctionsController {
   @UseGuards(AuthGuard('jwt'))
   getMyBids(@CurrentUser() user: User) {
     return this.auctionsService.getMyBids(user.id);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.auctionsService.findOne(id);
+  }
+
+  @Post()
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  create(@CurrentUser() user: User, @Body() dto: CreateAuctionDto) {
+    return this.auctionsService.create(user.id, dto);
   }
 
   @Get(':id/livekit-token')
