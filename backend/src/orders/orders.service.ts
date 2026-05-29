@@ -5,6 +5,7 @@ import { Order, OrderStatus, PaymentStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { EmailService } from '../notifications/email.service';
 
 @Injectable()
 export class OrdersService {
@@ -13,6 +14,7 @@ export class OrdersService {
     @InjectRepository(OrderItem) private readonly itemsRepo: Repository<OrderItem>,
     private readonly usersService: UsersService,
     private readonly notificationsService: NotificationsService,
+    private readonly emailService: EmailService,
   ) {}
 
   /** Called by AuctionsService when an item is closed with a winner */
@@ -45,13 +47,31 @@ export class OrdersService {
       this.itemsRepo.create({ orderId: order.id, auctionItemId, cardName, cardSet: cardSet ?? undefined, finalPrice, imageUrls: imageUrls ?? undefined }),
     );
 
-    // Notify buyer they won this item
+    // Push notification: buyer won item
     this.notificationsService.notifyAuctionWin(buyerId, cardName, finalPrice).catch(() => {});
 
     // Notify seller of a new sale only when the order is first created
     if (isNewOrder) {
-      const buyer = await this.usersService.findById(buyerId);
+      const [buyer, seller] = await Promise.all([
+        this.usersService.findById(buyerId),
+        this.usersService.findById(sellerId),
+      ]);
       this.notificationsService.notifyNewOrder(sellerId, buyer.username, 1).catch(() => {});
+
+      // Transactional emails: buyer confirmation + seller confirmation
+      this.emailService.sendOrderConfirmationBuyer(buyer.email, {
+        cardName,
+        amount: finalPrice,
+        sellerName: seller.username,
+        orderId: order.id,
+      }).catch(() => {});
+
+      this.emailService.sendOrderConfirmationSeller(seller.email, {
+        cardName,
+        amount: finalPrice,
+        buyerName: buyer.username,
+        orderId: order.id,
+      }).catch(() => {});
     }
   }
 
@@ -112,6 +132,18 @@ export class OrdersService {
       this.notificationsService.notifyOrderConfirmed(order.buyerId, cardNames).catch(() => {});
     } else if (status === OrderStatus.SHIPPED && order.trackingNumber) {
       this.notificationsService.notifyOrderShipped(order.buyerId, order.trackingNumber, order.carrier ?? 'Paquetería').catch(() => {});
+
+      // Email: buyer shipment notification
+      this.usersService.findById(order.buyerId)
+        .then(buyer => {
+          const firstCardName = order.items[0]?.cardName ?? 'tu carta';
+          return this.emailService.sendOrderShipped(buyer.email, {
+            cardName: firstCardName,
+            trackingNumber: order.trackingNumber!,
+            orderId: order.id,
+          });
+        })
+        .catch(() => {});
     }
     return saved;
   }
@@ -142,6 +174,13 @@ export class OrdersService {
     const saved = await this.ordersRepo.save(order);
     await this.usersService.recordRating(order.sellerId, rating);
     return saved;
+  }
+
+  async updateTracking(orderId: string, sellerId: string, trackingNumber: string): Promise<Order> {
+    const order = await this.ordersRepo.findOne({ where: { id: orderId, sellerId } });
+    if (!order) throw new NotFoundException('Orden no encontrada');
+    order.trackingNumber = trackingNumber;
+    return this.ordersRepo.save(order);
   }
 
   async attachShipping(orderId: string, sellerId: string, data: {

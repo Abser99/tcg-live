@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
 import { UpdateShippingDto } from './dto/update-shipping.dto';
@@ -44,6 +44,32 @@ export class UsersController {
   @UseGuards(AuthGuard('jwt'))
   updateAddress(@CurrentUser() user: User, @Body() dto: UpdateAddressDto) {
     return this.usersService.updateAddress(user.id, dto);
+  }
+
+  // ── Admin endpoints ────────────────────────────────────────────
+
+  @Get()
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  listAllUsers(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.usersService.findAllUsers(
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+    );
+  }
+
+  @Patch(':id/suspend')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  suspendUser(@Param('id') id: string, @Body() body: { reason: string }) {
+    return this.usersService.suspendUser(id, body.reason);
+  }
+
+  @Patch(':id/unsuspend')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  unsuspendUser(@Param('id') id: string) {
+    return this.usersService.unsuspendUser(id);
   }
 
   // Public endpoints — no auth required

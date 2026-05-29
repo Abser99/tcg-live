@@ -56,8 +56,9 @@ export default function StorefrontPage() {
         ]);
 
         if (auctionsRes) {
-          setAuctions(auctionsRes.data.filter(
-            (a) => a.seller?.id === profileRes.data.id || a.seller?.username === username
+          const auctionList = Array.isArray(auctionsRes.data) ? auctionsRes.data : (auctionsRes.data as any).data ?? [];
+          setAuctions(auctionList.filter(
+            (a: any) => a.seller?.id === profileRes.data.id || a.seller?.username === username
           ));
         }
         if (listingsRes) {

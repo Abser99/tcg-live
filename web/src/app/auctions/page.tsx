@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { auctionsApi, type ApiAuction } from "@/lib/api";
+import { formatTimer } from "@/lib/format";
 
 type Filter = "all" | "live" | "ending" | "upcoming";
 
@@ -42,36 +43,57 @@ const GLOWS = [
   "rgba(132,204,22,0.4)",
 ];
 
-function formatTimer(endTime?: string): string {
-  if (!endTime) return "—";
-  const diff = Math.max(0, new Date(endTime).getTime() - Date.now());
-  const s = Math.floor(diff / 1000);
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  if (h > 0) return `${h}h ${m % 60}m`;
-  return `${m}:${String(s % 60).padStart(2, "0")}`;
-}
 
 export default function AuctionsPage() {
   const [auctions, setAuctions] = useState<ApiAuction[]>([]);
+  const [total, setTotal]       = useState(0);
+  const [page, setPage]         = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading]   = useState(true);
   const [filter, setFilter]     = useState<Filter>("all");
   const [search, setSearch]     = useState("");
+  const [, setTick] = useState(0);
+
+  function applyResponse(res: { data: ApiAuction[]; total: number; page: number }) {
+    if (res.page === 1) {
+      setAuctions(res.data);
+    } else {
+      setAuctions(prev => {
+        const existing = new Set(prev.map(a => a.id));
+        return [...prev, ...res.data.filter(a => !existing.has(a.id))];
+      });
+    }
+    setTotal(res.total);
+    setPage(res.page);
+  }
 
   useEffect(() => {
-    auctionsApi.list()
-      .then((r) => setAuctions(r.data))
+    auctionsApi.list({ page: 1, limit: 20 })
+      .then((r) => applyResponse(r.data))
       .catch(() => setAuctions([]))
       .finally(() => setLoading(false));
 
-    const interval = setInterval(() => {
-      auctionsApi.list()
-        .then((r) => setAuctions(r.data))
+    const dataInterval = setInterval(() => {
+      auctionsApi.list({ page: 1, limit: 20 })
+        .then((r) => applyResponse(r.data))
         .catch(() => {});
     }, 30_000);
 
-    return () => clearInterval(interval);
+    const tickInterval = setInterval(() => setTick(t => t + 1), 1000);
+
+    return () => { clearInterval(dataInterval); clearInterval(tickInterval); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function loadMore() {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const r = await auctionsApi.list({ page: page + 1, limit: 20 });
+      applyResponse(r.data);
+    } catch {}
+    finally { setLoadingMore(false); }
+  }
 
   const filtered = auctions.filter((a) => {
     const matchesFilter = filter === "all" || a.status === filter;
@@ -84,6 +106,7 @@ export default function AuctionsPage() {
   });
 
   const liveCount = auctions.filter((a) => a.status === "live").length;
+  const hasMore = auctions.length < total;
 
   return (
     <div className="min-h-screen bg-[#0F0F14] text-white">
@@ -93,12 +116,14 @@ export default function AuctionsPage() {
         <div className="mx-auto max-w-7xl px-6">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
             <div>
-              <div className="flex items-center gap-2.5 mb-2">
-                <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
-                <span className="text-sm text-red-400 font-semibold">
-                  {liveCount} subastas en vivo ahora
-                </span>
-              </div>
+              {!loading && (
+                <div className="flex items-center gap-2.5 mb-2">
+                  <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                  <span className="text-sm text-red-400 font-semibold">
+                    {liveCount} subastas en vivo ahora
+                  </span>
+                </div>
+              )}
               <h1 className="text-4xl font-black tracking-tight">Subastas</h1>
               <p className="text-zinc-500 mt-1">
                 {loading ? "Cargando..." : `${auctions.length} subastas activas y próximas`}
@@ -128,6 +153,7 @@ export default function AuctionsPage() {
                 <button
                   key={f.key}
                   onClick={() => setFilter(f.key)}
+                  aria-pressed={active}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all"
                   style={
                     active
@@ -274,6 +300,20 @@ export default function AuctionsPage() {
             })}
           </div>
         )}
+
+        {/* Cargar más — only shown when not filtering/searching locally and there are more pages */}
+        {!loading && hasMore && !search && filter === "all" && (
+          <div className="flex justify-center mt-10">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="px-8 py-3 rounded-xl font-bold text-white text-sm transition-all disabled:opacity-60"
+              style={{ background: "rgba(108,58,232,0.2)", border: "1px solid rgba(108,58,232,0.4)" }}
+            >
+              {loadingMore ? "Cargando..." : `Cargar más (${total - auctions.length} restantes)`}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -287,9 +327,8 @@ const AUCTIONS_EMPTY = [
 ];
 
 function AuctionsEmptyState({ search, filter }: { search: string; filter: string }) {
-  const msg = search
-    ? AUCTIONS_EMPTY[3]
-    : AUCTIONS_EMPTY[Math.floor(Math.random() * 3)];
+  const randomIdx = useMemo(() => Math.floor(Math.random() * 3), [search]);
+  const msg = search ? AUCTIONS_EMPTY[3] : AUCTIONS_EMPTY[randomIdx];
   return (
     <div className="text-center py-24">
       <p className="text-5xl mb-4">{msg.icon}</p>

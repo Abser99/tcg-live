@@ -4,8 +4,11 @@ const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
 export const api = axios.create({
   baseURL: `${BASE}/api`,
-  timeout: 10_000,
+  timeout: 30_000,
 });
+
+let _redirectToLogin: (() => void) | null = null;
+export function setRedirectHandler(fn: () => void) { _redirectToLogin = fn; }
 
 // Attach JWT on every request
 api.interceptors.request.use((config) => {
@@ -24,7 +27,11 @@ api.interceptors.response.use(
       localStorage.removeItem("tcg_token");
       localStorage.removeItem("tcg_user");
       if (!window.location.pathname.startsWith("/login")) {
-        window.location.href = "/login";
+        if (_redirectToLogin) {
+          _redirectToLogin();
+        } else {
+          window.location.href = "/login";
+        }
       }
     }
     return Promise.reject(err);
@@ -50,8 +57,8 @@ export const authApi = {
 
 // ─── Auctions ──────────────────────────────────────────────────
 export const auctionsApi = {
-  list: (params?: { q?: string; condition?: string; minPrice?: number; maxPrice?: number }) =>
-    api.get<ApiAuction[]>("/auctions", { params }),
+  list: (params?: { q?: string; condition?: string; minPrice?: number; maxPrice?: number; page?: number; limit?: number }) =>
+    api.get<AuctionListResponse>("/auctions", { params }),
 
   get: (id: string) => api.get<ApiAuction>(`/auctions/${id}`),
 
@@ -73,6 +80,8 @@ export const auctionsApi = {
     api.post<ApiAuction>(`/auctions/${id}/items`, dto),
   maxBid: (itemId: string, maxAmount: number) =>
     api.post(`/auctions/items/${itemId}/max-bid`, { maxAmount }),
+  cancelMaxBid: (itemId: string) =>
+    api.delete(`/auctions/items/${itemId}/max-bid`),
   closeItem: (itemId: string) =>
     api.patch(`/auctions/items/${itemId}/close`),
   update: (id: string, dto: { title?: string; game?: string }) =>
@@ -92,6 +101,9 @@ export const ordersApi = {
 
   updateStatus: (id: string, status: string) =>
     api.patch(`/orders/${id}/status`, { status }),
+
+  updateTracking: (id: string, trackingNumber: string) =>
+    api.patch(`/orders/${id}/tracking`, { trackingNumber }),
 
   markReceived: (id: string) => api.patch(`/orders/${id}/received`),
   rateOrder: (id: string, rating: number, note?: string) =>
@@ -143,6 +155,13 @@ export const usersApi = {
     api.patch<ApiUser>("/users/me/address", dto),
   publicProfile: (username: string) =>
     api.get<PublicProfile>(`/users/by-username/${encodeURIComponent(username)}/profile`),
+  // Admin
+  listAll: (page = 1) =>
+    api.get<AdminUserListResponse>(`/users?page=${page}&limit=20`).then((r) => r.data),
+  suspend: (id: string, reason: string) =>
+    api.patch<AdminUser>(`/users/${id}/suspend`, { reason }),
+  unsuspend: (id: string) =>
+    api.patch<AdminUser>(`/users/${id}/unsuspend`),
 };
 
 // ─── Disputes ──────────────────────────────────────────────────
@@ -185,6 +204,13 @@ export const sellerDocumentsApi = {
 };
 
 // ─── Types ─────────────────────────────────────────────────────
+export interface AuctionListResponse {
+  data: ApiAuction[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export interface ApiUser {
   id: string;
   username: string;
@@ -384,4 +410,23 @@ export interface CreateAuctionPayload {
   description?: string;
   items?: { cardName: string; cardSet?: string; condition?: string; startingPrice: number; binPrice?: number; imageUrls?: string[] }[];
   scheduledAt?: string;
+}
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  email: string;
+  role: string;
+  isSuspended: boolean;
+  suspendedAt: string | null;
+  suspendReason: string | null;
+  isVerified: boolean;
+  createdAt: string;
+}
+
+export interface AdminUserListResponse {
+  data: AdminUser[];
+  total: number;
+  page: number;
+  limit: number;
 }

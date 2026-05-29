@@ -119,6 +119,32 @@ export class UsersService {
     await this.usersRepo.update(id, { isVerified });
   }
 
+  async suspendUser(id: string, reason: string): Promise<User> {
+    const user = await this.usersRepo.findOneOrFail({ where: { id } });
+    user.isSuspended = true;
+    user.suspendedAt = new Date();
+    user.suspendReason = reason;
+    return this.usersRepo.save(user);
+  }
+
+  async unsuspendUser(id: string): Promise<User> {
+    const user = await this.usersRepo.findOneOrFail({ where: { id } });
+    user.isSuspended = false;
+    user.suspendedAt = null;
+    user.suspendReason = null;
+    return this.usersRepo.save(user);
+  }
+
+  async findAllUsers(page = 1, limit = 20): Promise<{ data: Partial<User>[]; total: number; page: number; limit: number }> {
+    const [data, total] = await this.usersRepo.findAndCount({
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+      select: ['id', 'username', 'email', 'isSuspended', 'suspendedAt', 'suspendReason', 'isVerified', 'createdAt', 'role'],
+    });
+    return { data, total, page, limit };
+  }
+
   async updateAddress(id: string, dto: UpdateAddressDto): Promise<User> {
     await this.usersRepo.update(id, {
       ...(dto.zipCode    !== undefined && { zipCode:  dto.zipCode }),

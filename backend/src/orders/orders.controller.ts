@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, UseGuards, Post } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, MaxLength, Max, Min } from 'class-validator';
 import { OrdersService } from './orders.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -24,6 +24,12 @@ class RateOrderDto {
 class UpdateStatusDto {
   @IsEnum(OrderStatus)
   status: OrderStatus;
+}
+
+class UpdateTrackingDto {
+  @IsString()
+  @MaxLength(200)
+  trackingNumber: string;
 }
 
 class ShippingChoiceDto {
@@ -79,6 +85,16 @@ export class OrdersController {
     @Body() dto: UpdateStatusDto,
   ) {
     return this.ordersService.updateStatus(id, user.id, dto.status);
+  }
+
+  @Patch(':id/tracking')
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  updateTracking(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() dto: UpdateTrackingDto,
+  ) {
+    return this.ordersService.updateTracking(id, user.id, dto.trackingNumber);
   }
 
   @Patch(':id/received')

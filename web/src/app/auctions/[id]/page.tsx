@@ -4,10 +4,13 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { Room, RoomEvent, Track } from "livekit-client";
 import { auctionsApi, watchlistApi, usersApi, type ApiAuction, type ApiAuctionItem } from "@/lib/api";
 import { censorText } from "@/lib/profanity";
+import { formatTimer } from "@/lib/format";
 import { useAuth } from "@/contexts/auth";
+import { useAnalytics } from "@/hooks/useAnalytics";
 
 const STATUS_LABEL: Record<string, { text: string; bg: string }> = {
   live:     { text: "EN VIVO",        bg: "#ef4444" },
@@ -29,15 +32,6 @@ const GLOWS = [
   "rgba(251,191,36,0.4)",
 ];
 
-function formatTimer(endTime?: string): string {
-  if (!endTime) return "—";
-  const diff = Math.max(0, new Date(endTime).getTime() - Date.now());
-  const s = Math.floor(diff / 1000);
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  if (h > 0) return `${h}h ${m % 60}m`;
-  return `${m}:${String(s % 60).padStart(2, "0")}`;
-}
 
 interface BidRow {
   user: string;
@@ -63,14 +57,22 @@ function AuctionDetailPageInner() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  const auctionStatusRef = useRef(auction?.status);
+  useEffect(() => { auctionStatusRef.current = auction?.status; }, [auction?.status]);
+
   useEffect(() => {
-    if (!auction) return;
-    const ms = (auction.status === 'live' || auction.status === 'ending') ? 2000 : 5000;
-    const timer = setInterval(() => {
-      auctionsApi.get(id).then(r => setAuction(r.data)).catch(() => {});
-    }, ms);
-    return () => clearInterval(timer);
-  }, [id, auction?.status]);
+    const intervalRef = { id: undefined as ReturnType<typeof setInterval> | undefined };
+    function schedule() {
+      clearInterval(intervalRef.id);
+      const status = auctionStatusRef.current;
+      const ms = (status === 'live' || status === 'ending') ? 2000 : 5000;
+      intervalRef.id = setInterval(() => {
+        auctionsApi.get(id).then(r => setAuction(r.data)).catch(() => {});
+      }, ms);
+    }
+    schedule();
+    return () => clearInterval(intervalRef.id);
+  }, [id]);
 
   if (loading) {
     return (
@@ -171,9 +173,11 @@ function AuctionDetailPageInner() {
 
 export default function AuctionDetailPage() {
   return (
-    <Suspense>
-      <AuctionDetailPageInner />
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={<div className="min-h-screen bg-[#0F0F14]" />}>
+        <AuctionDetailPageInner />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 
@@ -186,6 +190,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   onAuctionUpdate?: (a: ApiAuction) => void;
 }) {
   const { user } = useAuth();
+  const { capture } = useAnalytics();
   // Only use stable IDs for seller detection — username comparison is unreliable
   // (username changes, collisions, case sensitivity).
   const isSeller = !!user && (
@@ -198,11 +203,13 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const videoRef   = useRef<HTMLVideoElement>(null);
   const [streaming,      setStreaming]      = useState(false);
   const [connecting,     setConnecting]     = useState(false);
+  const [roomConnected,  setRoomConnected]  = useState(false);
   const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
   const [micMuted,       setMicMuted]       = useState(false);
   const [camOff,         setCamOff]         = useState(false);
   const [streamError,    setStreamError]    = useState<string | null>(null);
   const [endingAuction,  setEndingAuction]  = useState(false);
+  const [confirmEnd,     setConfirmEnd]     = useState(false);
 
   // Panel agregar carta
   const [cardName,      setCardName]      = useState("");
@@ -220,6 +227,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [mgCategory,      setMgCategory]      = useState("todos");
   const [mgSpinning,      setMgSpinning]      = useState(false);
   const [mgWinner,        setMgWinner]        = useState<string | null>(null);
+  const mgIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Chat en vivo
   const [chatMessages, setChatMessages] = useState<{ username: string; text: string; ts: number }[]>([]);
@@ -250,14 +258,21 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       });
     }
 
+    room.on(RoomEvent.Reconnecting, () => { if (alive) setRoomConnected(false); });
+    room.on(RoomEvent.Reconnected,  () => { if (alive) setRoomConnected(true); });
+
     attachChatListener(room);
 
     auctionsApi.livekitToken(a.id)
-      .then(({ data }) => { if (alive) return room.connect(data.wsUrl, data.token); })
+      .then(({ data }) => {
+        if (!alive) return;
+        return room.connect(data.wsUrl, data.token).then(() => { if (alive) setRoomConnected(true); });
+      })
       .catch(() => {});
 
     return () => {
       alive = false;
+      setRoomConnected(false);
       room.disconnect();
       roomRef.current = null;
     };
@@ -272,8 +287,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   }, [chatMessages]);
 
   function attachChatListener(room: Room) {
-    room.on(RoomEvent.DataReceived, (data: Uint8Array) => {
+    room.on(RoomEvent.DataReceived, (data: Uint8Array, participant?: any) => {
       try {
+        if (participant?.identity === room.localParticipant?.identity) return;
         const msg = JSON.parse(new TextDecoder().decode(data));
         if (msg.type === "chat") {
           setChatMessages(prev => [...prev, { username: msg.username, text: censorText(msg.text), ts: msg.ts }]);
@@ -284,6 +300,10 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   async function sendChat() {
     if (!chatInput.trim() || !roomRef.current || !user) return;
+    if (roomRef.current.state !== "connected") {
+      setChatMessages(prev => [...prev, { username: "sistema", text: "Sin conexión, intenta de nuevo", ts: Date.now() }]);
+      return;
+    }
     // Enforce the same 200-char limit the backend socket.io handler uses
     const clean = censorText(chatInput.trim().slice(0, 200));
     if (!clean) { setChatInput(""); return; }
@@ -372,6 +392,10 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     }
   }
 
+  useEffect(() => {
+    return () => { if (mgIntervalRef.current) clearInterval(mgIntervalRef.current); };
+  }, []);
+
   function spinMinigame() {
     const pool = mgCategory === "todos"
       ? streamWinners
@@ -381,12 +405,14 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     setMgWinner(null);
     let ticks = 0;
     const total = 20 + Math.floor(Math.random() * 15);
-    const interval = setInterval(() => {
+    if (mgIntervalRef.current) clearInterval(mgIntervalRef.current);
+    mgIntervalRef.current = setInterval(() => {
       const random = pool[Math.floor(Math.random() * pool.length)];
       setMgWinner(random.username);
       ticks++;
       if (ticks >= total) {
-        clearInterval(interval);
+        clearInterval(mgIntervalRef.current!);
+        mgIntervalRef.current = null;
         setMgSpinning(false);
       }
     }, 80);
@@ -419,6 +445,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       if (camPub?.track && videoRef.current) camPub.track.attach(videoRef.current);
 
       setStreaming(true);
+      capture("stream_started", { auctionId: a.id });
     } catch (err: any) {
       console.error("Stream error:", err);
       const msg: string = err?.message ?? err?.name ?? String(err);
@@ -451,11 +478,18 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   async function endAuction() {
     if (endingAuction) return;
+    if (!confirmEnd) {
+      setConfirmEnd(true);
+      setTimeout(() => setConfirmEnd(false), 3000);
+      return;
+    }
+    setConfirmEnd(false);
     setEndingAuction(true);
     try {
       await stopStream();
       const { data } = await auctionsApi.end(a.id);
       onAuctionUpdate?.(data as any);
+      capture("auction_ended", { auctionId: a.id });
     } catch (err: any) {
       setStreamError(err?.response?.data?.message ?? "Error al terminar la subasta.");
     } finally {
@@ -588,9 +622,11 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                 onClick={endAuction}
                 disabled={endingAuction}
                 className="px-4 py-3 rounded-xl font-bold text-sm disabled:opacity-60 transition-all"
-                style={{ background: "rgba(113,113,122,0.15)", color: "#a1a1aa", border: "1px solid rgba(113,113,122,0.25)" }}
+                style={confirmEnd
+                  ? { background: "rgba(239,68,68,0.2)", color: "#f87171", border: "1px solid rgba(239,68,68,0.4)" }
+                  : { background: "rgba(113,113,122,0.15)", color: "#a1a1aa", border: "1px solid rgba(113,113,122,0.25)" }}
               >
-                {endingAuction ? "..." : "Terminar subasta"}
+                {endingAuction ? "..." : confirmEnd ? "¿Confirmar?" : "Terminar subasta"}
               </button>
             </div>
           ) : (
@@ -611,9 +647,11 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                   onClick={endAuction}
                   disabled={endingAuction}
                   className="text-xs font-bold px-3 py-2 rounded-xl transition-all disabled:opacity-60"
-                  style={{ background: "rgba(113,113,122,0.15)", color: "#a1a1aa", border: "1px solid rgba(113,113,122,0.25)" }}
+                  style={confirmEnd
+                    ? { background: "rgba(239,68,68,0.2)", color: "#f87171", border: "1px solid rgba(239,68,68,0.4)" }
+                    : { background: "rgba(113,113,122,0.15)", color: "#a1a1aa", border: "1px solid rgba(113,113,122,0.25)" }}
                 >
-                  {endingAuction ? "..." : "Terminar"}
+                  {endingAuction ? "..." : confirmEnd ? "¿Confirmar?" : "Terminar"}
                 </button>
               </div>
             </div>
@@ -810,6 +848,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       {/* ── Chat en vivo ── */}
       <div className="bg-[#0d0d14] border-t border-white/5 p-4">
         <p className="text-xs text-zinc-600 font-semibold uppercase tracking-wider mb-3">Chat en vivo</p>
+        {isLive && !roomConnected && roomRef.current && (
+          <p className="text-xs text-amber-400 text-center mb-2 animate-pulse">Reconectando...</p>
+        )}
         <div
           ref={chatBoxRef}
           className="h-36 overflow-y-auto flex flex-col gap-1.5 mb-3 pr-1"
@@ -834,7 +875,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           <input
             value={chatInput}
             onChange={e => setChatInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") sendChat(); }}
+            onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) sendChat(); }}
             placeholder={!user ? "Inicia sesión para chatear" : !roomRef.current ? "Conéctate al stream para chatear" : "Escribe un mensaje…"}
             disabled={!user || !roomRef.current}
             className="flex-1 bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50 disabled:opacity-40"
@@ -935,6 +976,7 @@ function BidPanel({
   activeItem?: ApiAuctionItem;
 }) {
   const { user } = useAuth();
+  const { capture } = useAnalytics();
   const [bids, setBids] = useState<BidRow[]>(initialBids);
   const [bidAmount, setBidAmount] = useState(Math.max(initialCurrentBid + 50, startingBid));
   const [justBid, setJustBid] = useState(false);
@@ -955,14 +997,31 @@ function BidPanel({
   const [settingMaxBid, setSettingMaxBid] = useState(false);
   const [activeMaxBid, setActiveMaxBid] = useState<number | null>(null);
 
+  // Fix 19: Reset bid amount when the active item changes
+  useEffect(() => {
+    setBidAmount(Math.max(initialCurrentBid + 50, startingBid));
+  }, [itemId]);
+
+  // Fix 20: Reset bids list when the active item changes
+  useEffect(() => {
+    setBids(initialBids);
+  }, [itemId]);
+
   const currentBid = bids[0]?.amount ?? initialCurrentBid;
 
   async function toggleWatchlist() {
     if (!user || watchloading) return;
     setWatchloading(true);
     try {
-      await watchlistApi.add(a.id);
-      setWatchlisted(true);
+      if (watchlisted) {
+        await watchlistApi.remove(a.id);
+        setWatchlisted(false);
+        capture("watchlist_removed", { auctionId: a.id });
+      } else {
+        await watchlistApi.add(a.id);
+        setWatchlisted(true);
+        capture("watchlist_added", { auctionId: a.id });
+      }
     } catch {}
     finally { setWatchloading(false); }
   }
@@ -978,6 +1037,20 @@ function BidPanel({
       setBidAmount(bidAmount + 50);
       setJustBid(true);
       setTimeout(() => setJustBid(false), 2500);
+      capture("bid_placed", { auctionId: a.id, itemId, amount: bidAmount });
+      // Reconcile with server truth
+      if (itemId) {
+        auctionsApi.get(a.id).then(r => {
+          const serverItem = r.data.items?.find(i => i.id === itemId);
+          if (serverItem?.bids) {
+            setBids(serverItem.bids.map(b => ({
+              user: b.bidder?.username ?? "—",
+              amount: b.amount,
+              time: new Date(b.createdAt).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+            })));
+          }
+        }).catch(() => {});
+      }
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? "Error al enviar la puja. Intenta de nuevo.";
       setBidError(msg);
@@ -1141,7 +1214,16 @@ function BidPanel({
                 <p className="text-[10px] text-[#a78bfa] font-bold">⚡ Auto-puja activa</p>
                 <p className="text-xs text-white font-semibold">hasta ${activeMaxBid.toLocaleString("es-MX")}</p>
               </div>
-              <button onClick={() => { setActiveMaxBid(null); setMaxBidAmount(0); }} className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors">
+              <button
+                onClick={async () => {
+                  if (itemId) {
+                    try { await auctionsApi.cancelMaxBid(itemId); } catch {}
+                  }
+                  setActiveMaxBid(null);
+                  setMaxBidAmount(0);
+                }}
+                className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors"
+              >
                 ✕ Cancelar
               </button>
             </div>
@@ -1191,6 +1273,7 @@ function BidPanel({
                   setBids([{ user: user.username, amount: a.binPrice!, time: "ahora" }, ...bids]);
                   setJustBid(true);
                   setTimeout(() => setJustBid(false), 2500);
+                  capture("bin_used", { auctionId: a.id, itemId, amount: a.binPrice });
                 } catch (err: any) {
                   const msg = err?.response?.data?.message ?? "Error al comprar. Intenta de nuevo.";
                   setBidError(msg);
@@ -1210,7 +1293,7 @@ function BidPanel({
         <div className="p-3">
           <button
             onClick={toggleWatchlist}
-            disabled={watchloading || watchlisted}
+            disabled={watchloading}
             className="w-full py-3.5 rounded-xl font-bold text-white border transition-all text-sm disabled:opacity-60"
             style={watchlisted
               ? { background: "rgba(74,222,128,0.1)", borderColor: "rgba(74,222,128,0.3)", color: "#4ade80" }

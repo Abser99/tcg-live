@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 import { useAuth } from "@/contexts/auth";
 
@@ -61,7 +62,7 @@ export default function Navbar() {
                         style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
                       >
                         {user.avatarUrl
-                          ? <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
+                          ? <Image src={user.avatarUrl} alt={user.username} width={28} height={28} className="w-full h-full object-cover" />
                           : initials}
                       </span>
                       <span className="hidden sm:inline">{user.username}</span>

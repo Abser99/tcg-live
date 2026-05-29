@@ -3,11 +3,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PushToken } from './entities/push-token.entity';
 import { NotificationsService } from './notifications.service';
 import { NotificationsController } from './notifications.controller';
+import { EmailService } from './email.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([PushToken])],
-  providers: [NotificationsService],
+  providers: [NotificationsService, EmailService],
   controllers: [NotificationsController],
-  exports: [NotificationsService],
+  exports: [NotificationsService, EmailService],
 })
 export class NotificationsModule {}

@@ -10,10 +10,10 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { authApi, type ApiUser } from "@/lib/api";
+import posthog from "posthog-js";
 
 interface AuthState {
   user: ApiUser | null;
-  token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
@@ -25,24 +25,7 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [user, setUser]   = useState<ApiUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-
-  // Restore session from localStorage on mount
-  useEffect(() => {
-    try {
-      const t = localStorage.getItem("tcg_token");
-      const u = localStorage.getItem("tcg_user");
-      if (t && u) {
-        setToken(t);
-        setUser(normalize(JSON.parse(u)));
-      }
-    } catch {
-      // corrupted storage — ignore
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   // Backend returns role as lowercase enum ('admin','seller','buyer'); normalize to uppercase
   function normalize(u: ApiUser): ApiUser {
@@ -53,9 +36,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const normalized = normalize(u);
     localStorage.setItem("tcg_token", t);
     localStorage.setItem("tcg_user", JSON.stringify(normalized));
-    setToken(t);
     setUser(normalized);
+    try {
+      posthog.identify(normalized.id, {
+        username: normalized.username,
+        email: normalized.email,
+        isVerified: normalized.isVerified,
+      });
+    } catch {}
   }
+
+  const logout = useCallback(() => {
+    localStorage.removeItem("tcg_token");
+    localStorage.removeItem("tcg_user");
+    setUser(null);
+    try { posthog.reset(); } catch {}
+    router.push("/login");
+  }, [router]);
+
+  // Restore session from localStorage on mount, then silently verify token
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const t = localStorage.getItem("tcg_token");
+      const u = localStorage.getItem("tcg_user");
+      if (t && u) {
+        setUser(normalize(JSON.parse(u)));
+        // Verify token is still valid in the background
+        authApi.me()
+          .then((r) => { if (!cancelled) setUser(normalize(r.data)); })
+          .catch((err) => {
+            if (!cancelled && err?.response?.status === 401) logout();
+          });
+      }
+    } catch {
+      // corrupted storage — ignore
+    } finally {
+      if (!cancelled) setLoading(false);
+    }
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-verify token when tab becomes visible after being hidden
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") return;
+      const t = localStorage.getItem("tcg_token");
+      if (!t) return;
+      authApi.me()
+        .then((r) => setUser(normalize(r.data)))
+        .catch((err) => { if (err?.response?.status === 401) logout(); });
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [logout]);
 
   const login = useCallback(async (email: string, password: string) => {
     const { data } = await authApi.login(email, password);
@@ -70,16 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const logout = useCallback(() => {
-    localStorage.removeItem("tcg_token");
-    localStorage.removeItem("tcg_user");
-    setToken(null);
-    setUser(null);
-    router.push("/login");
-  }, [router]);
-
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

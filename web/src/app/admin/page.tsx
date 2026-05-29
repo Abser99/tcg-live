@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
 import {
-  sellerApplicationsApi, sellerDocumentsApi, disputesApi,
-  type SellerApplication, type SellerDocumentRecord, type ApiDispute,
+  sellerApplicationsApi, sellerDocumentsApi, disputesApi, usersApi,
+  type SellerApplication, type SellerDocumentRecord, type ApiDispute, type AdminUser,
 } from "@/lib/api";
 
 const DOC_LABELS: Record<string, string> = {
@@ -32,7 +32,7 @@ export default function AdminPage() {
   const [documents,     setDocuments]     = useState<SellerDocumentRecord[]>([]);
   const [allDisputes,   setAllDisputes]   = useState<ApiDispute[]>([]);
   const [loading,       setLoading]       = useState(true);
-  const [tab,           setTab]           = useState<"applications" | "documents" | "disputes">("applications");
+  const [tab,           setTab]           = useState<"applications" | "documents" | "disputes" | "users">("applications");
   const [filter,        setFilter]        = useState("pending");
   const [selected,      setSelected]      = useState<SellerApplication | null>(null);
   const [rejectNote,    setRejectNote]    = useState("");
@@ -43,6 +43,17 @@ export default function AdminPage() {
   const [disputeSelected,  setDisputeSelected]  = useState<ApiDispute | null>(null);
   const [disputeNote,      setDisputeNote]      = useState("");
   const [disputeStatus,    setDisputeStatus]    = useState<"resolved" | "rejected">("resolved");
+
+  // Users tab state
+  const [allUsers,         setAllUsers]         = useState<AdminUser[]>([]);
+  const [usersTotal,       setUsersTotal]        = useState(0);
+  const [usersPage,        setUsersPage]         = useState(1);
+  const [usersLoading,     setUsersLoading]      = useState(false);
+  const [userSearch,       setUserSearch]        = useState("");
+  const [suspendTarget,    setSuspendTarget]     = useState<AdminUser | null>(null);
+  const [suspendReason,    setSuspendReason]     = useState("");
+  const [suspendError,     setSuspendError]      = useState("");
+  const [userFlash,        setUserFlash]         = useState<string | null>(null);
 
   const DISPUTE_REASON_LABELS: Record<string, string> = {
     not_received:     "No recibió el paquete",
@@ -81,6 +92,64 @@ export default function AdminPage() {
   }, [user, filter]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const loadUsers = useCallback(async (page = 1, append = false) => {
+    if (!user || user.role !== "ADMIN") return;
+    setUsersLoading(true);
+    try {
+      const res = await usersApi.listAll(page);
+      setAllUsers(prev => append ? [...prev, ...res.data] : res.data);
+      setUsersTotal(res.total);
+      setUsersPage(page);
+    } catch {
+      // silently fail — existing flash handles errors
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (tab === "users" && allUsers.length === 0) loadUsers(1);
+  }, [tab, allUsers.length, loadUsers]);
+
+  function showFlash(msg: string) {
+    setUserFlash(msg);
+    setTimeout(() => setUserFlash(null), 3000);
+  }
+
+  async function handleSuspend() {
+    if (!suspendTarget) return;
+    if (suspendReason.trim().length < 10) {
+      setSuspendError("El motivo debe tener al menos 10 caracteres.");
+      return;
+    }
+    setSuspendError("");
+    setActionLoading(true);
+    try {
+      const res = await usersApi.suspend(suspendTarget.id, suspendReason.trim());
+      setAllUsers(prev => prev.map(u => u.id === suspendTarget.id ? res.data : u));
+      setSuspendTarget(null);
+      setSuspendReason("");
+      showFlash("Usuario suspendido correctamente.");
+    } catch {
+      setSuspendError("Error al suspender el usuario. Intenta de nuevo.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleUnsuspend(targetUser: AdminUser) {
+    setActionLoading(true);
+    try {
+      const res = await usersApi.unsuspend(targetUser.id);
+      setAllUsers(prev => prev.map(u => u.id === targetUser.id ? res.data : u));
+      showFlash("Usuario reactivado correctamente.");
+    } catch {
+      showFlash("Error al reactivar el usuario. Intenta de nuevo.");
+    } finally {
+      setActionLoading(false);
+    }
+  }
 
   async function reviewApplication(id: string, status: "approved" | "rejected") {
     setActionLoading(true);
@@ -123,6 +192,12 @@ export default function AdminPage() {
   const pendingApps      = applications.filter(a => a.status === "pending").length;
   const pendingDocs      = documents.filter(d => d.status === "pending").length;
   const openDisputes     = allDisputes.filter(d => d.status === "open" || d.status === "under_review").length;
+  const suspendedCount   = allUsers.filter(u => u.isSuspended).length;
+  const filteredUsers    = allUsers.filter(u =>
+    userSearch.trim() === "" ||
+    u.username.toLowerCase().includes(userSearch.toLowerCase()) ||
+    u.email.toLowerCase().includes(userSearch.toLowerCase())
+  );
   const filteredDisputes = filter === "all"
     ? allDisputes
     : allDisputes.filter(d => {
@@ -156,11 +231,12 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="flex gap-1 mt-6">
+          <div className="flex gap-1 mt-6 flex-wrap">
             {[
               { key: "applications", label: "Solicitudes de Vendedor", count: pendingApps  },
               { key: "documents",    label: "Documentos KYC",          count: pendingDocs  },
               { key: "disputes",     label: "Disputas",                count: openDisputes },
+              { key: "users",        label: "Usuarios",                count: suspendedCount },
             ].map(t => (
               <button key={t.key} onClick={() => setTab(t.key as typeof tab)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-sm font-semibold border-b-2 transition-all"
@@ -322,6 +398,118 @@ export default function AdminPage() {
               </div>
             )}
 
+            {/* ── USUARIOS ── */}
+            {tab === "users" && (
+              <div>
+                {/* Flash */}
+                {userFlash && (
+                  <div className="mb-4 px-4 py-3 rounded-xl text-sm font-semibold"
+                    style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.25)" }}>
+                    {userFlash}
+                  </div>
+                )}
+
+                {/* Search */}
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    value={userSearch}
+                    onChange={e => setUserSearch(e.target.value)}
+                    placeholder="Buscar por usuario o correo..."
+                    className="w-full bg-[#16161E] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50"
+                  />
+                </div>
+
+                {usersLoading && allUsers.length === 0 ? (
+                  <div className="flex items-center justify-center py-20">
+                    <div className="w-6 h-6 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+                  </div>
+                ) : (
+                  <>
+                    {filteredUsers.length === 0 && (
+                      <div className="text-center py-16 text-zinc-500">No se encontraron usuarios</div>
+                    )}
+
+                    <div className="space-y-2">
+                      {filteredUsers.map(u => (
+                        <div key={u.id} className="flex items-center gap-4 rounded-2xl p-4 flex-wrap"
+                          style={{ background: "#16161E", border: `1px solid ${u.isSuspended ? "rgba(248,113,113,0.2)" : "rgba(255,255,255,0.07)"}` }}>
+
+                          {/* Avatar placeholder + info */}
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-black"
+                              style={{ background: u.isSuspended ? "rgba(248,113,113,0.15)" : "rgba(108,58,232,0.2)", color: u.isSuspended ? "#f87171" : "#a78bfa" }}>
+                              {u.username.slice(0, 1).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-bold text-sm">@{u.username}</p>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                  style={u.isSuspended
+                                    ? { background: "rgba(248,113,113,0.15)", color: "#f87171" }
+                                    : { background: "rgba(74,222,128,0.12)", color: "#4ade80" }}>
+                                  {u.isSuspended ? "Suspendido" : "Activo"}
+                                </span>
+                                {u.isVerified && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                    style={{ background: "rgba(96,165,250,0.12)", color: "#60a5fa" }}>
+                                    Verificado
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-zinc-500 truncate">{u.email}</p>
+                              {u.isSuspended && u.suspendReason && (
+                                <p className="text-[11px] text-red-400 mt-0.5 truncate" title={u.suspendReason}>
+                                  Motivo: {u.suspendReason}
+                                </p>
+                              )}
+                              <p className="text-[11px] text-zinc-600 mt-0.5">
+                                Registro: {new Date(u.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="shrink-0 flex gap-2">
+                            {u.isSuspended ? (
+                              <button
+                                onClick={() => handleUnsuspend(u)}
+                                disabled={actionLoading}
+                                className="text-xs font-black px-4 py-2 rounded-xl disabled:opacity-50"
+                                style={{ background: "rgba(74,222,128,0.15)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.3)" }}>
+                                Reactivar
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => { setSuspendTarget(u); setSuspendReason(""); setSuspendError(""); }}
+                                disabled={actionLoading}
+                                className="text-xs font-black px-4 py-2 rounded-xl disabled:opacity-50"
+                                style={{ background: "rgba(248,113,113,0.12)", color: "#f87171", border: "1px solid rgba(248,113,113,0.3)" }}>
+                                Suspender
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Load more */}
+                    {userSearch.trim() === "" && allUsers.length < usersTotal && (
+                      <div className="flex justify-center mt-6">
+                        <button
+                          onClick={() => loadUsers(usersPage + 1, true)}
+                          disabled={usersLoading}
+                          className="text-sm font-bold px-6 py-2.5 rounded-xl disabled:opacity-50"
+                          style={{ background: "rgba(108,58,232,0.2)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.3)" }}>
+                          {usersLoading ? "Cargando..." : "Cargar más"}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
             {/* ── DOCUMENTOS KYC ── */}
             {tab === "documents" && (
               <div className="space-y-2">
@@ -399,6 +587,42 @@ export default function AdminPage() {
       {docPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-zoom-out" style={{ background: "rgba(0,0,0,0.9)" }} onClick={() => setDocPreview(null)}>
           <img src={docPreview} alt="Documento" className="max-w-full max-h-full rounded-xl object-contain" />
+        </div>
+      )}
+
+      {/* Modal suspender usuario */}
+      {suspendTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <h3 className="font-black text-lg mb-1">Suspender usuario</h3>
+            <p className="text-sm text-zinc-500 mb-4">@{suspendTarget.username} · {suspendTarget.email}</p>
+            <label className="text-xs font-semibold text-zinc-400 block mb-2">Motivo de la suspensión</label>
+            <textarea
+              value={suspendReason}
+              onChange={e => { setSuspendReason(e.target.value); setSuspendError(""); }}
+              rows={3}
+              placeholder="Describe el motivo (mínimo 10 caracteres)..."
+              className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-red-500/50 resize-none mb-2"
+            />
+            {suspendError && (
+              <p className="text-xs text-red-400 mb-3">{suspendError}</p>
+            )}
+            <div className="flex gap-3 mt-2">
+              <button
+                onClick={() => { setSuspendTarget(null); setSuspendReason(""); setSuspendError(""); }}
+                className="flex-1 py-3 rounded-xl font-bold text-zinc-400 text-sm"
+                style={{ background: "rgba(255,255,255,0.05)" }}>
+                Cancelar
+              </button>
+              <button
+                onClick={handleSuspend}
+                disabled={actionLoading || suspendReason.trim().length < 10}
+                className="flex-1 py-3 rounded-xl font-black text-white text-sm disabled:opacity-50"
+                style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)" }}>
+                {actionLoading ? "..." : "Confirmar suspensión"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

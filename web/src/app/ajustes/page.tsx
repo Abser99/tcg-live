@@ -6,20 +6,8 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
 import { usersApi, sellerApplicationsApi, sellerDocumentsApi, type ApiUser, type SellerApplication, type SellerDocumentRecord } from "@/lib/api";
-
-const CLOUDINARY_CLOUD  = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dsjhoj5wt";
-const CLOUDINARY_PRESET = "tcg_live";
-
-async function uploadToCloudinary(file: File): Promise<string> {
-  const form = new FormData();
-  form.append("file", file);
-  form.append("upload_preset", CLOUDINARY_PRESET);
-  form.append("folder", "tcg-live/seller-docs");
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/auto/upload`, { method: "POST", body: form });
-  const data = await res.json();
-  if (!data.secure_url) throw new Error("Error al subir archivo");
-  return data.secure_url as string;
-}
+import { uploadToCloudinary } from "@/lib/cloudinary";
+import { useAnalytics } from "@/hooks/useAnalytics";
 
 const REQUIRED_DOCS: { type: string; label: string; hint: string; needsDate: boolean }[] = [
   { type: "identificacion",        label: "Identificación Oficial",         hint: "INE o Pasaporte vigente",                            needsDate: false },
@@ -99,6 +87,7 @@ function SaveButton({ loading, saved, onClick }: { loading: boolean; saved: bool
 export default function AjustesPage() {
   const { user, loading: authLoading, logout } = useAuth();
   const router = useRouter();
+  const { capture } = useAnalytics();
   const [activeSection, setActiveSection] = useState<Section>("cuenta");
 
   // Full user data (includes address fields)
@@ -156,6 +145,13 @@ export default function AjustesPage() {
   }, [authLoading, user, router]);
 
   useEffect(() => {
+    if (!showSellerModal) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setShowSellerModal(false); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showSellerModal]);
+
+  useEffect(() => {
     if (!user) return;
     Promise.all([
       usersApi.me().catch(() => null),
@@ -189,14 +185,7 @@ export default function AjustesPage() {
     setAvatarUploading(true);
     setProfileError("");
     try {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("upload_preset", CLOUDINARY_PRESET);
-      form.append("folder", "tcg-live/avatars");
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, { method: "POST", body: form });
-      const data = await res.json();
-      if (!data.secure_url) throw new Error("Error al subir imagen");
-      const url = data.secure_url as string;
+      const url = await uploadToCloudinary(file, "tcg-live/avatars", "image");
       setAvatarUrl(url);
       await usersApi.updateProfile({ avatarUrl: url });
     } catch {
@@ -212,6 +201,7 @@ export default function AjustesPage() {
     setProfileSaved(false);
     try {
       await usersApi.updateProfile({ username: profileForm.username, displayName: profileForm.displayName });
+      capture("profile_updated");
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 3000);
     } catch (e: any) {
@@ -274,7 +264,7 @@ export default function AjustesPage() {
       setReuploadBusy(p => ({ ...p, [type]: true }));
       setReuploadError(p => ({ ...p, [type]: "" }));
       try {
-        const url = await uploadToCloudinary(file);
+        const url = await uploadToCloudinary(file, "tcg-live/seller-docs", "auto");
         setReuploadUrls(p => ({ ...p, [type]: url }));
       } catch { setReuploadError(p => ({ ...p, [type]: "Error al subir. Intenta de nuevo." })); }
       finally { setReuploadBusy(p => ({ ...p, [type]: false })); }
@@ -282,7 +272,7 @@ export default function AjustesPage() {
       setDocUploading(p => ({ ...p, [type]: true }));
       setSellerError("");
       try {
-        const url = await uploadToCloudinary(file);
+        const url = await uploadToCloudinary(file, "tcg-live/seller-docs", "auto");
         setDocUrls(p => ({ ...p, [type]: url }));
       } catch { setSellerError("Error al subir archivo. Intenta de nuevo."); }
       finally { setDocUploading(p => ({ ...p, [type]: false })); }
@@ -323,6 +313,7 @@ export default function AjustesPage() {
       }
       const { data } = await sellerApplicationsApi.apply(sellerForm);
       setApplication(data);
+      capture("seller_application_submitted");
       setShowSellerModal(false);
     } catch (e: any) {
       setSellerError(e?.response?.data?.message ?? "Error al enviar solicitud. Intenta de nuevo.");
@@ -415,7 +406,7 @@ export default function AjustesPage() {
                         style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 0 24px rgba(108,58,232,0.4)" }}
                       >
                         {avatarUrl
-                          ? <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                          ? <img src={avatarUrl} alt="avatar" width={64} height={64} className="w-full h-full object-cover" />
                           : initials
                         }
                       </div>
@@ -963,8 +954,8 @@ export default function AjustesPage() {
       {/* ── MODAL SOLICITUD VENDEDOR ── */}
       {showSellerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
-          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <button onClick={() => setShowSellerModal(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
+          <div role="dialog" aria-modal="true" className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <button onClick={() => setShowSellerModal(false)} aria-label="Cerrar" className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
 
             <h2 className="text-xl font-black mb-1">Solicitar cuenta de vendedor</h2>
             <p className="text-xs text-zinc-500 mb-6">Paso {sellerStep} de 2 — {sellerStep === 1 ? "Datos personales" : "Documentos requeridos"}</p>

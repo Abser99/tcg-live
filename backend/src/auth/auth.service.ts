@@ -55,6 +55,10 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
 
+    if (user.isSuspended) {
+      throw new UnauthorizedException('Tu cuenta ha sido suspendida. Contacta a soporte en tcgsubastas@gmail.com');
+    }
+
     const token = this.jwtService.sign({ sub: user.id });
     return { token, user: this.sanitize(user) };
   }

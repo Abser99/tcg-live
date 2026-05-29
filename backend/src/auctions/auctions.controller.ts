@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { IsArray, IsEnum, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
 import { AuctionsService } from './auctions.service';
 import { CreateAuctionDto } from './dto/create-auction.dto';
@@ -60,6 +61,8 @@ export class AuctionsController {
     @Query('condition') condition?: string,
     @Query('minPrice') minPrice?: string,
     @Query('maxPrice') maxPrice?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     return this.auctionsService.findAll({
       query: q,
@@ -67,6 +70,8 @@ export class AuctionsController {
       condition,
       minPrice: minPrice ? parseInt(minPrice, 10) : undefined,
       maxPrice: maxPrice ? parseInt(maxPrice, 10) : undefined,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 20,
     });
   }
 
@@ -158,6 +163,7 @@ export class AuctionsController {
 
   @Post('items/:itemId/bids')
   @UseGuards(AuthGuard('jwt'))
+  @Throttle({ default: { limit: 10, ttl: 10000 } })
   placeBid(
     @Param('itemId') itemId: string,
     @CurrentUser() user: User,
@@ -180,5 +186,11 @@ export class AuctionsController {
     @Body() dto: SetMaxBidDto,
   ) {
     return this.auctionsService.setMaxBid(itemId, user.id, dto);
+  }
+
+  @Delete('items/:itemId/max-bid')
+  @UseGuards(AuthGuard('jwt'))
+  cancelMaxBid(@Param('itemId') itemId: string, @CurrentUser() user: User) {
+    return this.auctionsService.cancelMaxBid(itemId, user.id);
   }
 }

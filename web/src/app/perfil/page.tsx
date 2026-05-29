@@ -4,8 +4,24 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { useAuth } from "@/contexts/auth";
 import { ordersApi, auctionsApi, paymentsApi, watchlistApi, messagesApi, sellerApplicationsApi, sellerDocumentsApi, disputesApi, type ApiOrder, type ApiBid, type WatchlistItem, type MessageThread, type SellerApplication, type SellerDocumentRecord, type ApiDispute, type ApiMessage } from "@/lib/api";
+import { uploadToCloudinary } from "@/lib/cloudinary";
+import { useAnalytics } from "@/hooks/useAnalytics";
+
+interface Order {
+  id: string;
+  item: string;
+  emoji: string;
+  gradient: string;
+  glow: string;
+  amount: number;
+  status: string;
+  date: string;
+  seller: string;
+  tracking?: string;
+}
 
 // ─── TCG-themed empty state messages ───────────────────────
 const TCG_EMPTY = {
@@ -34,8 +50,6 @@ function pickEmpty(key: keyof typeof TCG_EMPTY) {
   const arr = TCG_EMPTY[key];
   return arr[Math.floor(Math.random() * arr.length)];
 }
-import type { Order } from "@/lib/mock-data";
-
 type Tab = "ordenes" | "watchlist" | "mensajes" | "disputas";
 
 const TABS: { key: Tab; label: string }[] = [
@@ -83,20 +97,6 @@ const ORDER_STATUS: Record<string, { label: string; icon: string; color: string 
 
 const PAYMENTS_ENABLED = true;
 
-const CLOUDINARY_CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dsjhoj5wt";
-const CLOUDINARY_PRESET = "tcg_live";
-
-async function uploadToCloudinary(file: File): Promise<string> {
-  const form = new FormData();
-  form.append("file", file);
-  form.append("upload_preset", CLOUDINARY_PRESET);
-  form.append("folder", "tcg-live/seller-docs");
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/auto/upload`, { method: "POST", body: form });
-  const data = await res.json();
-  if (!data.secure_url) throw new Error("Error al subir archivo");
-  return data.secure_url as string;
-}
-
 const REQUIRED_DOCS: { type: string; label: string; hint: string; needsDate: boolean }[] = [
   { type: "identificacion",       label: "Identificación Oficial",          hint: "INE o Pasaporte vigente",                        needsDate: false },
   { type: "curp",                 label: "CURP",                            hint: "Documento CURP actualizado",                     needsDate: false },
@@ -121,6 +121,7 @@ async function initiateCheckout(orderId: string) {
 export default function PerfilPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const { capture } = useAnalytics();
   const [tab, setTab] = useState<Tab>("ordenes");
 
   // Real data
@@ -172,6 +173,34 @@ export default function PerfilPage() {
   }, [authLoading, user, router]);
 
   useEffect(() => {
+    if (!chatThread) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setChatThread(null); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [chatThread]);
+
+  useEffect(() => {
+    if (!showDisputeModal) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setShowDisputeModal(false); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showDisputeModal]);
+
+  useEffect(() => {
+    if (!ratingOrderId) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setRatingOrderId(null); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [ratingOrderId]);
+
+  useEffect(() => {
+    if (!showSellerModal) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setShowSellerModal(false); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showSellerModal]);
+
+  useEffect(() => {
     if (!user) return;
     setDataLoading(true);
     Promise.all([
@@ -195,7 +224,7 @@ export default function PerfilPage() {
     setDocFiles(p => ({ ...p, [type]: file }));
     setDocUploading(p => ({ ...p, [type]: true }));
     try {
-      const url = await uploadToCloudinary(file);
+      const url = await uploadToCloudinary(file, "tcg-live/seller-docs", "auto");
       setDocUrls(p => ({ ...p, [type]: url }));
     } catch {
       setSellerError("Error al subir archivo. Intenta de nuevo.");
@@ -234,6 +263,7 @@ export default function PerfilPage() {
     try {
       const { data } = await disputesApi.open({ orderId: disputeOrderId, reason: disputeReason, description: disputeDesc });
       setDisputes(prev => [data, ...(prev ?? [])]);
+      capture("dispute_opened", { orderId: disputeOrderId });
       setShowDisputeModal(false);
       setDisputeReason("");
       setDisputeDesc("");
@@ -287,6 +317,7 @@ export default function PerfilPage() {
     try {
       const { data } = await ordersApi.rateOrder(ratingOrderId, ratingStars, ratingNote || undefined);
       setRealOrders(prev => prev?.map(o => o.id === ratingOrderId ? { ...o, sellerRating: data.sellerRating } : o) ?? prev);
+      capture("rating_submitted", { orderId: ratingOrderId, rating: ratingStars });
       setRatingOrderId(null);
       setRatingStars(5);
       setRatingNote("");
@@ -329,6 +360,7 @@ export default function PerfilPage() {
   };
 
   return (
+    <ErrorBoundary>
     <div className="min-h-screen bg-[#0F0F14] text-white">
       <Navbar />
 
@@ -664,7 +696,16 @@ export default function PerfilPage() {
                             </span>
                           </div>
                         </div>
-                        <button onClick={(e) => e.preventDefault()} className="shrink-0 text-zinc-600 hover:text-red-400 transition-colors text-lg">♡</button>
+                        <button
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            try {
+                              await watchlistApi.remove(a.id);
+                              setRealWatchlist(prev => prev?.filter(item => item.id !== w.id) ?? prev);
+                            } catch {}
+                          }}
+                          className="shrink-0 text-zinc-600 hover:text-red-400 transition-colors text-lg"
+                        >♡</button>
                       </div>
                     </Link>
                   );
@@ -763,7 +804,7 @@ export default function PerfilPage() {
       {/* ── MODAL CHAT ── */}
       {chatThread && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
-          <div className="relative w-full sm:max-w-md flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh" }}>
+          <div role="dialog" aria-modal="true" className="relative w-full sm:max-w-md flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh" }}>
             {/* Header */}
             <div className="flex items-center gap-3 px-5 py-4 border-b border-white/5 shrink-0">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black shrink-0" style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa" }}>
@@ -773,7 +814,7 @@ export default function PerfilPage() {
                 <p className="font-bold text-sm">{chatThread.otherUser?.username ?? "Usuario"}</p>
                 <p className="text-[11px] text-zinc-500 font-mono truncate">Orden {chatThread.orderId.slice(0, 8)}…</p>
               </div>
-              <button onClick={() => setChatThread(null)} className="text-zinc-500 hover:text-white text-xl shrink-0">✕</button>
+              <button onClick={() => setChatThread(null)} aria-label="Cerrar" className="text-zinc-500 hover:text-white text-xl shrink-0">✕</button>
             </div>
 
             {/* Messages */}
@@ -834,8 +875,8 @@ export default function PerfilPage() {
       {/* ── MODAL ABRIR DISPUTA ── */}
       {showDisputeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
-          <div className="relative w-full max-w-md rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <button onClick={() => setShowDisputeModal(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
+          <div role="dialog" aria-modal="true" className="relative w-full max-w-md rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <button onClick={() => setShowDisputeModal(false)} aria-label="Cerrar" className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
 
             <h2 className="text-xl font-black mb-1">Reportar un problema</h2>
             <p className="text-xs text-zinc-500 mb-5">Orden: <span className="font-mono">{disputeOrderId.slice(0, 8)}…</span></p>
@@ -894,8 +935,8 @@ export default function PerfilPage() {
       {/* ── MODAL CALIFICAR VENDEDOR ── */}
       {ratingOrderId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
-          <div className="relative w-full max-w-sm rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <button onClick={() => setRatingOrderId(null)} className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
+          <div role="dialog" aria-modal="true" className="relative w-full max-w-sm rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <button onClick={() => setRatingOrderId(null)} aria-label="Cerrar" className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
             <h2 className="text-xl font-black mb-1">Calificar vendedor</h2>
             <p className="text-xs text-zinc-500 mb-5">¿Cómo fue tu experiencia con esta orden?</p>
 
@@ -952,8 +993,8 @@ export default function PerfilPage() {
       {/* ── MODAL SOLICITUD VENDEDOR ── */}
       {showSellerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
-          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <button onClick={() => setShowSellerModal(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
+          <div role="dialog" aria-modal="true" className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <button onClick={() => setShowSellerModal(false)} aria-label="Cerrar" className="absolute top-4 right-4 text-zinc-500 hover:text-white text-xl">✕</button>
 
             <h2 className="text-xl font-black mb-1">Solicitar cuenta de vendedor</h2>
             <p className="text-xs text-zinc-500 mb-6">Paso {sellerStep} de 2 — {sellerStep === 1 ? "Datos personales" : "Documentos requeridos"}</p>
@@ -1049,5 +1090,6 @@ export default function PerfilPage() {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }

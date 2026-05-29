@@ -53,6 +53,15 @@ export class User {
   @Column({ default: false })
   isVerified: boolean; // set to true when seller documents are approved
 
+  @Column({ default: false })
+  isSuspended: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  suspendedAt: Date | null;
+
+  @Column({ nullable: true })
+  suspendReason: string | null;
+
   @Column({ nullable: true, length: 300 })
   shippingNote: string;
 

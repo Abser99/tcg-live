@@ -59,10 +59,12 @@ const BAD_WORDS = [
   "retard",
 ];
 
-// Build regex once at module load — match whole-word occurrences, case-insensitive
+const LETTER = "[a-záéíóúüñA-ZÁÉÍÓÚÜÑA-Za-z0-9_]";
+// Build regex once at module load — use lookahead/lookbehind word boundaries
+// that handle Spanish accented characters correctly.
 const pattern = new RegExp(
-  `(${BAD_WORDS.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
-  "gi"
+  `(?<!${LETTER})(${BAD_WORDS.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?!${LETTER})`,
+  "giu"
 );
 
 export function censorText(text: string): string {
