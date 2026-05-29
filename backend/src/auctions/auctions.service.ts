@@ -20,6 +20,7 @@ import { UsersService } from '../users/users.service';
 import { OrdersService } from '../orders/orders.service';
 import { WatchlistService } from '../watchlist/watchlist.service';
 import { FollowsService } from '../follows/follows.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const MIN_BID_INCREMENT = 100; // 1 MXN in cents
 const ITEM_TIMER_MS = 60_000;   // 60s per item
@@ -44,6 +45,7 @@ export class AuctionsService implements OnModuleInit {
     private readonly ordersService: OrdersService,
     private readonly watchlistService: WatchlistService,
     private readonly followsService: FollowsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   onModuleInit() {
@@ -132,8 +134,12 @@ export class AuctionsService implements OnModuleInit {
     condition?: string;
     minPrice?: number;
     maxPrice?: number;
-  } = {}): Promise<Auction[]> {
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{ data: Auction[]; total: number; page: number; limit: number }> {
     const { query, game, condition, minPrice, maxPrice } = params;
+    const page  = Math.max(1, params.page  ?? 1);
+    const limit = Math.min(Math.max(1, params.limit ?? 20), 50);
 
     const qb = this.auctionsRepo.createQueryBuilder('a')
       .leftJoinAndSelect('a.seller', 'seller')
@@ -177,11 +183,14 @@ export class AuctionsService implements OnModuleInit {
       );
     }
 
-    return qb
+    const [data, total] = await qb
       .orderBy('a.status', 'DESC')
       .addOrderBy('a.scheduledAt', 'ASC')
-      .take(100) // safety cap — paginate if catalog grows
-      .getMany();
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return { data, total, page, limit };
   }
 
   async findOne(id: string): Promise<Auction> {
@@ -251,7 +260,7 @@ export class AuctionsService implements OnModuleInit {
   }
 
   async placeBid(itemId: string, bidderId: string, dto: PlaceBidDto): Promise<Bid> {
-    const { bid, auctionId, autoBid, closesAt, binTriggered } = await this.dataSource.transaction(async (manager) => {
+    const { bid, auctionId, autoBid, closesAt, binTriggered, prevWinnerId, cardName } = await this.dataSource.transaction(async (manager) => {
       const item = await manager.findOne(AuctionItem, {
         where: { id: itemId },
         lock: { mode: 'pessimistic_write' },
@@ -321,8 +330,18 @@ export class AuctionsService implements OnModuleInit {
         }
       }
 
-      return { bid: savedBid, auctionId: item.auctionId, autoBid, closesAt: item.closesAt, binTriggered };
+      return { bid: savedBid, auctionId: item.auctionId, autoBid, closesAt: item.closesAt, binTriggered, prevWinnerId, cardName: item.cardName };
     });
+
+    // Notify previous highest bidder that they were outbid (fire-and-forget)
+    if (prevWinnerId && prevWinnerId !== bidderId) {
+      const amountMxn = (dto.amount / 100).toFixed(0);
+      this.notificationsService.sendToUser(prevWinnerId, {
+        title: '¡Te superaron!',
+        body: `Alguien pujó $${amountMxn} MXN por ${cardName}. Vuelve a pujar para no perderla.`,
+        data: { type: 'outbid', auctionId, itemId },
+      }).catch(() => {});
+    }
 
     const bidder = await this.usersService.findById(bidderId);
     this.gateway.emitBidPlaced(auctionId, {
@@ -386,6 +405,11 @@ export class AuctionsService implements OnModuleInit {
     if (item.winnerId !== userId) {
       await this.placeBid(itemId, userId, { amount: item.currentPrice + MIN_BID_INCREMENT });
     }
+  }
+
+  async cancelMaxBid(itemId: string, userId: string): Promise<void> {
+    const deleted = await this.maxBidsRepo.delete({ auctionItemId: itemId, userId });
+    if (!deleted.affected) throw new NotFoundException('No se encontró una puja automática activa para cancelar');
   }
 
   async closeItem(itemId: string, sellerId: string): Promise<AuctionItem> {
