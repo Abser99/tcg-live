@@ -59,7 +59,7 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   suspendedAt: Date | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   suspendReason: string | null;
 
   @Column({ nullable: true, length: 300 })
