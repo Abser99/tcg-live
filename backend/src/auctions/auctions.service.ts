@@ -214,7 +214,7 @@ export class AuctionsService implements OnModuleInit {
     return this.findOne(id);
   }
 
-  async start(id: string, sellerId: string): Promise<Auction> {
+  async start(id: string, sellerId: string, durationMs?: number): Promise<Auction> {
     const auction = await this.findOne(id);
     this.assertOwner(auction.sellerId, sellerId);
     if (auction.status !== AuctionStatus.SCHEDULED) {
@@ -227,7 +227,7 @@ export class AuctionsService implements OnModuleInit {
     const firstItem = [...auction.items].sort((a, b) => a.position - b.position)[0];
     if (firstItem) {
       firstItem.status = AuctionItemStatus.ACTIVE;
-      firstItem.closesAt = new Date(Date.now() + ITEM_TIMER_MS);
+      firstItem.closesAt = new Date(Date.now() + (durationMs ?? ITEM_TIMER_MS));
       await this.itemsRepo.save(firstItem);
     }
 

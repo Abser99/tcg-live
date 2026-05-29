@@ -132,8 +132,8 @@ export class AuctionsController {
   @Patch(':id/start')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.SELLER, UserRole.ADMIN)
-  start(@Param('id') id: string, @CurrentUser() user: User) {
-    return this.auctionsService.start(id, user.id);
+  start(@Param('id') id: string, @CurrentUser() user: User, @Body() body?: { durationMs?: number }) {
+    return this.auctionsService.start(id, user.id, body?.durationMs);
   }
 
   @Patch(':id/end')

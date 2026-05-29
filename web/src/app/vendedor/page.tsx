@@ -164,25 +164,24 @@ export default function VendedorPage() {
     }
     setCreating(true);
     try {
-      const durationMs = form.duration ? DURATION_MS[form.duration] : undefined;
-      const scheduledAt = durationMs ? new Date(Date.now() + durationMs).toISOString() : undefined;
-      await auctionsApi.create({
+      const durationMs = form.duration ? DURATION_MS[form.duration] : 30 * 60 * 1000; // default 30 min
+      const res = await auctionsApi.create({
         title: form.name,
         description: form.description || undefined,
-        scheduledAt,
         items: [{
-          cardName:     form.name,
-          cardSet:      form.set || undefined,
-          condition:    form.condition || undefined,
-          startingPrice: Number(form.startingBid), // MXN pesos
+          cardName:      form.name,
+          cardSet:       form.set || undefined,
+          condition:     form.condition || undefined,
+          startingPrice: Number(form.startingBid),
           binPrice:      form.binPrice ? Number(form.binPrice) : undefined,
           imageUrls:     form.imageUrl ? [form.imageUrl] : undefined,
         }],
       });
-      setSubmitted(true);
+      const auctionId = res.data.id;
+      // Auto-start immediately with the chosen duration so buyers can bid right away
+      await auctionsApi.start(auctionId, durationMs);
       capture("auction_created", { game: form.set || undefined, hasImage: !!form.imageUrl });
-      // Refresh auctions list
-      auctionsApi.my().then(r => setMyAuctions(r.data)).catch(() => {});
+      router.push(`/auctions/${auctionId}`);
     } catch (err: any) {
       setCreateError(err?.response?.data?.message ?? "Error al crear la subasta. Verifica tus datos.");
     } finally {
