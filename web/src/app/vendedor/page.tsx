@@ -158,6 +158,10 @@ export default function VendedorPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setCreateError("");
+    if (!form.imageUrl) {
+      setCreateError("Sube una foto del producto para continuar.");
+      return;
+    }
     if (!form.name || !form.condition || !form.startingBid) {
       setCreateError("Completa todos los campos obligatorios.");
       return;
@@ -842,9 +846,9 @@ export default function VendedorPage() {
                   )}
                   <div className="text-center">
                     <p className="font-semibold text-sm">
-                      {uploadingImg ? "Subiendo imagen..." : form.imageUrl ? "✓ Imagen subida — clic para cambiar" : "Subir foto de la carta"}
+                      {uploadingImg ? "Subiendo imagen..." : form.imageUrl ? "✓ Imagen subida — clic para cambiar" : <>Subir foto del producto <span className="text-[#6C3AE8]">*</span></>}
                     </p>
-                    <p className="text-xs text-zinc-600 mt-1">PNG, JPG hasta 10 MB</p>
+                    <p className="text-xs text-zinc-600 mt-1">{form.imageUrl ? "Clic para cambiar" : "Obligatorio · PNG, JPG hasta 10 MB"}</p>
                   </div>
                   {!form.imageUrl && !uploadingImg && (
                     <span className="text-xs font-semibold px-4 py-2 rounded-xl" style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa" }}>
