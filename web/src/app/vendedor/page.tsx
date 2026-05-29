@@ -238,7 +238,7 @@ export default function VendedorPage() {
     setShowStreamForm(false);
     setLaunchingStream(true);
     try {
-      const res = await auctionsApi.create({ title: streamTitle.trim(), game: streamGame as any });
+      const res = await auctionsApi.create({ title: streamTitle.trim(), game: streamGame as any, isStream: true });
       const auctionId = (res.data as any).id;
       await auctionsApi.start(auctionId);
       router.push(`/auctions/${auctionId}?stream=1`);

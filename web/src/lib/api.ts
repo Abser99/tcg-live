@@ -235,6 +235,7 @@ export interface ApiAuction {
   id: string;
   sellerId?: string;
   status: "live" | "ending" | "upcoming" | "ended";
+  isStream?: boolean;
   title?: string;
   name?: string;
   set?: string;
@@ -259,6 +260,7 @@ export interface ApiAuctionItem {
   condition: string;
   startingBid: number;
   currentBid?: number;
+  imageUrls?: string[];
   category?: string;
   status?: string;
   closesAt?: string;
@@ -408,6 +410,7 @@ export interface CreateAuctionPayload {
   title: string;
   game?: string;
   description?: string;
+  isStream?: boolean;
   items?: { cardName: string; cardSet?: string; condition?: string; startingPrice: number; binPrice?: number; imageUrls?: string[] }[];
   scheduledAt?: string;
 }

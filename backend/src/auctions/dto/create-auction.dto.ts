@@ -79,6 +79,10 @@ export class CreateAuctionDto {
   @IsOptional()
   scheduledAt?: string;
 
+  @IsBoolean({ message: 'El campo isStream debe ser verdadero o falso' })
+  @IsOptional()
+  isStream?: boolean;
+
   @IsArray({ message: 'Los artículos deben ser una lista' })
   @ValidateNested({ each: true })
   @Type(() => CreateAuctionItemDto)

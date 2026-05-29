@@ -62,6 +62,9 @@ export class Auction {
   @Column({ nullable: true })
   endedAt: Date;
 
+  @Column({ default: false })
+  isStream: boolean;
+
   @Column({ nullable: true })
   livestreamRoomId: string;
 

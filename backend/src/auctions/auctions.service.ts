@@ -96,6 +96,7 @@ export class AuctionsService implements OnModuleInit {
       title: dto.title,
       game: dto.game,
       description: dto.description,
+      isStream: dto.isStream ?? false,
       scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
       items: (dto.items ?? []).map((item, index) =>
         this.itemsRepo.create({

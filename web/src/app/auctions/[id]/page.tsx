@@ -143,11 +143,14 @@ function AuctionDetailPageInner() {
 
         <div className="mx-auto max-w-7xl px-4 sm:px-6 pb-16">
           <div className="grid lg:grid-cols-[1fr_360px] gap-6 items-start">
-            {/* Stream — always first */}
+            {/* Left panel: stream video OR product card */}
             <div className="order-1 lg:col-start-1 lg:row-start-1">
-              <StreamPanel auction={auction} gradient={gradient} glow={glow} autoStream={autoStream} onAuctionUpdate={setAuction} />
+              {auction.isStream
+                ? <StreamPanel auction={auction} gradient={gradient} glow={glow} autoStream={autoStream} onAuctionUpdate={setAuction} />
+                : <ProductPanel auction={auction} gradient={gradient} glow={glow} activeItem={item} isSeller={isSeller} onAuctionUpdate={setAuction} />
+              }
             </div>
-            {/* Bid panel — second on mobile (before card info), sticky on desktop */}
+            {/* Bid panel — sticky on desktop */}
             <div className="order-2 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-20">
               <BidPanel
                 auction={auction}
@@ -160,7 +163,7 @@ function AuctionDetailPageInner() {
                 activeItem={item}
               />
             </div>
-            {/* Card info — third on mobile, second column-row on desktop */}
+            {/* Card info */}
             <div className="order-3 lg:col-start-1 lg:row-start-2">
               <CardInfo auction={auction} isSeller={isSeller} />
             </div>
@@ -178,6 +181,125 @@ export default function AuctionDetailPage() {
         <AuctionDetailPageInner />
       </Suspense>
     </ErrorBoundary>
+  );
+}
+
+/* ─── Product Panel (subastas normales sin stream) ─────── */
+function ProductPanel({ auction: a, gradient, glow, activeItem, isSeller, onAuctionUpdate }: {
+  auction: ApiAuction;
+  gradient: string;
+  glow: string;
+  activeItem?: ApiAuctionItem;
+  isSeller: boolean;
+  onAuctionUpdate?: (a: ApiAuction) => void;
+}) {
+  const { capture } = useAnalytics();
+  const [endingAuction, setEndingAuction] = useState(false);
+  const [confirmEnd,    setConfirmEnd]    = useState(false);
+  const title      = a.title ?? a.name ?? "Sin título";
+  const sellerName = a.seller?.username ?? a.sellerName ?? "—";
+  const verified   = a.seller?.verified;
+  const imageUrl   = activeItem?.imageUrls?.[0] ?? (a.items ?? [])[0]?.imageUrls?.[0];
+  const STATUS_LABEL: Record<string, { text: string; bg: string }> = {
+    live:     { text: "EN VIVO", bg: "#ef4444" },
+    ending:   { text: "TERMINA PRONTO", bg: "#f59e0b" },
+    upcoming: { text: "PRÓXIMO", bg: "#6C3AE8" },
+    ended:    { text: "TERMINADA", bg: "#52525b" },
+  };
+  const status = STATUS_LABEL[a.status ?? "upcoming"];
+
+  async function endAuction() {
+    setEndingAuction(true);
+    try {
+      const res = await auctionsApi.end(a.id);
+      onAuctionUpdate?.(res.data as any);
+      capture("auction_ended", { auctionId: a.id });
+    } catch {}
+    finally { setEndingAuction(false); setConfirmEnd(false); }
+  }
+
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
+      {/* Product image area */}
+      <div className="relative bg-[#050508] flex items-center justify-center overflow-hidden" style={{ minHeight: 280 }}>
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={title}
+            className="w-full h-full object-contain max-h-72"
+          />
+        ) : (
+          <>
+            <div className="absolute inset-0" style={{ background: `radial-gradient(circle at 50% 50%, ${glow} 0%, transparent 65%)`, opacity: 0.5 }} />
+            <div className={`relative w-36 h-48 rounded-2xl bg-gradient-to-br ${gradient} flex flex-col items-center justify-center gap-2 shadow-2xl`} style={{ boxShadow: `0 0 60px ${glow}` }}>
+              <span className="text-6xl">🃏</span>
+              <span className="text-white text-xs font-black tracking-widest opacity-90 text-center px-2">{title.toUpperCase().slice(0, 14)}</span>
+            </div>
+          </>
+        )}
+
+        {/* Status badge */}
+        <div className="absolute top-4 left-4 z-10">
+          <div className="flex items-center gap-1.5 text-white text-xs font-black px-3 py-1.5 rounded-full" style={{ background: status?.bg }}>
+            {a.status === "live" && <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
+            {status?.text ?? a.status}
+          </div>
+        </div>
+
+        {/* Seller info */}
+        <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-black/80 to-transparent z-10" />
+        <div className="absolute bottom-3 left-4 flex items-center gap-2 z-10">
+          <Link href={`/tienda/${sellerName}`} className="w-8 h-8 rounded-full bg-[#1E1E2A] border border-white/20 flex items-center justify-center text-sm hover:border-[#6C3AE8]/50 transition-colors">🧑</Link>
+          <div>
+            <Link href={`/tienda/${sellerName}`} className="text-white text-sm font-bold leading-none hover:text-[#a78bfa] transition-colors">
+              {sellerName} {verified && <span className="text-[#a78bfa]">✓</span>}
+            </Link>
+            <p className="text-zinc-400 text-xs">Vendedor</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Title + condition */}
+      <div className="px-5 py-4 border-b border-white/5">
+        <h1 className="font-black text-lg leading-tight text-white">{title}</h1>
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          {a.game && <span className="text-xs text-zinc-500">{a.game}</span>}
+          {activeItem?.condition && (
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa" }}>
+              {activeItem.condition}
+            </span>
+          )}
+          {a.description && <p className="text-xs text-zinc-500 w-full mt-1">{a.description}</p>}
+        </div>
+      </div>
+
+      {/* Seller end button */}
+      {isSeller && a.status === "live" && (
+        <div className="px-5 py-3">
+          {!confirmEnd ? (
+            <button
+              onClick={() => setConfirmEnd(true)}
+              className="w-full py-2 rounded-xl text-xs font-semibold text-zinc-400 border border-white/10 hover:border-red-500/40 hover:text-red-400 transition-all"
+            >
+              Terminar subasta
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={endAuction}
+                disabled={endingAuction}
+                className="flex-1 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-500 transition-all disabled:opacity-60"
+              >
+                {endingAuction ? "Terminando..." : "Confirmar"}
+              </button>
+              <button onClick={() => setConfirmEnd(false)} className="flex-1 py-2 rounded-xl text-xs text-zinc-400 border border-white/10">
+                Cancelar
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -234,9 +356,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [chatInput,    setChatInput]    = useState("");
   const chatBoxRef = useRef<HTMLDivElement>(null);
 
-  // Everyone (seller + viewers) auto-connect for chat when auction is live
+  // Everyone (seller + viewers) auto-connect for chat/video — only for stream auctions
   useEffect(() => {
-    if (!isLive || !user) return;
+    if (!isLive || !user || !a.isStream) return;
     let alive = true;
     const room = new Room();
     roomRef.current = room;
