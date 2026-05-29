@@ -1,27 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
-type AuctionStatus = "live" | "ending" | "upcoming" | "ended";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { useAuth } from "@/contexts/auth";
 import { useRouter } from "next/navigation";
 import { auctionsApi, ordersApi, listingsApi, type ApiAuction, type ApiOrder, type SellerStats, type ApiListing } from "@/lib/api";
+import { uploadToCloudinary } from "@/lib/cloudinary";
+import { useAnalytics } from "@/hooks/useAnalytics";
 
-const CLOUDINARY_CLOUD  = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dsjhoj5wt";
-const CLOUDINARY_PRESET = "tcg_live";
-
-async function uploadToCloudinary(file: File): Promise<string> {
-  const form = new FormData();
-  form.append("file", file);
-  form.append("upload_preset", CLOUDINARY_PRESET);
-  form.append("folder", "tcg-live/auction-items");
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, { method: "POST", body: form });
-  const data = await res.json();
-  if (!data.secure_url) throw new Error("Error al subir imagen");
-  return data.secure_url as string;
-}
-
+type AuctionStatus = "live" | "ending" | "upcoming" | "ended";
 type Tab = "dashboard" | "subastas" | "crear" | "ventas" | "ordenes";
 
 const TABS: { key: Tab; label: string }[] = [
@@ -48,10 +37,17 @@ const SALE_STATUS_STYLE = {
 
 const CONDITIONS = ["NM", "LP", "MP", "HP", "PSA 10", "PSA 9", "PSA 8", "BGS 9.5", "BGS 9"];
 const DURATIONS  = ["15 minutos", "30 minutos", "1 hora", "2 horas", "4 horas", "6 horas", "12 horas", "24 horas"];
-const SETS       = ["Brilliant Stars", "Evolving Skies", "Silver Tempest", "Lost Origin", "Astral Radiance",
-                    "Pokémon GO", "Crown Zenith", "Scarlet & Violet", "Obsidian Flames", "151",
-                    "Paradox Rift", "Temporal Forces", "Twilight Masquerade", "Stellar Crown"];
 
+const DURATION_MS: Record<string, number> = {
+  "15 minutos": 15 * 60 * 1000,
+  "30 minutos": 30 * 60 * 1000,
+  "1 hora":     1  * 60 * 60 * 1000,
+  "2 horas":    2  * 60 * 60 * 1000,
+  "4 horas":    4  * 60 * 60 * 1000,
+  "6 horas":    6  * 60 * 60 * 1000,
+  "12 horas":   12 * 60 * 60 * 1000,
+  "24 horas":   24 * 60 * 60 * 1000,
+};
 
 interface AuctionForm {
   name: string;
@@ -72,6 +68,7 @@ const EMPTY_FORM: AuctionForm = {
 export default function VendedorPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const { capture } = useAnalytics();
   const [tab, setTab] = useState<Tab>("dashboard");
   const [launchingStream, setLaunchingStream] = useState(false);
   const [showStreamForm, setShowStreamForm] = useState(false);
@@ -100,25 +97,47 @@ export default function VendedorPage() {
   const [sellerStats,  setSellerStats]  = useState<SellerStats | null>(null);
   const [sellerOrders, setSellerOrders] = useState<ApiOrder[] | null>(null);
 
+  const loadedTabsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!showStreamForm) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setShowStreamForm(false); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showStreamForm]);
+
+  useEffect(() => { setTrackingInput(""); }, [shippingOrder]);
+
   useEffect(() => {
     if (!user) return;
+    // Dashboard tab always loads on mount
+    loadedTabsRef.current.add("dashboard");
     Promise.all([
       auctionsApi.my().catch(() => null),
       ordersApi.sellerStats().catch(() => null),
-      ordersApi.selling().catch(() => null),
-      listingsApi.my().catch(() => null),
-    ]).then(([auctionsRes, statsRes, ordersRes, listingsRes]) => {
-      if (auctionsRes)  setMyAuctions(auctionsRes.data);
-      if (statsRes)     setSellerStats(statsRes.data);
-      if (ordersRes)    setSellerOrders(ordersRes.data);
-      if (listingsRes)  setMyListings(listingsRes.data);
+    ]).then(([auctionsRes, statsRes]) => {
+      if (auctionsRes) setMyAuctions(auctionsRes.data);
+      if (statsRes)    setSellerStats(statsRes.data);
     });
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (loadedTabsRef.current.has(tab)) return;
+    loadedTabsRef.current.add(tab);
+    if (tab === "ordenes") {
+      ordersApi.selling().catch(() => null).then(res => { if (res) setSellerOrders(res.data); });
+    } else if (tab === "ventas") {
+      listingsApi.my().catch(() => null).then(res => { if (res) setMyListings(res.data); });
+    } else if (tab === "subastas") {
+      auctionsApi.my().catch(() => null).then(res => { if (res) setMyAuctions(res.data); });
+    }
+  }, [tab, user]);
 
   async function handleImageUpload(file: File) {
     setUploadingImg(true);
     try {
-      const url = await uploadToCloudinary(file);
+      const url = await uploadToCloudinary(file, "tcg-live/auction-items", "image");
       setForm(f => ({ ...f, imageUrl: url }));
     } catch {
       setCreateError("Error al subir imagen. Intenta de nuevo.");
@@ -145,9 +164,12 @@ export default function VendedorPage() {
     }
     setCreating(true);
     try {
+      const durationMs = form.duration ? DURATION_MS[form.duration] : undefined;
+      const scheduledAt = durationMs ? new Date(Date.now() + durationMs).toISOString() : undefined;
       await auctionsApi.create({
         title: form.name,
         description: form.description || undefined,
+        scheduledAt,
         items: [{
           cardName:     form.name,
           cardSet:      form.set || undefined,
@@ -158,6 +180,7 @@ export default function VendedorPage() {
         }],
       });
       setSubmitted(true);
+      capture("auction_created", { game: form.set || undefined, hasImage: !!form.imageUrl });
       // Refresh auctions list
       auctionsApi.my().then(r => setMyAuctions(r.data)).catch(() => {});
     } catch (err: any) {
@@ -175,14 +198,8 @@ export default function VendedorPage() {
   async function handleListingImageUpload(file: File) {
     setListingUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("upload_preset", CLOUDINARY_PRESET);
-      form.append("folder", "tcg-live/listings");
-      const res  = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, { method: "POST", body: form });
-      const data = await res.json();
-      if (!data.secure_url) throw new Error();
-      setListingForm(f => ({ ...f, imageUrl: data.secure_url }));
+      const url = await uploadToCloudinary(file, "tcg-live/listings", "image");
+      setListingForm(f => ({ ...f, imageUrl: url }));
     } catch {
       setListingError("Error al subir imagen.");
     } finally {
@@ -245,6 +262,7 @@ export default function VendedorPage() {
   ];
 
   return (
+    <ErrorBoundary>
     <div className="min-h-screen bg-[#0F0F14] text-white">
       <Navbar />
 
@@ -252,6 +270,8 @@ export default function VendedorPage() {
       {showStreamForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div
+            role="dialog"
+            aria-modal="true"
             className="w-full max-w-sm rounded-2xl p-6"
             style={{ background: "#16161E", border: "1px solid rgba(108,58,232,0.3)" }}
           >
@@ -384,6 +404,8 @@ export default function VendedorPage() {
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
+                  role="tab"
+                  aria-selected={active}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-sm font-semibold whitespace-nowrap transition-all border-b-2"
                   style={active ? { color: "#a78bfa", borderColor: "#6C3AE8", background: "rgba(108,58,232,0.08)" } : { color: "#71717a", borderColor: "transparent" }}
                 >
@@ -578,6 +600,7 @@ export default function VendedorPage() {
                   <button
                     key={f}
                     onClick={() => setSaleFilter(f)}
+                    aria-pressed={active}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all"
                     style={
                       active
@@ -608,6 +631,63 @@ export default function VendedorPage() {
                   const s = AUCTION_STATUS_STYLE[a.status ?? "upcoming"];
                   const title = a.title ?? a.name ?? "Sin título";
                   const currentBid = a.currentBid ?? a.startingBid ?? 0;
+
+                  /* ── SUBASTA TERMINADA: mostrar resumen de ventas ── */
+                  if (a.status === "ended") {
+                    const allItems   = a.items ?? [];
+                    const soldItems  = allItems.filter(i => i.status === "sold");
+                    const totalItems = allItems.length;
+                    const revenue    = soldItems.reduce((sum, i) => sum + (i.currentBid ?? 0), 0);
+                    return (
+                      <div
+                        key={a.id}
+                        className="rounded-2xl p-4"
+                        style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                style={{ background: s?.bg, color: s?.color }}
+                              >
+                                {s?.label ?? "Terminada"}
+                              </span>
+                              {a.game && (
+                                <span className="text-[10px] text-zinc-600">{a.game}</span>
+                              )}
+                            </div>
+                            <p className="font-bold text-sm leading-tight truncate">{title}</p>
+                          </div>
+                          <Link
+                            href={`/auctions/${a.id}`}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg text-center shrink-0 transition-all"
+                            style={{ background: "rgba(255,255,255,0.05)", color: "#71717a", border: "1px solid rgba(255,255,255,0.08)" }}
+                          >
+                            Ver
+                          </Link>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mt-3">
+                          <div className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
+                            <p className="text-base font-black text-green-400">{soldItems.length}</p>
+                            <p className="text-[10px] text-zinc-600 mt-0.5">vendidos</p>
+                          </div>
+                          <div className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
+                            <p className="text-base font-black text-zinc-400">{totalItems - soldItems.length}</p>
+                            <p className="text-[10px] text-zinc-600 mt-0.5">sin vender</p>
+                          </div>
+                          <div className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
+                            <p className="text-base font-black text-violet-400">
+                              {revenue > 0 ? `$${revenue.toLocaleString("es-MX")}` : `$${currentBid.toLocaleString("es-MX")}`}
+                            </p>
+                            <p className="text-[10px] text-zinc-600 mt-0.5">recaudado</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  /* ── SUBASTA ACTIVA / PRÓXIMA ── */
                   return (
                     <div
                       key={a.id}
@@ -755,7 +835,7 @@ export default function VendedorPage() {
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); }}
                   />
                   {form.imageUrl ? (
-                    <img src={form.imageUrl} alt="carta" className="w-24 h-32 object-contain rounded-xl" />
+                    <img src={form.imageUrl} alt="carta" width={96} height={128} className="w-24 h-32 object-contain rounded-xl" />
                   ) : (
                     <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl" style={{ background: "rgba(108,58,232,0.1)" }}>
                       📸
@@ -793,18 +873,15 @@ export default function VendedorPage() {
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-zinc-400 mb-2">
-                      Set / Colección <span className="text-[#6C3AE8]">*</span>
+                      Set / Colección
                     </label>
-                    <select
-                      required
+                    <input
+                      type="text"
                       value={form.set}
                       onChange={(e) => handleFormChange("set", e.target.value)}
-                      className="w-full bg-[#16161E] border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
-                      style={{ color: form.set ? "white" : "#52525b" }}
-                    >
-                      <option value="" disabled>Seleccionar set</option>
-                      {SETS.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                      placeholder="Ej: Scarlet & Violet, Kamigawa, PHHY..."
+                      className="w-full bg-[#16161E] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-zinc-400 mb-2">
@@ -948,7 +1025,7 @@ export default function VendedorPage() {
                     <input type="file" accept="image/*" className="hidden"
                       onChange={e => { const f = e.target.files?.[0]; if (f) handleListingImageUpload(f); }} />
                     {listingForm.imageUrl
-                      ? <img src={listingForm.imageUrl} alt="" className="w-16 h-20 object-contain rounded-lg shrink-0" />
+                      ? <img src={listingForm.imageUrl} alt="" width={64} height={80} className="w-16 h-20 object-contain rounded-lg shrink-0" />
                       : <div className="w-16 h-20 rounded-lg flex items-center justify-center text-2xl shrink-0" style={{ background: "rgba(108,58,232,0.1)" }}>📸</div>
                     }
                     <div>
@@ -1032,7 +1109,7 @@ export default function VendedorPage() {
                   {(myListings ?? []).map(l => (
                     <div key={l.id} className="rounded-2xl p-4 flex items-center gap-4" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
                       {l.imageUrls?.[0]
-                        ? <img src={l.imageUrls[0]} alt="" className="w-12 h-16 object-contain rounded-xl shrink-0" />
+                        ? <img src={l.imageUrls[0]} alt="" width={48} height={64} className="w-12 h-16 object-contain rounded-xl shrink-0" />
                         : <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0">🃏</div>
                       }
                       <div className="flex-1 min-w-0">
@@ -1139,11 +1216,12 @@ export default function VendedorPage() {
                               onClick={async () => {
                                 if (trackingInput.trim()) {
                                   await ordersApi.updateStatus(order.id, "shipped").catch(() => {});
+                                  await ordersApi.updateTracking(order.id, trackingInput.trim()).catch(() => {});
+                                  capture("order_shipped", { orderId: order.id });
                                   const refreshed = await ordersApi.selling().catch(() => null);
                                   if (refreshed) setSellerOrders(refreshed.data);
                                 }
                                 setShippingOrder(null);
-                                setTrackingInput("");
                               }}
                               className="text-xs font-bold text-white px-4 py-2 rounded-xl"
                               style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
@@ -1179,5 +1257,6 @@ export default function VendedorPage() {
 
       </div>
     </div>
+    </ErrorBoundary>
   );
 }

@@ -13,6 +13,7 @@ import { Auction } from './auction.entity';
 import { User } from '../../users/user.entity';
 import { Bid } from './bid.entity';
 
+/** @deprecated Condición es ahora texto libre (NM, LP, PSA 10, etc.) */
 export enum CardCondition {
   MINT = 'mint',
   NEAR_MINT = 'near_mint',
@@ -53,8 +54,8 @@ export class AuctionItem {
   @Column({ nullable: true })
   cardNumber: string;
 
-  @Column({ type: 'enum', enum: CardCondition, default: CardCondition.NEAR_MINT })
-  condition: CardCondition;
+  @Column({ type: 'varchar', length: 50, nullable: true, default: 'near_mint' })
+  condition: string;
 
   @Column({ type: 'int' })
   startingPrice: number; // MXN cents

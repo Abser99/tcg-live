@@ -1,3 +1,4 @@
+import { join } from 'path';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -71,6 +72,8 @@ import { PushToken } from './notifications/entities/push-token.entity';
               }),
           entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, Order, OrderItem, PaymentMethod, PushToken, Dispute, WatchlistItem, Message, FollowedSeller, AuctionTemplate, Listing, ListingOffer, SellerDocument],
           synchronize: process.env.NODE_ENV !== 'production',
+          migrations: [join(__dirname, '..', 'migrations', '*.js')],
+          migrationsRun: process.env.NODE_ENV === 'production',
           ssl: dbUrl ? { rejectUnauthorized: false } : false,
           logging: process.env.NODE_ENV === 'development',
         };

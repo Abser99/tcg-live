@@ -57,7 +57,7 @@ function Hero({ user, stats }: { user: { username: string } | null; stats: { tot
           </div>
 
           <h1 className="text-6xl md:text-7xl font-black leading-[1.0] tracking-tight mb-6">
-            Compra y vende<br />cartas Pokémon<br />
+            Compra y vende<br />productos TCG<br />
             <span className="gradient-text">en vivo.</span>
           </h1>
 
