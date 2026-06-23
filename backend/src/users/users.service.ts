@@ -155,4 +155,11 @@ export class UsersService {
     });
     return this.findById(id);
   }
+
+  async updatePayoutInfo(userId: string, dto: { clabe?: string; mpPayoutEmail?: string }): Promise<User> {
+    const user = await this.findById(userId);
+    if (dto.clabe !== undefined) user.clabe = dto.clabe || null;
+    if (dto.mpPayoutEmail !== undefined) user.mpPayoutEmail = dto.mpPayoutEmail || null;
+    return this.usersRepo.save(user);
+  }
 }

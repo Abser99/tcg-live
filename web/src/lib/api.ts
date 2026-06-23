@@ -122,7 +122,7 @@ export const paymentsApi = {
 // ─── Watchlist ─────────────────────────────────────────────────
 export const watchlistApi = {
   my: () => api.get<WatchlistItem[]>("/watchlist"),
-  add: (auctionId: string) => api.post("/watchlist", { auctionId }),
+  add: (auctionId: string) => api.post(`/watchlist/${auctionId}`),
   remove: (id: string) => api.delete(`/watchlist/${id}`),
 };
 
@@ -155,6 +155,8 @@ export const usersApi = {
     api.patch<ApiUser>("/users/me/address", dto),
   publicProfile: (username: string) =>
     api.get<PublicProfile>(`/users/by-username/${encodeURIComponent(username)}/profile`),
+  updatePayoutInfo: (data: { clabe?: string; mpPayoutEmail?: string }) =>
+    api.patch('/users/me/payout-info', data).then(r => r.data),
   // Admin
   listAll: (page = 1) =>
     api.get<AdminUserListResponse>(`/users?page=${page}&limit=20`).then((r) => r.data),
@@ -190,6 +192,12 @@ export const sellerApplicationsApi = {
   list: (status?: string) => api.get<SellerApplication[]>("/seller-applications", { params: status ? { status } : {} }),
   review: (id: string, status: "approved" | "rejected", note?: string) =>
     api.patch(`/seller-applications/${id}/review`, { status, reviewNote: note }),
+};
+
+// ─── Admin / Orders ────────────────────────────────────────────
+export const adminOrdersApi = {
+  getPendingPayouts: () => api.get<ApiOrder[]>('/orders/pending-payouts').then(r => r.data),
+  releasePayout: (orderId: string) => api.post<ApiOrder>(`/orders/${orderId}/release-payout`).then(r => r.data),
 };
 
 // ─── Seller Documents ──────────────────────────────────────────
@@ -229,6 +237,8 @@ export interface ApiUser {
   shippingNote?: string;
   shippingInsurance?: boolean;
   createdAt?: string;
+  clabe?: string | null;
+  mpPayoutEmail?: string | null;
 }
 
 export interface ApiAuction {
@@ -282,13 +292,18 @@ export interface ApiOrder {
   id: string;
   status: string;
   totalAmount: number;
+  totalCents?: number;
+  paymentStatus?: string;
   createdAt: string;
   trackingNumber?: string;
   sellerRating?: number;
   sellerRatingNote?: string;
-  seller?: { username: string };
+  seller?: { username: string; clabe?: string | null; mpPayoutEmail?: string | null };
   buyer?: { username: string };
   items?: { cardName: string; finalPrice: number }[];
+  payoutStatus?: 'pending' | 'released' | 'failed';
+  payoutAmount?: number | null;
+  payoutReleasedAt?: string | null;
 }
 
 export interface SellerStats {

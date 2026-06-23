@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
 import {
-  sellerApplicationsApi, sellerDocumentsApi, disputesApi, usersApi,
-  type SellerApplication, type SellerDocumentRecord, type ApiDispute, type AdminUser,
+  sellerApplicationsApi, sellerDocumentsApi, disputesApi, usersApi, adminOrdersApi,
+  type SellerApplication, type SellerDocumentRecord, type ApiDispute, type AdminUser, type ApiOrder,
 } from "@/lib/api";
 
 const DOC_LABELS: Record<string, string> = {
@@ -32,7 +32,7 @@ export default function AdminPage() {
   const [documents,     setDocuments]     = useState<SellerDocumentRecord[]>([]);
   const [allDisputes,   setAllDisputes]   = useState<ApiDispute[]>([]);
   const [loading,       setLoading]       = useState(true);
-  const [tab,           setTab]           = useState<"applications" | "documents" | "disputes" | "users">("applications");
+  const [tab,           setTab]           = useState<"applications" | "documents" | "disputes" | "users" | "cobros">("applications");
   const [filter,        setFilter]        = useState("pending");
   const [selected,      setSelected]      = useState<SellerApplication | null>(null);
   const [rejectNote,    setRejectNote]    = useState("");
@@ -43,6 +43,12 @@ export default function AdminPage() {
   const [disputeSelected,  setDisputeSelected]  = useState<ApiDispute | null>(null);
   const [disputeNote,      setDisputeNote]      = useState("");
   const [disputeStatus,    setDisputeStatus]    = useState<"resolved" | "rejected">("resolved");
+
+  // Cobros (payouts) tab state
+  const [pendingPayouts,     setPendingPayouts]     = useState<ApiOrder[] | null>(null);
+  const [payoutsLoading,     setPayoutsLoading]     = useState(false);
+  const [releasingPayout,    setReleasingPayout]    = useState<string | null>(null);
+  const [payoutFlash,        setPayoutFlash]        = useState<string | null>(null);
 
   // Users tab state
   const [allUsers,         setAllUsers]         = useState<AdminUser[]>([]);
@@ -111,6 +117,11 @@ export default function AdminPage() {
   useEffect(() => {
     if (tab === "users" && allUsers.length === 0) loadUsers(1);
   }, [tab, allUsers.length, loadUsers]);
+
+  useEffect(() => {
+    if (tab === "cobros" && pendingPayouts === null) loadPendingPayouts();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   function showFlash(msg: string) {
     setUserFlash(msg);
@@ -186,6 +197,35 @@ export default function AdminPage() {
     }
   }
 
+  async function loadPendingPayouts() {
+    setPayoutsLoading(true);
+    try {
+      const data = await adminOrdersApi.getPendingPayouts();
+      setPendingPayouts(data);
+    } catch {
+      setPendingPayouts([]);
+    } finally {
+      setPayoutsLoading(false);
+    }
+  }
+
+  async function handleReleasePayout(orderId: string) {
+    const ok = confirm("¿Confirmar liberación de pago para esta orden?");
+    if (!ok) return;
+    setReleasingPayout(orderId);
+    try {
+      await adminOrdersApi.releasePayout(orderId);
+      setPayoutFlash("Pago liberado correctamente.");
+      setTimeout(() => setPayoutFlash(null), 3000);
+      await loadPendingPayouts();
+    } catch {
+      setPayoutFlash("Error al liberar el pago. Intenta de nuevo.");
+      setTimeout(() => setPayoutFlash(null), 3000);
+    } finally {
+      setReleasingPayout(null);
+    }
+  }
+
   if (authLoading || !user) return null;
   if (user.role !== "ADMIN") return null;
 
@@ -193,6 +233,7 @@ export default function AdminPage() {
   const pendingDocs      = documents.filter(d => d.status === "pending").length;
   const openDisputes     = allDisputes.filter(d => d.status === "open" || d.status === "under_review").length;
   const suspendedCount   = allUsers.filter(u => u.isSuspended).length;
+  const pendingPayoutsCount = (pendingPayouts ?? []).filter(o => o.payoutStatus === "pending").length;
   const filteredUsers    = allUsers.filter(u =>
     userSearch.trim() === "" ||
     u.username.toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -237,6 +278,7 @@ export default function AdminPage() {
               { key: "documents",    label: "Documentos KYC",          count: pendingDocs  },
               { key: "disputes",     label: "Disputas",                count: openDisputes },
               { key: "users",        label: "Usuarios",                count: suspendedCount },
+              { key: "cobros",       label: "Cobros Pendientes",       count: pendingPayoutsCount },
             ].map(t => (
               <button key={t.key} onClick={() => setTab(t.key as typeof tab)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-sm font-semibold border-b-2 transition-all"
@@ -553,6 +595,123 @@ export default function AdminPage() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {/* ── COBROS PENDIENTES ── */}
+            {tab === "cobros" && (
+              <div className="space-y-4">
+                {payoutFlash && (
+                  <div className="px-4 py-3 rounded-xl text-sm font-semibold"
+                    style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.25)" }}>
+                    {payoutFlash}
+                  </div>
+                )}
+
+                {payoutsLoading && pendingPayouts === null ? (
+                  <div className="flex items-center justify-center py-20">
+                    <div className="w-6 h-6 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+                  </div>
+                ) : (pendingPayouts ?? []).length === 0 ? (
+                  <div className="text-center py-16 text-zinc-500">No hay cobros pendientes</div>
+                ) : (
+                  <div className="space-y-3">
+                    {(pendingPayouts ?? []).map(order => {
+                      const isReleased  = order.payoutStatus === "released";
+                      const cobro       = (order.payoutAmount ?? 0) / 100;
+                      const total       = (order.totalCents ?? order.totalAmount ?? 0) / 100;
+                      const relDate     = order.payoutReleasedAt
+                        ? new Date(order.payoutReleasedAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })
+                        : null;
+                      const orderDate   = new Date(order.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
+                      const sellerClabe = order.seller?.clabe ?? null;
+                      const sellerMp    = order.seller?.mpPayoutEmail ?? null;
+
+                      return (
+                        <div key={order.id} className="rounded-2xl p-5" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                          <div className="flex items-start justify-between gap-4 flex-wrap">
+                            <div className="flex-1 min-w-0">
+                              {/* Header row */}
+                              <div className="flex items-center gap-3 flex-wrap mb-2">
+                                <span className="text-xs font-mono text-zinc-500">{order.id.slice(0, 8)}…</span>
+                                {isReleased ? (
+                                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                                    style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80" }}>
+                                    ✅ Liberado
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                                    style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>
+                                    ⏳ Pendiente
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Parties */}
+                              <p className="text-xs text-zinc-400">
+                                Vendedor: <span className="font-bold text-white">@{order.seller?.username ?? "—"}</span>
+                                {" · "}
+                                Comprador: <span className="font-bold text-white">@{order.buyer?.username ?? "—"}</span>
+                                {" · "}{orderDate}
+                              </p>
+
+                              {/* Amounts */}
+                              <div className="flex flex-wrap gap-4 mt-3">
+                                <div>
+                                  <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Total orden</p>
+                                  <p className="text-sm font-bold">${total.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Cobro vendedor (92%)</p>
+                                  <p className="text-sm font-black" style={{ color: "#4ade80" }}>${cobro.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                {isReleased && relDate && (
+                                  <div>
+                                    <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Liberado el</p>
+                                    <p className="text-sm font-semibold">{relDate}</p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Payout destination */}
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {sellerClabe ? (
+                                  <span className="text-[11px] px-2 py-1 rounded-lg font-mono"
+                                    style={{ background: "rgba(108,58,232,0.1)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.2)" }}>
+                                    CLABE: {sellerClabe}
+                                  </span>
+                                ) : null}
+                                {sellerMp ? (
+                                  <span className="text-[11px] px-2 py-1 rounded-lg"
+                                    style={{ background: "rgba(0,174,240,0.08)", color: "#60a5fa", border: "1px solid rgba(0,174,240,0.2)" }}>
+                                    MP: {sellerMp}
+                                  </span>
+                                ) : null}
+                                {!sellerClabe && !sellerMp && (
+                                  <span className="text-[11px] px-2 py-1 rounded-lg"
+                                    style={{ background: "rgba(248,113,113,0.08)", color: "#f87171", border: "1px solid rgba(248,113,113,0.2)" }}>
+                                    Sin datos de cobro registrados
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Action */}
+                            {!isReleased && (
+                              <button
+                                onClick={() => handleReleasePayout(order.id)}
+                                disabled={releasingPayout === order.id}
+                                className="shrink-0 text-sm font-black px-5 py-2.5 rounded-xl text-white disabled:opacity-50 transition-all"
+                                style={{ background: "linear-gradient(135deg, #059669, #10b981)", boxShadow: "0 4px 16px rgba(5,150,105,0.3)" }}
+                              >
+                                {releasingPayout === order.id ? "Liberando..." : "💸 Liberar pago"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </>

@@ -46,6 +46,12 @@ export class UsersController {
     return this.usersService.updateAddress(user.id, dto);
   }
 
+  @Patch('me/payout-info')
+  @UseGuards(AuthGuard('jwt'))
+  updatePayoutInfo(@CurrentUser() user: User, @Body() body: { clabe?: string; mpPayoutEmail?: string }) {
+    return this.usersService.updatePayoutInfo(user.id, body);
+  }
+
   // ── Admin endpoints ────────────────────────────────────────────
 
   @Get()

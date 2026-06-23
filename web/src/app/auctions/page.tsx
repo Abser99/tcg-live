@@ -270,12 +270,12 @@ export default function AuctionsPage() {
                             {a.status === "upcoming" ? "Precio inicial" : "Puja actual"}
                           </p>
                           <p className="text-xl font-black text-white">
-                            ${currentBid.toLocaleString("es-MX")}{" "}
+                            ${(currentBid / 100).toLocaleString("es-MX")}{" "}
                             <span className="text-xs text-zinc-500 font-normal">MXN</span>
                           </p>
                           {a.binPrice && (
                             <p className="text-[10px] text-zinc-500 mt-0.5">
-                              Comprar ya: ${a.binPrice.toLocaleString("es-MX")} MXN
+                              Comprar ya: ${(a.binPrice / 100).toLocaleString("es-MX")} MXN
                             </p>
                           )}
                         </div>

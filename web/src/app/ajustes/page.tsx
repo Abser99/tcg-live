@@ -132,6 +132,12 @@ export default function AjustesPage() {
   const [addrSaved, setAddrSaved] = useState(false);
   const [addrError, setAddrError] = useState("");
 
+  // Payout info form
+  const [payoutForm, setPayoutForm] = useState({ clabe: "", mpPayoutEmail: "" });
+  const [payoutLoading, setPayoutLoading] = useState(false);
+  const [payoutSaved, setPayoutSaved] = useState(false);
+  const [payoutError, setPayoutError] = useState("");
+
   // Notification prefs (localStorage)
   const [notifs, setNotifs] = useState({
     outbid:    true,
@@ -168,6 +174,10 @@ export default function AjustesPage() {
           city:    meRes.data.city    ?? "",
           state:   meRes.data.state   ?? "",
           zipCode: meRes.data.zipCode ?? "",
+        });
+        setPayoutForm({
+          clabe:        meRes.data.clabe        ?? "",
+          mpPayoutEmail: meRes.data.mpPayoutEmail ?? "",
         });
       }
       setApplication(appRes?.data ?? null);
@@ -251,6 +261,28 @@ export default function AjustesPage() {
       setAddrError(e?.response?.data?.message ?? "Error al guardar dirección");
     } finally {
       setAddrLoading(false);
+    }
+  }
+
+  async function savePayout() {
+    setPayoutError("");
+    if (payoutForm.clabe && !/^\d{18}$/.test(payoutForm.clabe)) {
+      setPayoutError("La CLABE debe tener exactamente 18 dígitos.");
+      return;
+    }
+    setPayoutLoading(true);
+    setPayoutSaved(false);
+    try {
+      const payload: { clabe?: string; mpPayoutEmail?: string } = {};
+      if (payoutForm.clabe)         payload.clabe         = payoutForm.clabe;
+      if (payoutForm.mpPayoutEmail) payload.mpPayoutEmail = payoutForm.mpPayoutEmail;
+      await usersApi.updatePayoutInfo(payload);
+      setPayoutSaved(true);
+      setTimeout(() => setPayoutSaved(false), 3000);
+    } catch (e: any) {
+      setPayoutError(e?.response?.data?.message ?? "Error al guardar datos de cobro");
+    } finally {
+      setPayoutLoading(false);
     }
   }
 
@@ -902,6 +934,41 @@ export default function AjustesPage() {
                   Para pujar en subastas primero necesitas tener tu dirección de envío guardada.
                   Esto garantiza que podamos enviarte la carta si ganas.
                 </p>
+
+                {/* ── Datos para cobro ── */}
+                <div className="mt-6 pt-6 border-t border-white/5">
+                  <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1">Datos para cobro (vendedores)</p>
+                  <p className="text-[11px] text-zinc-600 mb-5">
+                    Necesario para recibir el pago de tus ventas. El dinero se libera automáticamente cuando el comprador recibe su paquete.
+                  </p>
+
+                  {payoutError && (
+                    <div className="mb-4 px-4 py-3 rounded-xl text-sm text-red-400" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                      {payoutError}
+                    </div>
+                  )}
+
+                  <Field label="CLABE interbancaria" hint="18 dígitos — para recibir transferencia bancaria directa">
+                    <Input
+                      value={payoutForm.clabe}
+                      onChange={v => setPayoutForm(p => ({ ...p, clabe: v }))}
+                      placeholder="000000000000000000"
+                    />
+                  </Field>
+
+                  <Field label="Correo de Mercado Pago" hint="Alternativa: correo asociado a tu cuenta de Mercado Pago">
+                    <Input
+                      type="email"
+                      value={payoutForm.mpPayoutEmail}
+                      onChange={v => setPayoutForm(p => ({ ...p, mpPayoutEmail: v }))}
+                      placeholder="tucorreo@ejemplo.com"
+                    />
+                  </Field>
+
+                  <div className="flex justify-end mt-2">
+                    <SaveButton loading={payoutLoading} saved={payoutSaved} onClick={savePayout} />
+                  </div>
+                </div>
               </SectionCard>
             )}
 

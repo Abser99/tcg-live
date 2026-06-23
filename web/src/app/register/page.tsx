@@ -162,9 +162,9 @@ export default function RegisterPage() {
               <input type="checkbox" required className="mt-0.5 accent-violet-500" />
               <span className="text-xs text-zinc-500 leading-relaxed">
                 Acepto los{" "}
-                <Link href="#" className="text-[#a78bfa] hover:underline">Términos de uso</Link>{" "}
+                <Link href="/terminos" className="text-[#a78bfa] hover:underline">Términos de Servicio</Link>{" "}
                 y la{" "}
-                <Link href="#" className="text-[#a78bfa] hover:underline">Política de privacidad</Link>
+                <Link href="/privacidad" className="text-[#a78bfa] hover:underline">Política de Privacidad</Link>
               </span>
             </label>
 

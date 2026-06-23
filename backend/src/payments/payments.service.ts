@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 
 export interface PaymentPreference {
   preferenceId: string;
-  initPoint: string;  // URL to open MP checkout
+  initPoint: string;
   sandboxInitPoint: string;
 }
 
@@ -19,13 +20,19 @@ export interface PaymentStatus {
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
   private readonly useMock: boolean;
-  private readonly accessToken: string | undefined;
+  private readonly client: MercadoPagoConfig | null;
 
   constructor(private readonly config: ConfigService) {
-    this.accessToken = config.get<string>('MERCADOPAGO_ACCESS_TOKEN');
-    this.useMock = !this.accessToken;
+    const accessToken = config.get<string>('MERCADOPAGO_ACCESS_TOKEN');
+    this.useMock = !accessToken;
     if (this.useMock) {
       this.logger.warn('MERCADOPAGO_ACCESS_TOKEN not set — using mock payment data');
+      this.client = null;
+    } else {
+      this.client = new MercadoPagoConfig({
+        accessToken: accessToken!,
+        options: { timeout: 10000 },
+      });
     }
   }
 
@@ -37,59 +44,66 @@ export class PaymentsService {
   }): Promise<PaymentPreference> {
     if (this.useMock) return this.mockPreference(params.orderId);
 
-    const res = await fetch('https://api.mercadopago.com/checkout/preferences', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        external_reference: params.orderId,
-        items: params.items.map(i => ({
-          title: i.title,
-          quantity: i.quantity,
-          unit_price: i.unitPrice / 100, // MP usa MXN pesos, no centavos
-          currency_id: 'MXN',
-        })),
-        payer: { email: params.buyerEmail },
-        back_urls: params.backUrls ?? {
-          success: `${this.config.get('WEB_URL', 'http://localhost:3001')}/pago/exitoso`,
-          failure: `${this.config.get('WEB_URL', 'http://localhost:3001')}/pago/error`,
-          pending: `${this.config.get('WEB_URL', 'http://localhost:3001')}/pago/pendiente`,
+    try {
+      const preference = new Preference(this.client!);
+      const result = await preference.create({
+        body: {
+          external_reference: params.orderId,
+          items: params.items.map((i, idx) => ({
+            id: String(idx + 1),
+            title: i.title,
+            quantity: i.quantity,
+            unit_price: i.unitPrice / 100, // SDK expects MXN pesos, not cents
+            currency_id: 'MXN',
+          })),
+          payer: { email: params.buyerEmail },
+          back_urls: params.backUrls ?? {
+            success: `${this.config.get('WEB_URL', 'http://localhost:3001')}/pago/exitoso`,
+            failure: `${this.config.get('WEB_URL', 'http://localhost:3001')}/pago/error`,
+            pending: `${this.config.get('WEB_URL', 'http://localhost:3001')}/pago/pendiente`,
+          },
+          auto_return: 'approved',
+          notification_url: `${this.config.get('BACKEND_URL', 'http://localhost:3000')}/api/payments/webhook`,
         },
-        auto_return: 'approved',
-        notification_url: `${this.config.get('BACKEND_URL', 'http://localhost:3000')}/api/payments/webhook`,
-      }),
-    });
-    const data = await res.json();
-    if (!data.id) {
-      this.logger.error('MP preference creation failed', data);
-      if (this.config.get('NODE_ENV') === 'production') {
-        throw new Error('El proveedor de pagos no está disponible. Intenta de nuevo.');
+      });
+
+      if (!result.id) {
+        this.logger.error('MP preference creation returned no id', result);
+        if (this.config.get('NODE_ENV') === 'production') {
+          throw new Error('El proveedor de pagos no está disponible. Intenta de nuevo.');
+        }
+        return this.mockPreference(params.orderId);
       }
+
+      return {
+        preferenceId: result.id,
+        initPoint: result.init_point!,
+        sandboxInitPoint: result.sandbox_init_point!,
+      };
+    } catch (err) {
+      this.logger.error('MP createPreference error', err);
+      if (this.config.get('NODE_ENV') === 'production') throw err;
       return this.mockPreference(params.orderId);
     }
-    return {
-      preferenceId: data.id,
-      initPoint: data.init_point,
-      sandboxInitPoint: data.sandbox_init_point,
-    };
   }
 
   async getPaymentStatus(paymentId: string): Promise<PaymentStatus> {
     if (this.useMock) return this.mockStatus(paymentId);
 
-    const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-      headers: { Authorization: `Bearer ${this.accessToken}` },
-    });
-    const data = await res.json();
-    return {
-      id: String(data.id),
-      status: data.status,
-      statusDetail: data.status_detail,
-      amount: Math.round((data.transaction_amount ?? 0) * 100),
-      orderId: data.external_reference ?? null,
-    };
+    try {
+      const payment = new Payment(this.client!);
+      const data = await payment.get({ id: paymentId });
+      return {
+        id: String(data.id),
+        status: data.status as PaymentStatus['status'],
+        statusDetail: data.status_detail ?? '',
+        amount: Math.round((data.transaction_amount ?? 0) * 100), // convert pesos → cents
+        orderId: data.external_reference ?? null,
+      };
+    } catch (err) {
+      this.logger.error(`MP getPaymentStatus error for paymentId=${paymentId}`, err);
+      throw err;
+    }
   }
 
   // -- Mock implementations --------------------------------------------------

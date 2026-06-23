@@ -796,7 +796,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                   <div className="flex-1 min-w-0">
                     <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">En subasta</p>
                     <p className="text-sm font-bold text-white truncate">{activeItem.cardName}</p>
-                    <p className="text-xs text-[#a78bfa]">${(activeItem.currentBid ?? activeItem.startingBid ?? 0).toLocaleString("es-MX")}</p>
+                    <p className="text-xs text-[#a78bfa]">${((activeItem.currentBid ?? activeItem.startingBid ?? 0) / 100).toLocaleString("es-MX")}</p>
                   </div>
                   <div className="text-right shrink-0">
                     {closeItemMsg && (
@@ -1100,7 +1100,7 @@ function BidPanel({
   const { user } = useAuth();
   const { capture } = useAnalytics();
   const [bids, setBids] = useState<BidRow[]>(initialBids);
-  const [bidAmount, setBidAmount] = useState(Math.max(initialCurrentBid + 50, startingBid));
+  const [bidAmount, setBidAmount] = useState(Math.max(initialCurrentBid + 100, startingBid));
   const [justBid, setJustBid] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [watchlisted, setWatchlisted] = useState(false);
@@ -1121,7 +1121,7 @@ function BidPanel({
 
   // Fix 19: Reset bid amount when the active item changes
   useEffect(() => {
-    setBidAmount(Math.max(initialCurrentBid + 50, startingBid));
+    setBidAmount(Math.max(initialCurrentBid + 100, startingBid));
   }, [itemId]);
 
   // Fix 20: Reset bids list when the active item changes
@@ -1156,7 +1156,7 @@ function BidPanel({
         await auctionsApi.bid(itemId, bidAmount);
       }
       setBids([{ user: user?.username ?? "Tú", amount: bidAmount, time: "ahora" }, ...bids]);
-      setBidAmount(bidAmount + 50);
+      setBidAmount(bidAmount + 100);
       setJustBid(true);
       setTimeout(() => setJustBid(false), 2500);
       capture("bid_placed", { auctionId: a.id, itemId, amount: bidAmount });
@@ -1229,7 +1229,7 @@ function BidPanel({
             {a.status === "upcoming" ? "Precio inicial" : "Puja más alta"}
           </p>
           <p className="text-3xl font-black leading-none">
-            ${currentBid.toLocaleString("es-MX")}
+            ${(currentBid / 100).toLocaleString("es-MX")}
             <span className="text-sm text-zinc-500 font-normal ml-1">MXN</span>
           </p>
         </div>
@@ -1250,7 +1250,7 @@ function BidPanel({
               {bids[0].user}
             </span>
           </div>
-          <span className="text-sm font-black">${bids[0].amount.toLocaleString("es-MX")}</span>
+          <span className="text-sm font-black">${(bids[0].amount / 100).toLocaleString("es-MX")}</span>
         </div>
       )}
 
@@ -1268,16 +1268,16 @@ function BidPanel({
             </div>
           )}
 
-          {/* Quick increments */}
+          {/* Quick increments — labels in pesos, values in cents */}
           <div className="flex gap-1.5">
-            {[50, 100, 200, 500].map((inc) => (
+            {[{ label: 50, cents: 5000 }, { label: 100, cents: 10000 }, { label: 200, cents: 20000 }, { label: 500, cents: 50000 }].map(({ label, cents }) => (
               <button
-                key={inc}
-                onClick={() => setBidAmount((prev) => Math.max(currentBid + 50, prev + inc))}
+                key={label}
+                onClick={() => setBidAmount((prev) => Math.max(currentBid + 100, prev + cents))}
                 className="flex-1 py-1.5 rounded-lg text-xs font-bold text-zinc-300 transition-colors"
                 style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}
               >
-                +{inc}
+                +${label}
               </button>
             ))}
           </div>
@@ -1288,11 +1288,11 @@ function BidPanel({
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-bold text-sm">$</span>
               <input
                 type="number"
-                value={bidAmount}
-                onChange={(e) => setBidAmount(Number(e.target.value))}
+                value={bidAmount / 100}
+                onChange={(e) => setBidAmount(Math.round(Number(e.target.value) * 100))}
                 className="w-full bg-[#0F0F14] border border-white/15 rounded-xl pl-7 pr-2 py-3 text-white font-bold text-base focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
-                min={currentBid + 50}
-                step={50}
+                min={(currentBid + 100) / 100}
+                step={1}
               />
             </div>
             {!user ? (
@@ -1334,7 +1334,7 @@ function BidPanel({
             >
               <div>
                 <p className="text-[10px] text-[#a78bfa] font-bold">⚡ Auto-puja activa</p>
-                <p className="text-xs text-white font-semibold">hasta ${activeMaxBid.toLocaleString("es-MX")}</p>
+                <p className="text-xs text-white font-semibold">hasta ${(activeMaxBid / 100).toLocaleString("es-MX")}</p>
               </div>
               <button
                 onClick={async () => {
@@ -1364,12 +1364,12 @@ function BidPanel({
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-bold text-sm">$</span>
                     <input
                       type="number"
-                      value={maxBidAmount || ""}
-                      onChange={(e) => setMaxBidAmount(Number(e.target.value))}
-                      placeholder={String(currentBid + 200)}
+                      value={maxBidAmount ? maxBidAmount / 100 : ""}
+                      onChange={(e) => setMaxBidAmount(Math.round(Number(e.target.value) * 100))}
+                      placeholder={String((currentBid + 20000) / 100)}
                       className="w-full bg-[#0F0F14] border border-white/15 rounded-xl pl-7 pr-2 py-2.5 text-white font-bold text-sm focus:outline-none focus:border-[#6C3AE8]/60"
-                      min={currentBid + 50}
-                      step={50}
+                      min={(currentBid + 100) / 100}
+                      step={1}
                     />
                   </div>
                   <button
@@ -1407,7 +1407,7 @@ function BidPanel({
               disabled={placing || !user || hasAddress === false || hasAddress === null}
               className="w-full py-2 rounded-lg font-semibold text-white border border-white/10 hover:bg-white/5 transition-all text-xs disabled:opacity-40"
             >
-              Comprar ya — ${a.binPrice.toLocaleString("es-MX")} MXN
+              Comprar ya — ${(a.binPrice / 100).toLocaleString("es-MX")} MXN
             </button>
           )}
         </div>

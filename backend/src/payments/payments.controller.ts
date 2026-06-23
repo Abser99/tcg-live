@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, UseGuards, Logger } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Headers, Param, Post, UseGuards, Logger } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { createHmac } from 'crypto';
@@ -47,8 +47,19 @@ export class PaymentsController {
 
   @Get(':paymentId/status')
   @UseGuards(AuthGuard('jwt'))
-  getStatus(@Param('paymentId') paymentId: string) {
-    return this.paymentsService.getPaymentStatus(paymentId);
+  async getStatus(
+    @Param('paymentId') paymentId: string,
+    @CurrentUser() user: User,
+  ) {
+    const status = await this.paymentsService.getPaymentStatus(paymentId);
+    // Verify the payment belongs to the requesting user (buyer or seller on the order).
+    if (status.orderId) {
+      const order = await this.ordersService.findById(status.orderId);
+      if (order && order.buyerId !== user.id && order.sellerId !== user.id) {
+        throw new ForbiddenException('No tienes acceso a este pago');
+      }
+    }
+    return status;
   }
 
   /** Mercado Pago calls this webhook — no JWT, MP calls directly */
@@ -78,6 +89,18 @@ export class PaymentsController {
     try {
       const status = await this.paymentsService.getPaymentStatus(String(body.data.id));
       if (status.status === 'approved' && status.orderId) {
+        // Verify the payment amount matches the expected order total before marking paid.
+        // status.amount is already in MXN cents (PaymentsService converts transaction_amount * 100).
+        const order = await this.ordersService.findById(status.orderId);
+        if (order && order.totalCents !== null) {
+          if (Math.abs(status.amount - order.totalCents) > 1) {
+            this.logger.error(
+              `Webhook amount mismatch for order ${status.orderId}: ` +
+              `expected ${order.totalCents} cents, got ${status.amount} cents`,
+            );
+            return { received: true }; // acknowledge but do NOT mark paid
+          }
+        }
         await this.ordersService.markPaidByOrderId(status.orderId, status.id);
       }
     } catch (err) {

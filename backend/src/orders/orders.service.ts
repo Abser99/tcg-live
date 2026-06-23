@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Order, OrderStatus, PaymentStatus } from './entities/order.entity';
+import { Order, OrderStatus, PaymentStatus, PayoutStatus } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { UsersService } from '../users/users.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -9,6 +9,8 @@ import { EmailService } from '../notifications/email.service';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @InjectRepository(Order)  private readonly ordersRepo: Repository<Order>,
     @InjectRepository(OrderItem) private readonly itemsRepo: Repository<OrderItem>,
@@ -38,8 +40,14 @@ export class OrdersService {
       order = this.ordersRepo.create({
         auctionId, sellerId, buyerId,
         status: OrderStatus.PENDING,
+        payoutStatus: PayoutStatus.PENDING,
+        totalCents: finalPrice,
         ...(buyerZip && { buyerZip }),
       });
+      order = await this.ordersRepo.save(order);
+    } else {
+      // Accumulate additional items into the running total
+      order.totalCents = (order.totalCents ?? 0) + finalPrice;
       order = await this.ordersRepo.save(order);
     }
 
@@ -294,7 +302,62 @@ export class OrdersService {
     if (!order || order.paymentStatus === PaymentStatus.PAID) return;
     order.paymentStatus = PaymentStatus.PAID;
     order.mpPaymentId = mpPaymentId;
+    order.payoutStatus = PayoutStatus.PENDING;
+    order.payoutAmount = Math.round((order.totalCents ?? 0) * 0.92); // 8% platform commission
     await this.ordersRepo.save(order);
     this.notificationsService.notifyPaymentReceived(order.sellerId, order.id).catch(() => {});
+  }
+
+  async releasePayment(orderId: string, adminId: string): Promise<Order> {
+    const order = await this.ordersRepo.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Orden no encontrada');
+    if (order.paymentStatus !== PaymentStatus.PAID) {
+      throw new BadRequestException('La orden no ha sido pagada todavía');
+    }
+    if (order.payoutStatus === PayoutStatus.RELEASED) {
+      throw new BadRequestException('El pago ya fue liberado');
+    }
+
+    // Get seller info for payout
+    const seller = await this.usersService.findById(order.sellerId);
+
+    // TODO Phase 2: Call MP Disbursements API here when MP Marketplace is approved
+    // For now: mark as released and log for manual transfer
+    this.logger.log(
+      `PAYOUT RELEASE — orderId=${orderId} amount=${order.payoutAmount} cents ` +
+      `seller=${seller.username} clabe=${seller.clabe ?? 'N/A'} mpEmail=${seller.mpPayoutEmail ?? 'N/A'} ` +
+      `releasedBy=${adminId}`
+    );
+
+    order.payoutStatus = PayoutStatus.RELEASED;
+    order.payoutReleasedAt = new Date();
+    await this.ordersRepo.save(order);
+
+    // Notify seller
+    this.notificationsService.sendToUser(order.sellerId, {
+      title: '¡Tu pago fue liberado!',
+      body: `Recibirás $${((order.payoutAmount ?? 0) / 100).toFixed(2)} MXN en tu cuenta registrada.`,
+      data: { type: 'payout_released', orderId },
+    }).catch(() => {});
+
+    return order;
+  }
+
+  async markDelivered(orderId: string): Promise<void> {
+    const order = await this.ordersRepo.findOne({ where: { id: orderId } });
+    if (!order || order.status === OrderStatus.DELIVERED) return;
+    order.status = OrderStatus.DELIVERED;
+    await this.ordersRepo.save(order);
+    // Auto-release payout when carrier confirms delivery
+    if (order.paymentStatus === PaymentStatus.PAID && order.payoutStatus === PayoutStatus.PENDING) {
+      await this.releasePayment(orderId, 'carrier-webhook');
+    }
+  }
+
+  async findPendingPayouts(): Promise<Order[]> {
+    return this.ordersRepo.find({
+      where: { paymentStatus: PaymentStatus.PAID, payoutStatus: PayoutStatus.PENDING },
+      order: { updatedAt: 'ASC' },
+    });
   }
 }

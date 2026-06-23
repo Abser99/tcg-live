@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, UseGuards, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Patch, UseGuards, Post, ForbiddenException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { IsEnum, IsInt, IsOptional, IsString, MaxLength, Max, Min } from 'class-validator';
 import { OrdersService } from './orders.service';
@@ -130,5 +130,38 @@ export class OrdersController {
       trackingNumber: label.trackingNumber,
       labelUrl: label.labelUrl,
     });
+  }
+
+  // ── Admin payout endpoints ─────────────────────────────────────
+
+  @Get('pending-payouts')
+  @Roles(UserRole.ADMIN)
+  getPendingPayouts() {
+    return this.ordersService.findPendingPayouts();
+  }
+
+  @Post(':id/release-payout')
+  @Roles(UserRole.ADMIN)
+  releasePayout(
+    @Param('id') id: string,
+    @CurrentUser() admin: User,
+  ) {
+    return this.ordersService.releasePayment(id, admin.id);
+  }
+
+  // ── Carrier webhook (Envíos Perros) — no user auth, secret header ──
+
+  @Patch(':id/carrier-delivered')
+  async carrierDelivered(
+    @Param('id') id: string,
+    @Headers('x-carrier-secret') secret: string,
+    @Body() body: { status: string },
+  ) {
+    if (secret !== process.env.CARRIER_WEBHOOK_SECRET) {
+      throw new ForbiddenException('Secreto inválido');
+    }
+    if (body.status !== 'delivered') return { ok: true }; // ignore non-delivery events
+    await this.ordersService.markDelivered(id);
+    return { ok: true };
   }
 }

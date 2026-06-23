@@ -550,7 +550,7 @@ export default function PerfilPage() {
                           </div>
                           <div className="text-right shrink-0">
                             <p className="text-[10px] text-zinc-600 mb-0.5">Mi puja</p>
-                            <p className="font-black text-base">${bid.amount.toLocaleString("es-MX")}</p>
+                            <p className="font-black text-base">${(bid.amount / 100).toLocaleString("es-MX")}</p>
                           </div>
                           {isActive && bid.auction && (
                             <Link href={`/auctions/${bid.auction.id}`} className="shrink-0 text-xs font-bold text-white px-4 py-2 rounded-xl" style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}>
@@ -644,7 +644,7 @@ export default function PerfilPage() {
                                 className="mt-3 text-xs font-bold text-white px-4 py-2 rounded-xl disabled:opacity-60"
                                 style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 4px 16px rgba(108,58,232,0.35)" }}
                               >
-                                {checkingOut === order.id ? "Redirigiendo..." : `Pagar ahora — $${order.amount.toLocaleString("es-MX")} MXN`}
+                                {checkingOut === order.id ? "Redirigiendo..." : `Pagar ahora — $${(order.amount / 100).toLocaleString("es-MX")} MXN`}
                               </button>
                             ) : (
                               <div className="mt-3 flex items-center gap-2 text-xs text-zinc-500 px-1">
@@ -655,7 +655,7 @@ export default function PerfilPage() {
                           )}
                         </div>
                         <div className="text-right shrink-0">
-                          <p className="font-black text-lg">${order.amount.toLocaleString("es-MX")}</p>
+                          <p className="font-black text-lg">${(order.amount / 100).toLocaleString("es-MX")}</p>
                           <p className="text-[10px] text-zinc-600 mt-0.5">MXN</p>
                         </div>
                       </div>
@@ -691,7 +691,7 @@ export default function PerfilPage() {
                               SUBASTA
                             </span>
                             <span className="text-xs font-black">
-                              ${(a.currentBid ?? a.startingBid ?? 0).toLocaleString("es-MX")}{" "}
+                              ${((a.currentBid ?? a.startingBid ?? 0) / 100).toLocaleString("es-MX")}{" "}
                               <span className="text-zinc-600 font-normal text-[10px]">MXN</span>
                             </span>
                           </div>

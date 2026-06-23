@@ -17,6 +17,12 @@ export enum PaymentStatus {
   FAILED = 'failed',
 }
 
+export enum PayoutStatus {
+  PENDING  = 'pending',   // payment received, waiting for delivery
+  RELEASED = 'released',  // funds sent to seller
+  FAILED   = 'failed',    // payout attempt failed
+}
+
 @Entity('orders')
 export class Order {
   @PrimaryGeneratedColumn('uuid')
@@ -54,6 +60,10 @@ export class Order {
   @Column({ nullable: true })
   labelUrl: string;
 
+  /** Total winning bid amount in MXN cents; used to verify webhook payment amount */
+  @Column({ type: 'int', nullable: true })
+  totalCents: number | null;
+
   @Column({ type: 'enum', enum: PaymentStatus, default: PaymentStatus.UNPAID })
   paymentStatus: PaymentStatus;
 
@@ -62,6 +72,17 @@ export class Order {
 
   @Column({ nullable: true })
   mpPaymentId: string;
+
+  @Column({ type: 'enum', enum: PayoutStatus, default: PayoutStatus.PENDING })
+  payoutStatus: PayoutStatus;
+
+  /** Amount in MXN cents to pay seller (totalCents minus 8% platform commission) */
+  @Column({ type: 'int', nullable: true })
+  payoutAmount: number | null;
+
+  /** When the payout was released to the seller */
+  @Column({ type: 'timestamptz', nullable: true })
+  payoutReleasedAt: Date | null;
 
   @Column({ type: 'int', nullable: true })
   sellerRating: number; // 1–5, set by buyer after delivery

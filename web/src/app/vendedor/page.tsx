@@ -11,7 +11,7 @@ import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useAnalytics } from "@/hooks/useAnalytics";
 
 type AuctionStatus = "live" | "ending" | "upcoming" | "ended";
-type Tab = "dashboard" | "subastas" | "crear" | "ventas" | "ordenes";
+type Tab = "dashboard" | "subastas" | "crear" | "ventas" | "ordenes" | "cobros";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "dashboard", label: "Dashboard"        },
@@ -19,6 +19,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "crear",     label: "Crear Subasta"    },
   { key: "ventas",    label: "Mis Ventas"        },  // Crear Venta + activas
   { key: "ordenes",   label: "Órdenes de Venta" },
+  { key: "cobros",    label: "💰 Cobros"         },
 ];
 
 const AUCTION_STATUS_STYLE: Record<string, { label: string; color: string; bg: string }> = {
@@ -125,7 +126,7 @@ export default function VendedorPage() {
     if (!user) return;
     if (loadedTabsRef.current.has(tab)) return;
     loadedTabsRef.current.add(tab);
-    if (tab === "ordenes") {
+    if (tab === "ordenes" || tab === "cobros") {
       ordersApi.selling().catch(() => null).then(res => { if (res) setSellerOrders(res.data); });
     } else if (tab === "ventas") {
       listingsApi.my().catch(() => null).then(res => { if (res) setMyListings(res.data); });
@@ -176,8 +177,8 @@ export default function VendedorPage() {
           cardName:      form.name,
           cardSet:       form.set || undefined,
           condition:     form.condition || undefined,
-          startingPrice: Number(form.startingBid),
-          binPrice:      form.binPrice ? Number(form.binPrice) : undefined,
+          startingPrice: Math.round(Number(form.startingBid) * 100),
+          binPrice:      form.binPrice ? Math.round(Number(form.binPrice) * 100) : undefined,
           imageUrls:     form.imageUrl ? [form.imageUrl] : undefined,
         }],
       });
@@ -366,7 +367,7 @@ export default function VendedorPage() {
               <div className="flex flex-wrap items-center gap-5 mt-4">
                 {[
                   { label: "Subastas activas", value: sellerStats?.activeAuctions ?? myAuctions.filter(a => a.status === "live").length },
-                  { label: "Total vendido",    value: `$${totalRevenue.toLocaleString("es-MX")} MXN` },
+                  { label: "Total vendido",    value: `$${(totalRevenue / 100).toLocaleString("es-MX")} MXN` },
                   { label: "Pendientes envío", value: sellerStats?.pendingOrders ?? (sellerOrders?.filter(o => o.status === "pending" || o.status === "pendiente_pago").length ?? 0) },
                   { label: "Mis subastas",     value: myAuctions.length },
                 ].map((s) => (
@@ -437,7 +438,7 @@ export default function VendedorPage() {
               {[
                 {
                   label: "Ingresos totales",
-                  value: `$${(totalRevenue).toLocaleString("es-MX")}`,
+                  value: `$${(totalRevenue / 100).toLocaleString("es-MX")}`,
                   sub: "MXN",
                   icon: "💰",
                 },
@@ -506,7 +507,7 @@ export default function VendedorPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-3">
                       {[
-                        { label: "Puja actual", value: `$${(a.currentBid ?? 0).toLocaleString("es-MX")}` },
+                        { label: "Puja actual", value: `$${((a.currentBid ?? 0) / 100).toLocaleString("es-MX")}` },
                         { label: "Pujas",       value: a.totalBids ?? 0 },
                         { label: "Espectadores",value: a.viewers ?? 0 },
                       ].map((m) => (
@@ -551,7 +552,7 @@ export default function VendedorPage() {
                           </span>
                           <div className="flex-1 min-w-0">
                             <p className="text-xs leading-snug">
-                              {o.items?.[0]?.cardName ?? "Carta"} — ${o.totalAmount.toLocaleString("es-MX")} MXN
+                              {o.items?.[0]?.cardName ?? "Carta"} — ${(o.totalAmount / 100).toLocaleString("es-MX")} MXN
                             </p>
                             <p className="text-[10px] text-zinc-600 mt-0.5">
                               @{o.buyer?.username ?? "comprador"} · {new Date(o.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
@@ -576,7 +577,7 @@ export default function VendedorPage() {
               </div>
               <div className="grid grid-cols-3 gap-4">
                 {[
-                  { label: "Ingresos totales", value: `$${totalRevenue.toLocaleString("es-MX")} MXN`, color: "#a78bfa" },
+                  { label: "Ingresos totales", value: `$${(totalRevenue / 100).toLocaleString("es-MX")} MXN`, color: "#a78bfa" },
                   { label: "Órdenes totales",  value: sellerOrders?.length ?? 0,                       color: "#4ade80" },
                   { label: "Subastas totales", value: myAuctions.length,                               color: "#60a5fa" },
                 ].map(s => (
@@ -681,7 +682,7 @@ export default function VendedorPage() {
                           </div>
                           <div className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
                             <p className="text-base font-black text-violet-400">
-                              {revenue > 0 ? `$${revenue.toLocaleString("es-MX")}` : `$${currentBid.toLocaleString("es-MX")}`}
+                              {revenue > 0 ? `$${(revenue / 100).toLocaleString("es-MX")}` : `$${(currentBid / 100).toLocaleString("es-MX")}`}
                             </p>
                             <p className="text-[10px] text-zinc-600 mt-0.5">recaudado</p>
                           </div>
@@ -727,9 +728,9 @@ export default function VendedorPage() {
                         <p className="text-[10px] text-zinc-600 mb-0.5">
                           {a.status === "upcoming" ? "Precio inicial" : "Puja actual"}
                         </p>
-                        <p className="font-black text-lg">${currentBid.toLocaleString("es-MX")}</p>
+                        <p className="font-black text-lg">${(currentBid / 100).toLocaleString("es-MX")}</p>
                         {a.binPrice && (
-                          <p className="text-[10px] text-zinc-600 mt-0.5">BIN: ${a.binPrice.toLocaleString("es-MX")}</p>
+                          <p className="text-[10px] text-zinc-600 mt-0.5">BIN: ${(a.binPrice / 100).toLocaleString("es-MX")}</p>
                         )}
                       </div>
 
@@ -1248,7 +1249,7 @@ export default function VendedorPage() {
                     </div>
 
                     <div className="text-right shrink-0">
-                      <p className="font-black text-lg">${amount.toLocaleString("es-MX")}</p>
+                      <p className="font-black text-lg">${(amount / 100).toLocaleString("es-MX")}</p>
                       <p className="text-[10px] text-zinc-600 mt-0.5">MXN</p>
                     </div>
                   </div>
@@ -1257,6 +1258,131 @@ export default function VendedorPage() {
             })}
           </div>
         )}
+
+        {/* ─── COBROS ─── */}
+        {tab === "cobros" && (() => {
+          const cobrosOrders = (sellerOrders ?? []).filter(
+            o => o.payoutStatus === "pending" || o.payoutStatus === "released"
+          );
+          const pendingSum  = cobrosOrders
+            .filter(o => o.payoutStatus === "pending")
+            .reduce((sum, o) => sum + (o.payoutAmount ?? 0), 0);
+          const releasedSum = cobrosOrders
+            .filter(o => o.payoutStatus === "released")
+            .reduce((sum, o) => sum + (o.payoutAmount ?? 0), 0);
+
+          return (
+            <div className="space-y-6">
+              {sellerOrders === null && (
+                <div className="flex items-center justify-center py-16">
+                  <div className="w-5 h-5 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+                </div>
+              )}
+
+              {sellerOrders !== null && (
+                <>
+                  {/* Summary cards */}
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="rounded-2xl p-5" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                      <p className="text-xs text-zinc-500 mb-1">Pendiente de cobro</p>
+                      <p className="text-2xl font-black" style={{ color: "#fbbf24" }}>
+                        ${(pendingSum / 100).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-[11px] text-zinc-600 mt-1">MXN — en espera de entrega confirmada</p>
+                    </div>
+                    <div className="rounded-2xl p-5" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                      <p className="text-xs text-zinc-500 mb-1">Total cobrado</p>
+                      <p className="text-2xl font-black" style={{ color: "#4ade80" }}>
+                        ${(releasedSum / 100).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-[11px] text-zinc-600 mt-1">MXN — ya liberado a tu cuenta</p>
+                    </div>
+                  </div>
+
+                  {cobrosOrders.length === 0 ? (
+                    <div className="text-center py-16">
+                      <p className="text-4xl mb-3">💰</p>
+                      <p className="text-zinc-400 font-medium">Sin cobros aún</p>
+                      <p className="text-xs text-zinc-600 mt-1">Los cobros aparecerán aquí cuando tus órdenes tengan pago registrado</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl overflow-hidden" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                      {/* Table header */}
+                      <div className="grid grid-cols-5 gap-3 px-5 py-3 border-b border-white/5">
+                        {["Orden", "Artículos", "Total vendido", "Tu cobro (92%)", "Estado"].map(h => (
+                          <p key={h} className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">{h}</p>
+                        ))}
+                      </div>
+
+                      {cobrosOrders.map(order => {
+                        const totalPesos   = (order.totalCents ?? order.totalAmount ?? 0) / 100;
+                        const cobro        = (order.payoutAmount ?? 0) / 100;
+                        const commission   = totalPesos - cobro;
+                        const cardName     = order.items?.[0]?.cardName ?? "Carta";
+                        const itemCount    = order.items?.length ?? 1;
+                        const isReleased   = order.payoutStatus === "released";
+                        const releasedDate = order.payoutReleasedAt
+                          ? new Date(order.payoutReleasedAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })
+                          : null;
+
+                        return (
+                          <div
+                            key={order.id}
+                            className="grid grid-cols-5 gap-3 px-5 py-4 border-b border-white/5 last:border-0 items-center"
+                          >
+                            {/* Orden ID */}
+                            <p className="text-xs font-mono text-zinc-500">{order.id.slice(0, 8)}…</p>
+
+                            {/* Artículos */}
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold truncate">{cardName}</p>
+                              {itemCount > 1 && (
+                                <p className="text-[10px] text-zinc-600">+{itemCount - 1} más</p>
+                              )}
+                            </div>
+
+                            {/* Total vendido */}
+                            <p className="text-sm font-bold">
+                              ${totalPesos.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                              <span className="block text-[10px] text-zinc-600 font-normal">
+                                Comisión: ${commission.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                              </span>
+                            </p>
+
+                            {/* Tu cobro */}
+                            <p className="text-sm font-black" style={{ color: "#4ade80" }}>
+                              ${cobro.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                            </p>
+
+                            {/* Estado */}
+                            <div>
+                              {isReleased ? (
+                                <>
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full"
+                                    style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80" }}>
+                                    ✅ Liberado
+                                  </span>
+                                  {releasedDate && (
+                                    <p className="text-[10px] text-zinc-600 mt-1">{releasedDate}</p>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full"
+                                  style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>
+                                  ⏳ Pendiente entrega
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })()}
 
       </div>
     </div>
