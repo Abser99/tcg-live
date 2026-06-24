@@ -194,6 +194,22 @@ export const sellerApplicationsApi = {
     api.patch(`/seller-applications/${id}/review`, { status, reviewNote: note }),
 };
 
+// ─── Shipping ──────────────────────────────────────────────────
+export const shippingApi = {
+  quote: (params: { originZip: string; destinationZip: string; weightKg: number; items: number }) =>
+    api.post<ShippingQuote[]>('/shipping/quote', params).then(r => r.data),
+  generateLabel: (orderId: string, params: { carrierId: string; originZip: string; destinationZip: string; weightKg: number }) =>
+    api.post<ApiOrder>(`/orders/${orderId}/label`, params).then(r => r.data),
+};
+
+export interface ShippingQuote {
+  carrierId: string;
+  carrier: string;
+  service: string;
+  priceCents: number;
+  estimatedDays: number;
+}
+
 // ─── Admin / Orders ────────────────────────────────────────────
 export const adminOrdersApi = {
   getPendingPayouts: () => api.get<ApiOrder[]>('/orders/pending-payouts').then(r => r.data),
@@ -296,6 +312,9 @@ export interface ApiOrder {
   paymentStatus?: string;
   createdAt: string;
   trackingNumber?: string;
+  labelUrl?: string;
+  carrier?: string;
+  buyerZip?: string;
   sellerRating?: number;
   sellerRatingNote?: string;
   seller?: { username: string; clabe?: string | null; mpPayoutEmail?: string | null };

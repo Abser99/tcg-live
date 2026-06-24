@@ -6,7 +6,7 @@ import Navbar from "@/components/Navbar";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { useAuth } from "@/contexts/auth";
 import { useRouter } from "next/navigation";
-import { auctionsApi, ordersApi, listingsApi, type ApiAuction, type ApiOrder, type SellerStats, type ApiListing } from "@/lib/api";
+import { auctionsApi, ordersApi, listingsApi, shippingApi, type ApiAuction, type ApiOrder, type SellerStats, type ApiListing, type ShippingQuote } from "@/lib/api";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useAnalytics } from "@/hooks/useAnalytics";
 
@@ -80,6 +80,15 @@ export default function VendedorPage() {
   const [saleFilter, setSaleFilter] = useState<AuctionStatus | "all">("all");
   const [shippingOrder, setShippingOrder] = useState<string | null>(null);
   const [trackingInput, setTrackingInput] = useState("");
+
+  // Shipping quote flow
+  const [quoteOrder,       setQuoteOrder]       = useState<string | null>(null);
+  const [weightKg,         setWeightKg]         = useState("0.1");
+  const [shippingQuotes,   setShippingQuotes]   = useState<ShippingQuote[] | null>(null);
+  const [quotesLoading,    setQuotesLoading]    = useState(false);
+  const [selectedCarrier,  setSelectedCarrier]  = useState<string | null>(null);
+  const [generatingLabel,  setGeneratingLabel]  = useState(false);
+  const [labelResult,      setLabelResult]      = useState<{ trackingNumber: string; labelUrl: string; carrier: string } | null>(null);
   const [creating,      setCreating]      = useState(false);
   const [createError,   setCreateError]   = useState("");
   const [uploadingImg,  setUploadingImg]  = useState(false);
@@ -108,6 +117,13 @@ export default function VendedorPage() {
   }, [showStreamForm]);
 
   useEffect(() => { setTrackingInput(""); }, [shippingOrder]);
+
+  useEffect(() => {
+    setShippingQuotes(null);
+    setSelectedCarrier(null);
+    setLabelResult(null);
+    setWeightKg("0.1");
+  }, [quoteOrder]);
 
   useEffect(() => {
     if (!user) return;
@@ -1205,46 +1221,214 @@ export default function VendedorPage() {
                         <p className="text-[11px] text-zinc-600 mt-1.5 font-mono">Rastreo: {order.trackingNumber}</p>
                       )}
 
-                      {/* Marcar como enviado */}
-                      {isPending && (
-                        isShipping ? (
-                          <div className="mt-3 flex items-center gap-2">
-                            <input
-                              type="text"
-                              placeholder="Número de guía / rastreo"
-                              value={trackingInput}
-                              onChange={e => setTrackingInput(e.target.value)}
-                              className="flex-1 bg-[#0F0F14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60"
-                            />
-                            <button
-                              onClick={async () => {
-                                if (trackingInput.trim()) {
-                                  await ordersApi.updateStatus(order.id, "shipped").catch(() => {});
-                                  await ordersApi.updateTracking(order.id, trackingInput.trim()).catch(() => {});
-                                  capture("order_shipped", { orderId: order.id });
-                                  const refreshed = await ordersApi.selling().catch(() => null);
-                                  if (refreshed) setSellerOrders(refreshed.data);
-                                }
-                                setShippingOrder(null);
-                              }}
-                              className="text-xs font-bold text-white px-4 py-2 rounded-xl"
-                              style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
-                            >
-                              Confirmar
-                            </button>
-                            <button onClick={() => setShippingOrder(null)} className="text-xs text-zinc-600 px-3 py-2">
-                              Cancelar
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setShippingOrder(order.id)}
-                            className="mt-3 text-xs font-bold text-white px-5 py-2 rounded-xl"
-                            style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 4px 16px rgba(108,58,232,0.35)" }}
-                          >
-                            Marcar como enviado →
-                          </button>
-                        )
+                      {/* Shipping flow */}
+                      {isPending && order.paymentStatus === "paid" && (
+                        <div className="mt-3">
+                          {quoteOrder === order.id ? (
+                            // ── Shipping flow ────────────────────────────────
+                            <div className="rounded-xl p-4 space-y-4" style={{ background: "#0F0F14", border: "1px solid rgba(108,58,232,0.2)" }}>
+
+                              {/* Step 1 — Weight + quote */}
+                              {!shippingQuotes && !labelResult && (
+                                <div>
+                                  <p className="text-xs font-semibold text-zinc-400 mb-3">📦 Cotizar envío</p>
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex-1">
+                                      <label className="text-[10px] text-zinc-500 block mb-1">Peso del paquete (kg)</label>
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min="0.1"
+                                        value={weightKg}
+                                        onChange={e => setWeightKg(e.target.value)}
+                                        className="w-full bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#6C3AE8]/60"
+                                        placeholder="0.1"
+                                      />
+                                    </div>
+                                    <button
+                                      disabled={quotesLoading || !weightKg || Number(weightKg) <= 0}
+                                      onClick={async () => {
+                                        setQuotesLoading(true);
+                                        try {
+                                          const sellerZip = user?.zipCode ?? "06600";
+                                          const buyerZip  = order.buyerZip ?? "06600";
+                                          const quotes = await shippingApi.quote({
+                                            originZip: sellerZip,
+                                            destinationZip: buyerZip,
+                                            weightKg: Number(weightKg),
+                                            items: order.items?.length ?? 1,
+                                          });
+                                          setShippingQuotes(quotes);
+                                        } catch {
+                                          alert("Error al obtener cotizaciones. Intenta de nuevo.");
+                                        } finally {
+                                          setQuotesLoading(false);
+                                        }
+                                      }}
+                                      className="shrink-0 text-xs font-bold text-white px-4 py-2 rounded-xl disabled:opacity-50 mt-4"
+                                      style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                                    >
+                                      {quotesLoading ? "Cotizando…" : "Ver cotizaciones"}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Step 2 — Carrier selection */}
+                              {shippingQuotes && !labelResult && (
+                                <div>
+                                  <p className="text-xs font-semibold text-zinc-400 mb-3">Elige el servicio de envío</p>
+                                  <div className="space-y-2">
+                                    {shippingQuotes.map(q => (
+                                      <button
+                                        key={q.carrierId}
+                                        onClick={() => setSelectedCarrier(selectedCarrier === q.carrierId ? null : q.carrierId)}
+                                        className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all text-left"
+                                        style={{
+                                          background: selectedCarrier === q.carrierId ? "rgba(108,58,232,0.15)" : "rgba(255,255,255,0.03)",
+                                          border: `1px solid ${selectedCarrier === q.carrierId ? "#6C3AE8" : "rgba(255,255,255,0.07)"}`,
+                                        }}
+                                      >
+                                        <div>
+                                          <p className="text-sm font-bold">{q.carrier}</p>
+                                          <p className="text-[11px] text-zinc-500">{q.service} · {q.estimatedDays} día{q.estimatedDays !== 1 ? "s" : ""} hábil{q.estimatedDays !== 1 ? "es" : ""}</p>
+                                        </div>
+                                        <p className="text-sm font-black" style={{ color: "#a78bfa" }}>
+                                          ${(q.priceCents / 100).toLocaleString("es-MX")} MXN
+                                        </p>
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {selectedCarrier && (
+                                    <button
+                                      disabled={generatingLabel}
+                                      onClick={async () => {
+                                        setGeneratingLabel(true);
+                                        try {
+                                          const sellerZip = user?.zipCode ?? "06600";
+                                          const buyerZip  = order.buyerZip ?? "06600";
+                                          const updated = await shippingApi.generateLabel(order.id, {
+                                            carrierId: selectedCarrier,
+                                            originZip: sellerZip,
+                                            destinationZip: buyerZip,
+                                            weightKg: Number(weightKg),
+                                          });
+                                          capture("label_generated", { orderId: order.id, carrier: selectedCarrier });
+                                          setLabelResult({
+                                            trackingNumber: updated.trackingNumber ?? "",
+                                            labelUrl:       updated.labelUrl ?? "",
+                                            carrier:        updated.carrier ?? selectedCarrier,
+                                          });
+                                          // Refresh orders list
+                                          const refreshed = await ordersApi.selling().catch(() => null);
+                                          if (refreshed) setSellerOrders(refreshed.data);
+                                        } catch {
+                                          alert("Error al generar la guía. Intenta de nuevo.");
+                                        } finally {
+                                          setGeneratingLabel(false);
+                                        }
+                                      }}
+                                      className="mt-3 w-full text-sm font-bold text-white py-3 rounded-xl disabled:opacity-50"
+                                      style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 4px 16px rgba(108,58,232,0.35)" }}
+                                    >
+                                      {generatingLabel ? "Generando guía…" : "🚚 Generar guía de envío"}
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => { setShippingQuotes(null); setSelectedCarrier(null); }}
+                                    className="mt-2 text-xs text-zinc-600 w-full text-center py-1"
+                                  >
+                                    ← Cambiar peso
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Step 3 — Label result */}
+                              {labelResult && (
+                                <div className="text-center space-y-3">
+                                  <div className="text-3xl">✅</div>
+                                  <p className="text-sm font-bold text-green-400">¡Guía generada!</p>
+                                  <div className="rounded-xl px-4 py-3 text-left" style={{ background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.15)" }}>
+                                    <p className="text-xs text-zinc-400">Transportista: <span className="text-white font-semibold">{labelResult.carrier}</span></p>
+                                    <p className="text-xs text-zinc-400 mt-1 font-mono">Rastreo: <span className="text-white">{labelResult.trackingNumber}</span></p>
+                                  </div>
+                                  {labelResult.labelUrl && (
+                                    <a
+                                      href={labelResult.labelUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="block text-sm font-bold text-white py-2.5 rounded-xl"
+                                      style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                                    >
+                                      📄 Descargar guía PDF
+                                    </a>
+                                  )}
+                                  <button
+                                    onClick={() => setQuoteOrder(null)}
+                                    className="text-xs text-zinc-600"
+                                  >
+                                    Cerrar
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Always show close/cancel */}
+                              {!labelResult && (
+                                <button
+                                  onClick={() => setQuoteOrder(null)}
+                                  className="text-xs text-zinc-600 w-full text-center"
+                                >
+                                  Cancelar
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            // ── Initial buttons ──────────────────────────────
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <button
+                                onClick={() => { setQuoteOrder(order.id); setShippingOrder(null); }}
+                                className="text-xs font-bold text-white px-5 py-2 rounded-xl"
+                                style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 4px 16px rgba(108,58,232,0.35)" }}
+                              >
+                                📦 Cotizar y generar envío
+                              </button>
+                              <button
+                                onClick={() => { setShippingOrder(order.id); setQuoteOrder(null); }}
+                                className="text-xs text-zinc-500 px-4 py-2 rounded-xl"
+                                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+                              >
+                                Ya tengo mi guía
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Manual tracking fallback — shown when "Ya tengo mi guía" is clicked */}
+                          {isShipping && quoteOrder !== order.id && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <input
+                                type="text"
+                                placeholder="Número de guía / rastreo"
+                                value={trackingInput}
+                                onChange={e => setTrackingInput(e.target.value)}
+                                className="flex-1 bg-[#0F0F14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60"
+                              />
+                              <button
+                                onClick={async () => {
+                                  if (trackingInput.trim()) {
+                                    await ordersApi.updateStatus(order.id, "shipped").catch(() => {});
+                                    await ordersApi.updateTracking(order.id, trackingInput.trim()).catch(() => {});
+                                    const refreshed = await ordersApi.selling().catch(() => null);
+                                    if (refreshed) setSellerOrders(refreshed.data);
+                                  }
+                                  setShippingOrder(null);
+                                }}
+                                className="text-xs font-bold text-white px-4 py-2 rounded-xl"
+                                style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                              >Confirmar</button>
+                              <button onClick={() => setShippingOrder(null)} className="text-xs text-zinc-600 px-3 py-2">Cancelar</button>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
 
