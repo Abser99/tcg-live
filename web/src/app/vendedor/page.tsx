@@ -157,8 +157,9 @@ export default function VendedorPage() {
     try {
       const url = await uploadToCloudinary(file, "tcg-live/auction-items", "image");
       setForm(f => ({ ...f, imageUrl: url }));
-    } catch {
-      setCreateError("Error al subir imagen. Intenta de nuevo.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error al subir imagen";
+      setCreateError(msg);
     } finally {
       setUploadingImg(false);
     }

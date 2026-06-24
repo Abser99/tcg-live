@@ -15,6 +15,9 @@ export async function uploadToCloudinary(
     { method: "POST", body: form },
   );
   const data = await res.json();
-  if (!data.secure_url) throw new Error("Error al subir imagen");
+  if (!data.secure_url) {
+    const reason = data.error?.message ?? JSON.stringify(data);
+    throw new Error(`Error al subir imagen: ${reason}`);
+  }
   return data.secure_url as string;
 }
