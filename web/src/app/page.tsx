@@ -7,9 +7,9 @@ import { useAuth } from "@/contexts/auth";
 import { api } from "@/lib/api";
 
 const liveAuctions = [
-  { emoji: "🔥", gradient: "from-orange-500 to-red-600", glow: "rgba(239,68,68,0.4)", name: "Charizard VMAX Rainbow", set: "Brilliant Stars · PSA 10", bid: "$2,850", viewers: 47, timer: "2:34", seller: "PokéVault_MX", verified: true },
-  { emoji: "⚡", gradient: "from-yellow-400 to-amber-500", glow: "rgba(251,191,36,0.4)", name: "Pikachu VSTAR Gold", set: "Pokémon GO · NM", bid: "$650", viewers: 23, timer: "8:12", seller: "CartasMX", verified: false },
-  { emoji: "🌙", gradient: "from-violet-600 to-indigo-800", glow: "rgba(139,92,246,0.4)", name: "Umbreon VMAX Alt Art", set: "Evolving Skies · PSA 9", bid: "$4,200", viewers: 89, timer: "0:58", seller: "PokeAlpha", verified: true },
+  { id: "1", title: "Charizard VMAX PSA 9", game: "Pokémon", price: "850", viewers: 23, img: "🔥", emoji: "🔥", gradient: "from-orange-500 to-red-600", glow: "rgba(239,68,68,0.4)", name: "Charizard VMAX PSA 9", set: "Pokémon · PSA 9", bid: "$850", timer: "2:34", seller: "tcg_master_mx", verified: true },
+  { id: "2", title: "Black Lotus Unlimited", game: "Magic: The Gathering", price: "12,500", viewers: 8, img: "🌸", emoji: "🌸", gradient: "from-violet-600 to-indigo-800", glow: "rgba(139,92,246,0.4)", name: "Black Lotus Unlimited", set: "Magic: The Gathering · NM", bid: "$12,500", timer: "8:12", seller: "mtg_collector", verified: true },
+  { id: "3", title: "Exodia the Forbidden One", game: "Yu-Gi-Oh!", price: "2,300", viewers: 15, img: "👁", emoji: "👁", gradient: "from-yellow-400 to-amber-500", glow: "rgba(251,191,36,0.4)", name: "Exodia the Forbidden One", set: "Yu-Gi-Oh! · 1st Ed", bid: "$2,300", timer: "0:58", seller: "yugi_trader", verified: false },
 ];
 
 const features = [
@@ -53,7 +53,7 @@ function Hero({ user, stats }: { user: { username: string } | null; stats: { tot
         <div>
           <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium text-green-400 mb-8 border border-green-500/20 bg-green-500/5">
             <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-            47 subastas en vivo ahora
+            12 subastas en vivo ahora
           </div>
 
           <h1 className="text-6xl md:text-7xl font-black leading-[1.0] tracking-tight mb-6">
@@ -109,18 +109,18 @@ function Hero({ user, stats }: { user: { username: string } | null; stats: { tot
                   <span className="text-5xl">🔥</span>
                   <span className="text-white text-[10px] font-black tracking-widest opacity-90">CHARIZARD</span>
                 </div>
-                <div className="absolute bottom-3 left-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm rounded-full px-2.5 py-1 text-xs text-zinc-300">👁 47 viendo</div>
+                <div className="absolute bottom-3 left-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm rounded-full px-2.5 py-1 text-xs text-zinc-300">👁 12 viendo</div>
                 <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm rounded-full px-2.5 py-1 text-xs font-mono font-bold text-white">2:34</div>
               </div>
               <div className="p-4 bg-[#16161E]">
-                <p className="font-bold text-white mb-0.5">Charizard VMAX Rainbow</p>
-                <p className="text-xs text-zinc-500 mb-3">Brilliant Stars · PSA 10</p>
+                <p className="font-bold text-white mb-0.5">Charizard VMAX</p>
+                <p className="text-xs text-zinc-500 mb-3">12 pujas</p>
                 <div className="flex items-end justify-between mb-4">
                   <div>
                     <p className="text-xs text-zinc-500 mb-0.5">Puja actual</p>
-                    <p className="text-2xl font-black text-white">$2,850 <span className="text-sm text-zinc-500 font-normal">MXN</span></p>
+                    <p className="text-2xl font-black text-white">$850 <span className="text-sm text-zinc-500 font-normal">MXN</span></p>
                   </div>
-                  <p className="text-sm text-zinc-400">PokéVault_MX <span className="text-[#a78bfa]">✓</span></p>
+                  <p className="text-sm text-zinc-400">@tcg_master_mx <span className="text-[#a78bfa]">✓</span></p>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Link href="/auctions" className="font-bold py-2.5 rounded-xl text-sm text-white text-center transition-all"
@@ -134,7 +134,7 @@ function Hero({ user, stats }: { user: { username: string } | null; stats: { tot
               <div className="w-7 h-7 rounded-full bg-green-500/20 flex items-center justify-center text-xs">📈</div>
               <div>
                 <p className="text-[10px] text-zinc-500">Nueva puja</p>
-                <p className="text-xs font-bold text-white">trainer_gx — $2,850</p>
+                <p className="text-xs font-bold text-white">@tcg_master_mx — $850</p>
               </div>
             </div>
           </div>

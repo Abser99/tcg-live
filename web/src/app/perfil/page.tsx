@@ -375,7 +375,7 @@ export default function PerfilPage() {
                 {initials}
               </div>
               <span
-                className="absolute -bottom-1.5 -right-1.5 text-[10px] font-black px-2 py-0.5 rounded-full border border-[#0F0F14]"
+                className="absolute -bottom-1.5 -right-1.5 text-xs font-black px-2 py-0.5 rounded-full border border-[#0F0F14]"
                 style={{ background: "#6C3AE8" }}
               >
                 {user.role === "SELLER" ? "Vendedor" : "Comprador"}
@@ -457,7 +457,7 @@ export default function PerfilPage() {
                   {t.label}
                   {count !== undefined && count > 0 && (
                     <span
-                      className="text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+                      className="text-xs font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
                       style={active ? { background: "rgba(108,58,232,0.3)", color: "#a78bfa" } : { background: "rgba(255,255,255,0.07)", color: "#71717a" }}
                     >
                       {count}
@@ -472,8 +472,9 @@ export default function PerfilPage() {
 
       <div className="mx-auto max-w-4xl px-6 py-8">
         {dataLoading && (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-6 h-6 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+          <div className="flex flex-col items-center justify-center py-24 gap-4">
+            <div className="w-10 h-10 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+            <p className="text-sm text-zinc-500">Cargando tu perfil...</p>
           </div>
         )}
 
@@ -536,9 +537,17 @@ export default function PerfilPage() {
                       const isActive = bid.status === "active" || bid.status === "ganando";
                       return (
                         <div key={bid.id} className="flex items-center gap-4 rounded-2xl p-4" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
-                          <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0" style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}>
-                            🃏
-                          </div>
+                          {bid.item?.imageUrls?.[0] ? (
+                            <img
+                              src={bid.item.imageUrls[0]}
+                              alt={bid.item?.cardName ?? "Carta"}
+                              className="w-12 h-16 object-contain rounded-lg shrink-0"
+                            />
+                          ) : (
+                            <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0" style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}>
+                              🃏
+                            </div>
+                          )}
                           <div className="flex-1 min-w-0">
                             <p className="font-bold text-sm truncate">{bid.item?.cardName ?? bid.auction?.title ?? "Carta"}</p>
                             <p className="text-xs text-zinc-500 mt-0.5">{bid.item?.condition ?? ""}</p>
@@ -549,7 +558,7 @@ export default function PerfilPage() {
                             </div>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="text-[10px] text-zinc-600 mb-0.5">Mi puja</p>
+                            <p className="text-xs text-zinc-600 mb-0.5">Mi puja</p>
                             <p className="font-black text-base">${(bid.amount / 100).toLocaleString("es-MX")}</p>
                           </div>
                           {isActive && bid.auction && (
@@ -585,9 +594,17 @@ export default function PerfilPage() {
                   return (
                     <div key={order.id} className="rounded-2xl p-5" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
                       <div className="flex items-start gap-4">
-                        <div className={`w-12 h-16 rounded-xl bg-gradient-to-br ${order.gradient} flex items-center justify-center text-xl shrink-0`} style={{ boxShadow: `0 0 16px ${order.glow}` }}>
-                          {order.emoji}
-                        </div>
+                        {realOrders?.find(o => o.id === order.id)?.items?.[0]?.imageUrls?.[0] ? (
+                          <img
+                            src={realOrders.find(o => o.id === order.id)!.items![0].imageUrls![0]}
+                            alt={order.item}
+                            className="w-12 h-16 object-contain rounded-lg shrink-0"
+                          />
+                        ) : (
+                          <div className={`w-12 h-16 rounded-xl bg-gradient-to-br ${order.gradient} flex items-center justify-center text-xl shrink-0`} style={{ boxShadow: `0 0 16px ${order.glow}` }}>
+                            {order.emoji}
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
                             <p className="font-bold text-sm">{order.item}</p>
@@ -656,7 +673,7 @@ export default function PerfilPage() {
                         </div>
                         <div className="text-right shrink-0">
                           <p className="font-black text-lg">${(order.amount / 100).toLocaleString("es-MX")}</p>
-                          <p className="text-[10px] text-zinc-600 mt-0.5">MXN</p>
+                          <p className="text-xs text-zinc-600 mt-0.5">MXN</p>
                         </div>
                       </div>
                     </div>
@@ -680,19 +697,27 @@ export default function PerfilPage() {
                   return (
                     <Link key={w.id} href={`/auctions/${a.id}`}>
                       <div className="rounded-2xl p-4 flex items-center gap-4 hover:border-[#6C3AE8]/30 transition-all cursor-pointer" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
-                        <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0" style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}>
-                          🃏
-                        </div>
+                        {a.items?.[0]?.imageUrls?.[0] ? (
+                          <img
+                            src={a.items[0].imageUrls[0]}
+                            alt={a.title ?? a.name ?? "Subasta"}
+                            className="w-12 h-16 object-contain rounded-lg shrink-0"
+                          />
+                        ) : (
+                          <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0" style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}>
+                            🃏
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="font-bold text-sm truncate">{a.title ?? a.name ?? "Subasta"}</p>
                           <p className="text-xs text-zinc-500 mt-0.5">{a.game ?? ""}</p>
                           <div className="flex items-center gap-2 mt-2">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "#f87171" }}>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "#f87171" }}>
                               SUBASTA
                             </span>
                             <span className="text-xs font-black">
                               ${((a.currentBid ?? a.startingBid ?? 0) / 100).toLocaleString("es-MX")}{" "}
-                              <span className="text-zinc-600 font-normal text-[10px]">MXN</span>
+                              <span className="text-zinc-600 font-normal text-xs">MXN</span>
                             </span>
                           </div>
                         </div>
@@ -836,9 +861,9 @@ export default function PerfilPage() {
                         : { background: "rgba(255,255,255,0.06)", color: "#e4e4e7" }
                       }
                     >
-                      {!mine && <p className="text-[10px] font-bold mb-1" style={{ color: "#a78bfa" }}>{m.senderUsername}</p>}
+                      {!mine && <p className="text-xs font-bold mb-1" style={{ color: "#a78bfa" }}>{m.senderUsername}</p>}
                       <p>{m.body}</p>
-                      <p className="text-[10px] mt-1 opacity-60 text-right">
+                      <p className="text-xs mt-1 opacity-60 text-right">
                         {new Date(m.createdAt).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
                       </p>
                     </div>

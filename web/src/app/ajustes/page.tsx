@@ -491,7 +491,7 @@ export default function AjustesPage() {
 
                   <Field label="Correo electrónico">
                     <Input value={user.email} readOnly />
-                    <p className="text-[11px] text-zinc-600 mt-1">Para cambiar tu correo, contáctanos en soporte@tcglive.mx</p>
+                    <p className="text-[11px] text-zinc-600 mt-1">Para cambiar tu correo, contáctanos en tcgsubastas@gmail.com</p>
                   </Field>
 
                   <div className="flex justify-end mt-2">
@@ -900,7 +900,7 @@ export default function AjustesPage() {
             {activeSection === "pago" && (
               <SectionCard title="Forma de pago">
                 <p className="text-xs text-zinc-500 mb-5">
-                  Los pagos en TCG Subastas se procesan con Mercado Pago — no necesitas guardar una tarjeta aquí.
+                  Los pagos en TCG Live se procesan con Mercado Pago — no necesitas guardar una tarjeta aquí.
                   Al ganar una subasta o comprar una carta, recibirás un enlace de pago donde puedes usar
                   tarjeta de crédito/débito, transferencia o saldo de Mercado Pago.
                 </p>

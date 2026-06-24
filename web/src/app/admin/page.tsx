@@ -49,6 +49,7 @@ export default function AdminPage() {
   const [payoutsLoading,     setPayoutsLoading]     = useState(false);
   const [releasingPayout,    setReleasingPayout]    = useState<string | null>(null);
   const [payoutFlash,        setPayoutFlash]        = useState<string | null>(null);
+  const [confirmPayoutId,    setConfirmPayoutId]    = useState<string | null>(null);
 
   // Users tab state
   const [allUsers,         setAllUsers]         = useState<AdminUser[]>([]);
@@ -210,8 +211,6 @@ export default function AdminPage() {
   }
 
   async function handleReleasePayout(orderId: string) {
-    const ok = confirm("¿Confirmar liberación de pago para esta orden?");
-    if (!ok) return;
     setReleasingPayout(orderId);
     try {
       await adminOrdersApi.releasePayout(orderId);
@@ -697,14 +696,33 @@ export default function AdminPage() {
 
                             {/* Action */}
                             {!isReleased && (
-                              <button
-                                onClick={() => handleReleasePayout(order.id)}
-                                disabled={releasingPayout === order.id}
-                                className="shrink-0 text-sm font-black px-5 py-2.5 rounded-xl text-white disabled:opacity-50 transition-all"
-                                style={{ background: "linear-gradient(135deg, #059669, #10b981)", boxShadow: "0 4px 16px rgba(5,150,105,0.3)" }}
-                              >
-                                {releasingPayout === order.id ? "Liberando..." : "💸 Liberar pago"}
-                              </button>
+                              <div className="shrink-0">
+                                {confirmPayoutId === order.id ? (
+                                  <div className="flex flex-col items-end gap-2">
+                                    <span className="text-xs text-zinc-400">¿Confirmar liberación de ${((order.payoutAmount ?? 0) / 100).toLocaleString("es-MX")} MXN?</span>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={async () => {
+                                          await handleReleasePayout(order.id);
+                                          setConfirmPayoutId(null);
+                                        }}
+                                        className="text-xs font-bold text-white px-3 py-1.5 rounded-lg"
+                                        style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                                      >Sí, liberar</button>
+                                      <button onClick={() => setConfirmPayoutId(null)} className="text-xs text-zinc-500 px-3 py-1.5">Cancelar</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setConfirmPayoutId(order.id)}
+                                    disabled={releasingPayout === order.id}
+                                    className="text-xs font-bold text-white px-4 py-2 rounded-xl disabled:opacity-50"
+                                    style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                                  >
+                                    {releasingPayout === order.id ? "Liberando…" : "💸 Liberar pago"}
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>

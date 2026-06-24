@@ -23,14 +23,14 @@ export default function Navbar() {
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#0F0F14]/90 backdrop-blur-lg">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2.5 shrink-0">
+          <Link href="/" className="flex items-center gap-2 shrink-0">
             <div
-              className="w-8 h-8 rounded-lg bg-[#6C3AE8] flex items-center justify-center font-black text-sm"
-              style={{ boxShadow: "0 0 16px rgba(108,58,232,0.5)" }}
+              className="flex items-center justify-center w-8 h-8 rounded-lg font-black text-base"
+              style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 0 16px rgba(108,58,232,0.5)" }}
             >
-              T
+              ⚡
             </div>
-            <span className="font-bold text-lg tracking-tight">TCG Live</span>
+            <span className="font-black text-lg tracking-tight text-white">TCG<span style={{ color: "#a78bfa" }}>Live</span></span>
           </Link>
 
           {/* Desktop nav */}

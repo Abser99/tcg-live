@@ -319,7 +319,7 @@ export interface ApiOrder {
   sellerRatingNote?: string;
   seller?: { username: string; clabe?: string | null; mpPayoutEmail?: string | null };
   buyer?: { username: string };
-  items?: { cardName: string; finalPrice: number }[];
+  items?: { cardName: string; finalPrice: number; imageUrls?: string[] }[];
   payoutStatus?: 'pending' | 'released' | 'failed';
   payoutAmount?: number | null;
   payoutReleasedAt?: string | null;

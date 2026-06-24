@@ -215,7 +215,7 @@ export default function AuctionsPage() {
               return (
                 <Link key={a.id} href={`/auctions/${a.id}`}>
                   <div
-                    className="rounded-2xl overflow-hidden hover:scale-[1.02] hover:border-[#6C3AE8]/30 transition-all cursor-pointer"
+                    className="rounded-2xl overflow-hidden hover:scale-[1.02] hover:shadow-xl hover:border-[#6C3AE8]/30 transition-all hover:scale-[1.01] cursor-pointer"
                     style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
                   >
                     <div className="relative h-44 bg-[#0d0d1a] flex items-center justify-center overflow-hidden">
@@ -223,15 +223,23 @@ export default function AuctionsPage() {
                         className="absolute inset-0 opacity-30"
                         style={{ background: `radial-gradient(circle at center, ${glow} 0%, transparent 70%)` }}
                       />
-                      <div
-                        className={`relative w-20 h-28 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-3xl shadow-2xl`}
-                        style={{ boxShadow: `0 0 30px ${glow}` }}
-                      >
-                        🃏
-                      </div>
+                      {a.items?.[0]?.imageUrls?.[0] ? (
+                        <img
+                          src={a.items[0].imageUrls[0]}
+                          alt={title}
+                          className="relative w-20 h-28 object-contain rounded-xl drop-shadow-2xl"
+                        />
+                      ) : (
+                        <div
+                          className={`relative w-20 h-28 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-3xl shadow-2xl`}
+                          style={{ boxShadow: `0 0 30px ${glow}` }}
+                        >
+                          🃏
+                        </div>
+                      )}
 
                       <div
-                        className="absolute top-3 left-3 flex items-center gap-1.5 text-white text-[10px] font-black px-2.5 py-1 rounded-full"
+                        className="absolute top-3 left-3 flex items-center gap-1.5 text-white text-xs font-black px-2.5 py-1 rounded-full"
                         style={{ background: status?.bg, boxShadow: `0 2px 10px ${status?.glow}` }}
                       >
                         {a.status === "live" && (
@@ -255,7 +263,7 @@ export default function AuctionsPage() {
                         <p className="font-bold text-white text-sm leading-tight">{title}</p>
                         {a.condition && (
                           <span
-                            className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-md"
+                            className="shrink-0 text-xs font-bold px-2 py-0.5 rounded-md"
                             style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.2)" }}
                           >
                             {a.condition}
@@ -266,7 +274,7 @@ export default function AuctionsPage() {
 
                       <div className="flex items-end justify-between mb-4">
                         <div>
-                          <p className="text-[10px] text-zinc-600 mb-0.5">
+                          <p className="text-xs text-zinc-600 mb-0.5">
                             {a.status === "upcoming" ? "Precio inicial" : "Puja actual"}
                           </p>
                           <p className="text-xl font-black text-white">
@@ -274,13 +282,13 @@ export default function AuctionsPage() {
                             <span className="text-xs text-zinc-500 font-normal">MXN</span>
                           </p>
                           {a.binPrice && (
-                            <p className="text-[10px] text-zinc-500 mt-0.5">
+                            <p className="text-xs text-zinc-500 mt-0.5">
                               Comprar ya: ${(a.binPrice / 100).toLocaleString("es-MX")} MXN
                             </p>
                           )}
                         </div>
                         <div className="text-right">
-                          <p className="text-[10px] text-zinc-600 mb-0.5">Vendedor</p>
+                          <p className="text-xs text-zinc-600 mb-0.5">Vendedor</p>
                           <p className="text-xs font-semibold text-white">
                             {sellerName} {verified && <span className="text-[#a78bfa]">✓</span>}
                           </p>
@@ -288,7 +296,7 @@ export default function AuctionsPage() {
                       </div>
 
                       <div
-                        className="w-full py-2.5 rounded-xl text-sm font-bold text-white text-center"
+                        className="w-full py-2.5 rounded-xl text-sm font-bold text-white text-center transition-all hover:brightness-110 active:scale-95"
                         style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
                       >
                         {a.status === "live" ? "Entrar y pujar →" : a.status === "ending" ? "Ver subasta →" : "Recordarme →"}

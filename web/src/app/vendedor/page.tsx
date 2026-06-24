@@ -76,7 +76,7 @@ export default function VendedorPage() {
   const [streamTitle, setStreamTitle] = useState("");
   const [streamGame, setStreamGame] = useState("pokemon");
   const [form, setForm] = useState<AuctionForm>(EMPTY_FORM);
-  const [submitted, setSubmitted] = useState(false);
+  const [shippingError, setShippingError] = useState<string | null>(null);
   const [saleFilter, setSaleFilter] = useState<AuctionStatus | "all">("all");
   const [shippingOrder, setShippingOrder] = useState<string | null>(null);
   const [trackingInput, setTrackingInput] = useState("");
@@ -123,6 +123,7 @@ export default function VendedorPage() {
     setSelectedCarrier(null);
     setLabelResult(null);
     setWeightKg("0.1");
+    setShippingError(null);
   }, [quoteOrder]);
 
   useEffect(() => {
@@ -212,7 +213,6 @@ export default function VendedorPage() {
 
   function handleReset() {
     setForm(EMPTY_FORM);
-    setSubmitted(false);
   }
 
   async function handleListingImageUpload(file: File) {
@@ -365,7 +365,7 @@ export default function VendedorPage() {
                 🧑‍💼
               </div>
               <span
-                className="absolute -bottom-1.5 -right-1.5 text-[10px] font-black px-2 py-0.5 rounded-full border border-[#0F0F14]"
+                className="absolute -bottom-1.5 -right-1.5 text-xs font-black px-2 py-0.5 rounded-full border border-[#0F0F14]"
                 style={{ background: "#6C3AE8" }}
               >
                 Vendedor
@@ -416,7 +416,11 @@ export default function VendedorPage() {
           </div>
 
           {/* Tabs */}
-          <div className="flex items-center gap-1 mt-8 overflow-x-auto">
+          <div className="relative mt-8">
+            <div
+              className="flex items-center gap-1 overflow-x-auto pb-1"
+              style={{ msOverflowStyle: "none", scrollbarWidth: "none", maskImage: "linear-gradient(to right, transparent 0%, black 4%, black 92%, transparent 100%)", WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 4%, black 92%, transparent 100%)" }}
+            >
             {TABS.map((t) => {
               const active = tab === t.key;
               const pendingOrdersCount = t.key === "ordenes" ? (sellerOrders?.filter(o => o.status === "pending" || o.status === "pendiente_pago").length ?? 0) : 0;
@@ -431,13 +435,14 @@ export default function VendedorPage() {
                 >
                   {t.label}
                   {pendingOrdersCount > 0 && (
-                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center" style={{ background: "rgba(245,158,11,0.2)", color: "#f59e0b" }}>
+                    <span className="text-xs font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center" style={{ background: "rgba(245,158,11,0.2)", color: "#f59e0b" }}>
                       {pendingOrdersCount}
                     </span>
                   )}
                 </button>
               );
             })}
+            </div>
           </div>
         </div>
       </div>
@@ -484,7 +489,7 @@ export default function VendedorPage() {
                 >
                   <p className="text-2xl mb-2">{s.icon}</p>
                   <p className="text-2xl font-black">{s.value}</p>
-                  <p className="text-[10px] text-zinc-600 mt-0.5">{s.sub}</p>
+                  <p className="text-xs text-zinc-600 mt-0.5">{s.sub}</p>
                   <p className="text-xs text-zinc-500 mt-2">{s.label}</p>
                 </div>
               ))}
@@ -533,7 +538,7 @@ export default function VendedorPage() {
                           style={{ background: "rgba(255,255,255,0.04)" }}
                         >
                           <p className="font-black text-sm">{m.value}</p>
-                          <p className="text-[10px] text-zinc-600 mt-0.5">{m.label}</p>
+                          <p className="text-xs text-zinc-600 mt-0.5">{m.label}</p>
                         </div>
                       ))}
                     </div>
@@ -570,7 +575,7 @@ export default function VendedorPage() {
                             <p className="text-xs leading-snug">
                               {o.items?.[0]?.cardName ?? "Carta"} — ${(o.totalAmount / 100).toLocaleString("es-MX")} MXN
                             </p>
-                            <p className="text-[10px] text-zinc-600 mt-0.5">
+                            <p className="text-xs text-zinc-600 mt-0.5">
                               @{o.buyer?.username ?? "comprador"} · {new Date(o.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
                             </p>
                           </div>
@@ -668,13 +673,13 @@ export default function VendedorPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <span
-                                className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                className="text-xs font-bold px-2 py-0.5 rounded-full"
                                 style={{ background: s?.bg, color: s?.color }}
                               >
                                 {s?.label ?? "Terminada"}
                               </span>
                               {a.game && (
-                                <span className="text-[10px] text-zinc-600">{a.game}</span>
+                                <span className="text-xs text-zinc-600">{a.game}</span>
                               )}
                             </div>
                             <p className="font-bold text-sm leading-tight truncate">{title}</p>
@@ -690,17 +695,17 @@ export default function VendedorPage() {
                         <div className="grid grid-cols-3 gap-2 mt-3">
                           <div className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
                             <p className="text-base font-black text-green-400">{soldItems.length}</p>
-                            <p className="text-[10px] text-zinc-600 mt-0.5">vendidos</p>
+                            <p className="text-xs text-zinc-600 mt-0.5">vendidos</p>
                           </div>
                           <div className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
                             <p className="text-base font-black text-zinc-400">{totalItems - soldItems.length}</p>
-                            <p className="text-[10px] text-zinc-600 mt-0.5">sin vender</p>
+                            <p className="text-xs text-zinc-600 mt-0.5">sin vender</p>
                           </div>
                           <div className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
                             <p className="text-base font-black text-violet-400">
                               {revenue > 0 ? `$${(revenue / 100).toLocaleString("es-MX")}` : `$${(currentBid / 100).toLocaleString("es-MX")}`}
                             </p>
-                            <p className="text-[10px] text-zinc-600 mt-0.5">recaudado</p>
+                            <p className="text-xs text-zinc-600 mt-0.5">recaudado</p>
                           </div>
                         </div>
                       </div>
@@ -715,12 +720,20 @@ export default function VendedorPage() {
                       style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
                     >
                       {/* Card */}
-                      <div
-                        className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0"
-                        style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}
-                      >
-                        🃏
-                      </div>
+                      {a.items?.[0]?.imageUrls?.[0] ? (
+                        <img
+                          src={a.items[0].imageUrls![0]}
+                          alt={a.title ?? a.name ?? "Carta"}
+                          className="w-12 h-16 object-contain rounded-xl shrink-0"
+                        />
+                      ) : (
+                        <div
+                          className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0"
+                          style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}
+                        >
+                          🃏
+                        </div>
+                      )}
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
@@ -728,7 +741,7 @@ export default function VendedorPage() {
                         <p className="text-xs text-zinc-500 mt-0.5">{a.game ?? ""} {a.condition ? `· ${a.condition}` : ""}</p>
                         <div className="flex items-center gap-2 mt-2">
                           <span
-                            className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                            className="text-xs font-bold px-2 py-0.5 rounded-full"
                             style={{ background: s?.bg, color: s?.color }}
                           >
                             {s?.label ?? a.status}
@@ -741,12 +754,12 @@ export default function VendedorPage() {
 
                       {/* Price */}
                       <div className="text-right shrink-0">
-                        <p className="text-[10px] text-zinc-600 mb-0.5">
+                        <p className="text-xs text-zinc-600 mb-0.5">
                           {a.status === "upcoming" ? "Precio inicial" : "Puja actual"}
                         </p>
                         <p className="font-black text-lg">${(currentBid / 100).toLocaleString("es-MX")}</p>
                         {a.binPrice && (
-                          <p className="text-[10px] text-zinc-600 mt-0.5">BIN: ${(a.binPrice / 100).toLocaleString("es-MX")}</p>
+                          <p className="text-xs text-zinc-600 mt-0.5">BIN: ${(a.binPrice / 100).toLocaleString("es-MX")}</p>
                         )}
                       </div>
 
@@ -799,43 +812,7 @@ export default function VendedorPage() {
         {/* ─── CREAR SUBASTA ─── */}
         {tab === "crear" && (
           <div className="max-w-2xl mx-auto">
-            {submitted ? (
-              <div
-                className="rounded-2xl p-10 text-center"
-                style={{ background: "#16161E", border: "1px solid rgba(108,58,232,0.3)" }}
-              >
-                <div
-                  className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center text-3xl"
-                  style={{ background: "rgba(108,58,232,0.15)", boxShadow: "0 0 32px rgba(108,58,232,0.2)" }}
-                >
-                  ✅
-                </div>
-                <h2 className="text-xl font-black mb-2">¡Subasta creada!</h2>
-                <p className="text-zinc-500 text-sm mb-1">
-                  <span className="text-white font-semibold">{form.name}</span> está en revisión.
-                </p>
-                <p className="text-zinc-600 text-xs mb-8">
-                  Tiempo de revisión: ~5 minutos. Te notificaremos cuando sea publicada.
-                </p>
-                <div className="flex items-center justify-center gap-3">
-                  <button
-                    onClick={handleReset}
-                    className="text-sm font-semibold px-5 py-2.5 rounded-xl transition-all"
-                    style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.2)" }}
-                  >
-                    Crear otra
-                  </button>
-                  <button
-                    onClick={() => setTab("subastas")}
-                    className="text-sm font-bold text-white px-5 py-2.5 rounded-xl transition-all"
-                    style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
-                  >
-                    Ver mis subastas →
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-5">
 
                 {createError && (
                   <div className="px-4 py-3 rounded-xl text-sm text-red-400" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
@@ -1019,7 +996,6 @@ export default function VendedorPage() {
                   {creating ? "Publicando..." : "Publicar subasta →"}
                 </button>
               </form>
-            )}
           </div>
         )}
 
@@ -1135,14 +1111,14 @@ export default function VendedorPage() {
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-sm truncate">{l.title}</p>
                         <p className="text-xs text-zinc-500 mt-0.5">{l.game ?? ""} {l.condition ? `· ${l.condition}` : ""}</p>
-                        <span className="mt-1.5 inline-block text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        <span className="mt-1.5 inline-block text-xs font-bold px-2 py-0.5 rounded-full"
                           style={{ background: l.status === "active" ? "rgba(74,222,128,0.12)" : "rgba(113,113,122,0.12)", color: l.status === "active" ? "#4ade80" : "#71717a" }}>
                           {l.status === "active" ? "Activa" : l.status === "sold" ? "Vendida" : "Cancelada"}
                         </span>
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-black text-lg">${((l.price ?? 0) / 100).toLocaleString("es-MX")}</p>
-                        <p className="text-[10px] text-zinc-600">MXN</p>
+                        <p className="text-xs text-zinc-600">MXN</p>
                       </div>
                       {l.status === "active" && (
                         <button onClick={async () => {
@@ -1195,9 +1171,17 @@ export default function VendedorPage() {
                   }}
                 >
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0" style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}>
-                      🃏
-                    </div>
+                    {order.items?.[0]?.imageUrls?.[0] ? (
+                      <img
+                        src={order.items[0].imageUrls[0]}
+                        alt={order.items[0].cardName ?? "Carta"}
+                        className="w-12 h-16 object-contain rounded-xl shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0" style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}>
+                        🃏
+                      </div>
+                    )}
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -1234,7 +1218,7 @@ export default function VendedorPage() {
                                   <p className="text-xs font-semibold text-zinc-400 mb-3">📦 Cotizar envío</p>
                                   <div className="flex items-center gap-3">
                                     <div className="flex-1">
-                                      <label className="text-[10px] text-zinc-500 block mb-1">Peso del paquete (kg)</label>
+                                      <label className="text-xs text-zinc-500 block mb-1">Peso del paquete (kg)</label>
                                       <input
                                         type="number"
                                         step="0.1"
@@ -1260,7 +1244,7 @@ export default function VendedorPage() {
                                           });
                                           setShippingQuotes(quotes);
                                         } catch {
-                                          alert("Error al obtener cotizaciones. Intenta de nuevo.");
+                                          setShippingError("Error al obtener cotizaciones. Intenta de nuevo.");
                                         } finally {
                                           setQuotesLoading(false);
                                         }
@@ -1271,6 +1255,9 @@ export default function VendedorPage() {
                                       {quotesLoading ? "Cotizando…" : "Ver cotizaciones"}
                                     </button>
                                   </div>
+                                  {shippingError && (
+                                    <p className="text-xs text-red-400 mt-2">{shippingError}</p>
+                                  )}
                                 </div>
                               )}
 
@@ -1323,7 +1310,7 @@ export default function VendedorPage() {
                                           const refreshed = await ordersApi.selling().catch(() => null);
                                           if (refreshed) setSellerOrders(refreshed.data);
                                         } catch {
-                                          alert("Error al generar la guía. Intenta de nuevo.");
+                                          setShippingError("Error al generar la guía. Intenta de nuevo.");
                                         } finally {
                                           setGeneratingLabel(false);
                                         }
@@ -1434,7 +1421,7 @@ export default function VendedorPage() {
 
                     <div className="text-right shrink-0">
                       <p className="font-black text-lg">${(amount / 100).toLocaleString("es-MX")}</p>
-                      <p className="text-[10px] text-zinc-600 mt-0.5">MXN</p>
+                      <p className="text-xs text-zinc-600 mt-0.5">MXN</p>
                     </div>
                   </div>
                 </div>
@@ -1494,7 +1481,7 @@ export default function VendedorPage() {
                       {/* Table header */}
                       <div className="grid grid-cols-5 gap-3 px-5 py-3 border-b border-white/5">
                         {["Orden", "Artículos", "Total vendido", "Tu cobro (92%)", "Estado"].map(h => (
-                          <p key={h} className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">{h}</p>
+                          <p key={h} className="text-xs font-bold text-zinc-600 uppercase tracking-widest">{h}</p>
                         ))}
                       </div>
 
@@ -1521,14 +1508,14 @@ export default function VendedorPage() {
                             <div className="min-w-0">
                               <p className="text-xs font-semibold truncate">{cardName}</p>
                               {itemCount > 1 && (
-                                <p className="text-[10px] text-zinc-600">+{itemCount - 1} más</p>
+                                <p className="text-xs text-zinc-600">+{itemCount - 1} más</p>
                               )}
                             </div>
 
                             {/* Total vendido */}
                             <p className="text-sm font-bold">
                               ${totalPesos.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
-                              <span className="block text-[10px] text-zinc-600 font-normal">
+                              <span className="block text-xs text-zinc-600 font-normal">
                                 Comisión: ${commission.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
                               </span>
                             </p>
@@ -1547,7 +1534,7 @@ export default function VendedorPage() {
                                     ✅ Liberado
                                   </span>
                                   {releasedDate && (
-                                    <p className="text-[10px] text-zinc-600 mt-1">{releasedDate}</p>
+                                    <p className="text-xs text-zinc-600 mt-1">{releasedDate}</p>
                                   )}
                                 </>
                               ) : (
