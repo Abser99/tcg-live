@@ -127,7 +127,7 @@ export default function MyOrdersScreen({ navigation }: Props) {
       if (data.order.paymentStatus === 'paid') {
         Alert.alert('¡Pago completado!', 'Tu pago fue registrado. El vendedor preparará tu pedido.');
       } else {
-        await Linking.openURL(data.sandboxInitPoint);
+        await Linking.openURL(data.initPoint);
       }
     } catch {
       Alert.alert('Error', 'No se pudo iniciar el pago. Intenta de nuevo.');

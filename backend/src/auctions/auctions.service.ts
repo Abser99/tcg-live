@@ -465,6 +465,16 @@ export class AuctionsService implements OnModuleInit {
       nextItem.status = AuctionItemStatus.ACTIVE;
       nextItem.closesAt = new Date(Date.now() + ITEM_TIMER_MS);
       await this.itemsRepo.save(nextItem);
+    } else {
+      // Last item closed — auto-end the auction
+      const auction = await this.auctionsRepo.findOne({ where: { id: item.auctionId } });
+      if (auction && auction.status === AuctionStatus.LIVE) {
+        auction.status = AuctionStatus.ENDED;
+        auction.endedAt = new Date();
+        await this.auctionsRepo.save(auction);
+        this.gateway.emitAuctionEnded(auction.id);
+        this.logger.log(`Auto-ended auction ${auction.id} — all items closed`);
+      }
     }
 
     if (item.winnerId) {
