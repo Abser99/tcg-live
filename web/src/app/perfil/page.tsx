@@ -54,7 +54,7 @@ type Tab = "ordenes" | "watchlist" | "mensajes" | "disputas";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "ordenes",   label: "Mis Órdenes" },
-  { key: "watchlist", label: "Watchlist"   },
+  { key: "watchlist", label: "Seguimiento" },
   { key: "mensajes",  label: "Mensajes"    },
   { key: "disputas",  label: "Disputas"    },
 ];
@@ -389,7 +389,7 @@ export default function PerfilPage() {
                 {[
                   { label: "Pujas activas", value: realBids?.filter(b => b.status === "active").length ?? 0 },
                   { label: "Órdenes",       value: orders.length                                            },
-                  { label: "Watchlist",     value: realWatchlist?.length ?? 0                               },
+                  { label: "Seguimiento",   value: realWatchlist?.length ?? 0                               },
                 ].map((s) => (
                   <div key={s.label}>
                     <p className="text-xl font-black">{s.value}</p>

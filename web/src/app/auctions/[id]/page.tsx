@@ -1473,7 +1473,7 @@ function BidPanel({
               : { background: "rgba(108,58,232,0.1)", borderColor: "rgba(108,58,232,0.4)" }
             }
           >
-            {watchlisted ? "✓ En tu watchlist" : watchloading ? "Guardando..." : "🔔 Recordarme cuando inicie"}
+            {watchlisted ? "✓ En seguimiento" : watchloading ? "Guardando..." : "🔔 Recordarme cuando inicie"}
           </button>
           {a.endTime && (
             <p className="text-xs text-zinc-600 text-center mt-2">Inicia en {formatTimer(a.endTime)}</p>
