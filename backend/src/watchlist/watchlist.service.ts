@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { WatchlistItem } from './entities/watchlist-item.entity';
 import { Auction, AuctionStatus } from '../auctions/entities/auction.entity';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -33,11 +33,14 @@ export class WatchlistService {
   }
 
   async findByUser(userId: string): Promise<WatchlistItem[]> {
-    return this.repo.find({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-      relations: ['auction', 'auction.seller', 'auction.items'],
+    const items = await this.repo.find({ where: { userId }, order: { createdAt: 'DESC' } });
+    if (!items.length) return [];
+    const auctions = await this.auctionsRepo.find({
+      where: { id: In(items.map(i => i.auctionId)) },
+      relations: ['seller', 'items'],
     });
+    const byId = new Map(auctions.map(a => [a.id, a]));
+    return items.map(item => Object.assign(item, { auction: byId.get(item.auctionId) }));
   }
 
   async isWatching(userId: string, auctionId: string): Promise<boolean> {
