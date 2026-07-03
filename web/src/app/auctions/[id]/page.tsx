@@ -625,7 +625,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   function spinChatRaffle() {
     const pool = Array.from(new Set(chatMessages.map(m => m.username)))
-      .filter(u => u !== user?.username && u !== "sistema");
+      .filter(u => u !== "sistema");
     if (pool.length === 0) return;
     setChatRaffleSpinning(true);
     setChatRaffleWinner(null);
@@ -1153,7 +1153,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
               {/* ── 🎟️ Rifa de chat ── */}
               {mgType === "chat" && (() => {
-                const chatters = Array.from(new Set(chatMessages.map(m => m.username))).filter(u => u !== user?.username && u !== "sistema");
+                const chatters = Array.from(new Set(chatMessages.map(m => m.username))).filter(u => u !== "sistema");
                 return chatters.length === 0 ? (
                   <p className="text-xs text-zinc-600 text-center py-3">Nadie ha escrito en el chat aún.</p>
                 ) : (
