@@ -10,7 +10,7 @@ import { auctionsApi, ordersApi, listingsApi, shippingApi, type ApiAuction, type
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useAnalytics } from "@/hooks/useAnalytics";
 
-type AuctionStatus = "live" | "ending" | "upcoming" | "ended";
+type AuctionStatus = "live" | "ending" | "upcoming" | "scheduled" | "cancelled" | "ended";
 type Tab = "dashboard" | "subastas" | "crear" | "ventas" | "ordenes" | "cobros";
 
 const TABS: { key: Tab; label: string }[] = [
