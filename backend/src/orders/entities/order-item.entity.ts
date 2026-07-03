@@ -15,7 +15,7 @@ export class OrderItem {
   @JoinColumn({ name: 'orderId' })
   order: Order;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   auctionItemId: string | null;
 
   @Column()
