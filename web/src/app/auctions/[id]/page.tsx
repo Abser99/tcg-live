@@ -213,6 +213,9 @@ function ProductPanel({ auction: a, gradient, glow, activeItem, isSeller, onAuct
   };
   const status = STATUS_LABEL[a.status ?? "upcoming"];
 
+  const [startingAuction, setStartingAuction] = useState(false);
+  const [cancellingAuction, setCancellingAuction] = useState(false);
+
   async function endAuction() {
     setEndingAuction(true);
     try {
@@ -221,6 +224,25 @@ function ProductPanel({ auction: a, gradient, glow, activeItem, isSeller, onAuct
       capture("auction_ended", { auctionId: a.id });
     } catch {}
     finally { setEndingAuction(false); setConfirmEnd(false); }
+  }
+
+  async function startAuction() {
+    setStartingAuction(true);
+    try {
+      const res = await auctionsApi.start(a.id);
+      onAuctionUpdate?.(res.data as any);
+    } catch {}
+    finally { setStartingAuction(false); }
+  }
+
+  async function cancelAuction() {
+    if (!confirm("¿Cancelar esta subasta? Esta acción no se puede deshacer.")) return;
+    setCancellingAuction(true);
+    try {
+      await auctionsApi.cancel(a.id);
+      window.location.href = "/vendedor";
+    } catch {}
+    finally { setCancellingAuction(false); }
   }
 
   return (
@@ -302,6 +324,26 @@ function ProductPanel({ auction: a, gradient, glow, activeItem, isSeller, onAuct
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {isSeller && (a.status === "scheduled" || a.status === "upcoming") && (
+        <div className="px-5 py-3 flex gap-2">
+          <button
+            onClick={startAuction}
+            disabled={startingAuction}
+            className="flex-1 py-2 rounded-xl text-xs font-bold text-white transition-all disabled:opacity-60"
+            style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)" }}
+          >
+            {startingAuction ? "Iniciando..." : "Iniciar subasta"}
+          </button>
+          <button
+            onClick={cancelAuction}
+            disabled={cancellingAuction}
+            className="py-2 px-4 rounded-xl text-xs font-semibold text-zinc-500 border border-white/10 hover:border-red-500/30 hover:text-red-400 transition-all disabled:opacity-60"
+          >
+            {cancellingAuction ? "..." : "Cancelar"}
+          </button>
         </div>
       )}
     </div>
