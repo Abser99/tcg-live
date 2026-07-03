@@ -14,7 +14,7 @@ type AuctionStatus = "live" | "ending" | "upcoming" | "scheduled" | "cancelled" 
 type Tab = "dashboard" | "subastas" | "crear" | "ventas" | "ordenes" | "cobros";
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: "dashboard", label: "Dashboard"        },
+  { key: "dashboard", label: "Resumen"           },
   { key: "subastas",  label: "Mis Subastas"     },
   { key: "crear",     label: "Crear Subasta"    },
   { key: "ventas",    label: "Mis Ventas"        },  // Crear Venta + activas
@@ -298,7 +298,7 @@ export default function VendedorPage() {
             className="w-full max-w-sm rounded-2xl p-6"
             style={{ background: "#16161E", border: "1px solid rgba(108,58,232,0.3)" }}
           >
-            <h2 className="text-lg font-black text-white mb-1">Configura tu livestream</h2>
+            <h2 className="text-lg font-black text-white mb-1">Configura tu directo</h2>
             <p className="text-xs text-zinc-500 mb-5">Este nombre aparecerá en la lista de subastas en vivo.</p>
 
             <div className="flex flex-col gap-4">
@@ -406,7 +406,7 @@ export default function VendedorPage() {
                 style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 4px 20px rgba(220,38,38,0.4)" }}
               >
                 <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                {launchingStream ? "Iniciando..." : "Iniciar Livestream"}
+                {launchingStream ? "Iniciando..." : "Iniciar Directo"}
               </button>
               <button
                 onClick={() => setTab("crear")}
