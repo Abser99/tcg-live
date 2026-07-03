@@ -13,9 +13,12 @@ import { useAuth } from "@/contexts/auth";
 import { useAnalytics } from "@/hooks/useAnalytics";
 
 const STATUS_LABEL: Record<string, { text: string; bg: string }> = {
-  live:     { text: "EN VIVO",        bg: "#ef4444" },
-  ending:   { text: "TERMINA PRONTO", bg: "#f59e0b" },
-  upcoming: { text: "PRÓXIMO",        bg: "#6C3AE8" },
+  live:      { text: "EN VIVO",        bg: "#ef4444" },
+  ending:    { text: "TERMINA PRONTO", bg: "#f59e0b" },
+  upcoming:  { text: "PROGRAMADA",     bg: "#6C3AE8" },
+  scheduled: { text: "PROGRAMADA",     bg: "#6C3AE8" },
+  ended:     { text: "TERMINADA",      bg: "#52525b" },
+  cancelled: { text: "CANCELADA",      bg: "#52525b" },
 };
 
 const GRADIENTS = [
@@ -201,10 +204,12 @@ function ProductPanel({ auction: a, gradient, glow, activeItem, isSeller, onAuct
   const verified   = a.seller?.verified;
   const imageUrl   = activeItem?.imageUrls?.[0] ?? (a.items ?? [])[0]?.imageUrls?.[0];
   const STATUS_LABEL: Record<string, { text: string; bg: string }> = {
-    live:     { text: "EN VIVO", bg: "#ef4444" },
-    ending:   { text: "TERMINA PRONTO", bg: "#f59e0b" },
-    upcoming: { text: "PRÓXIMO", bg: "#6C3AE8" },
-    ended:    { text: "TERMINADA", bg: "#52525b" },
+    live:      { text: "EN VIVO",        bg: "#ef4444" },
+    ending:    { text: "TERMINA PRONTO", bg: "#f59e0b" },
+    upcoming:  { text: "PROGRAMADA",     bg: "#6C3AE8" },
+    scheduled: { text: "PROGRAMADA",     bg: "#6C3AE8" },
+    ended:     { text: "TERMINADA",      bg: "#52525b" },
+    cancelled: { text: "CANCELADA",      bg: "#52525b" },
   };
   const status = STATUS_LABEL[a.status ?? "upcoming"];
 
@@ -684,7 +689,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
             {a.status === "live" && <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />}
             {status?.text ?? a.status}
           </div>
-          {a.status !== "upcoming" && isSeller && (
+          {a.status !== "upcoming" && a.status !== "scheduled" && isSeller && (
             <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-zinc-300 text-xs px-2.5 py-1.5 rounded-full">
               👁 {a.viewers ?? 0} viendo
             </div>
@@ -1226,7 +1231,7 @@ function BidPanel({
       <div className="px-4 py-3 border-b border-white/5 flex items-end justify-between gap-3">
         <div>
           <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-0.5">
-            {a.status === "upcoming" ? "Precio inicial" : "Puja más alta"}
+            {(a.status === "upcoming" || a.status === "scheduled") ? "Precio inicial" : "Puja más alta"}
           </p>
           <p className="text-3xl font-black leading-none">
             ${(currentBid / 100).toLocaleString("es-MX")}
