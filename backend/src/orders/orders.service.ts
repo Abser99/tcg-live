@@ -83,6 +83,42 @@ export class OrdersService {
     }
   }
 
+  async createForListing(params: {
+    listingId: string;
+    listingTitle: string;
+    priceCents: number;
+    sellerId: string;
+    buyerId: string;
+    imageUrls?: string[];
+  }): Promise<Order> {
+    const { listingId, listingTitle, priceCents, sellerId, buyerId, imageUrls } = params;
+    let order = this.ordersRepo.create({
+      listingId, sellerId, buyerId,
+      status: OrderStatus.PENDING,
+      payoutStatus: PayoutStatus.PENDING,
+      totalCents: priceCents,
+    });
+    order = await this.ordersRepo.save(order);
+
+    await this.itemsRepo.save(
+      this.itemsRepo.create({ orderId: order.id, cardName: listingTitle, finalPrice: priceCents, imageUrls }),
+    );
+
+    const [buyer, seller] = await Promise.all([
+      this.usersService.findById(buyerId),
+      this.usersService.findById(sellerId),
+    ]);
+    this.notificationsService.notifyNewOrder(sellerId, buyer.username, 1).catch(() => {});
+    this.emailService.sendOrderConfirmationBuyer(buyer.email, {
+      cardName: listingTitle, amount: priceCents, sellerName: seller.username, orderId: order.id,
+    }).catch(() => {});
+    this.emailService.sendOrderConfirmationSeller(seller.email, {
+      cardName: listingTitle, amount: priceCents, buyerName: buyer.username, orderId: order.id,
+    }).catch(() => {});
+
+    return this.ordersRepo.findOne({ where: { id: order.id }, relations: ['items'] }) as Promise<Order>;
+  }
+
   async getMyOrders(buyerId: string): Promise<Order[]> {
     return this.ordersRepo.find({
       where: { buyerId },

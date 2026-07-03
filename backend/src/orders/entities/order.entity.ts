@@ -28,8 +28,11 @@ export class Order {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
-  auctionId: string;
+  @Column({ nullable: true })
+  auctionId: string | null;
+
+  @Column({ nullable: true })
+  listingId: string | null;
 
   @Column()
   buyerId: string;

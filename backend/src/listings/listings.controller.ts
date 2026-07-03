@@ -42,6 +42,12 @@ export class ListingsController {
     return this.service.markSold(id, req.user.id);
   }
 
+  @Post(':id/buy')
+  @UseGuards(AuthGuard('jwt'))
+  buy(@Param('id') id: string, @Request() req: any) {
+    return this.service.buy(id, req.user.id);
+  }
+
   @Delete(':id')
   @UseGuards(AuthGuard('jwt'))
   cancel(@Param('id') id: string, @Request() req: any) {

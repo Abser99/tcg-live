@@ -144,6 +144,7 @@ export const listingsApi = {
   }) => api.post<ApiListing>("/listings", dto),
   markSold: (id: string) => api.patch(`/listings/${id}/sold`),
   cancel:   (id: string) => api.delete(`/listings/${id}`),
+  buy:      (id: string) => api.post<ApiOrder>(`/listings/${id}/buy`),
 };
 
 // ─── Users ─────────────────────────────────────────────────────

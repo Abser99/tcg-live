@@ -15,8 +15,8 @@ export class OrderItem {
   @JoinColumn({ name: 'orderId' })
   order: Order;
 
-  @Column()
-  auctionItemId: string;
+  @Column({ nullable: true })
+  auctionItemId: string | null;
 
   @Column()
   cardName: string;

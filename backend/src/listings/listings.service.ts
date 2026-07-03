@@ -1,16 +1,19 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Listing, ListingStatus } from './entities/listing.entity';
 import { ListingOffer, OfferStatus } from './entities/listing-offer.entity';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { CreateOfferDto } from './dto/create-offer.dto';
+import { OrdersService } from '../orders/orders.service';
+import { Order } from '../orders/entities/order.entity';
 
 @Injectable()
 export class ListingsService {
   constructor(
     @InjectRepository(Listing) private repo: Repository<Listing>,
     @InjectRepository(ListingOffer) private offersRepo: Repository<ListingOffer>,
+    private readonly ordersService: OrdersService,
   ) {}
 
   findAll(game?: string, q?: string) {
@@ -45,6 +48,30 @@ export class ListingsService {
     if (listing.sellerId !== sellerId) throw new ForbiddenException();
     listing.status = ListingStatus.CANCELLED;
     return this.repo.save(listing);
+  }
+
+  async buy(listingId: string, buyerId: string): Promise<Order> {
+    const listing = await this.repo.findOne({ where: { id: listingId } });
+    if (!listing) throw new NotFoundException('Venta no encontrada');
+    if (listing.sellerId === buyerId) throw new ForbiddenException('No puedes comprar tu propia carta');
+
+    // Atomic status transition — prevents two buyers from claiming the same listing
+    const result = await this.repo.update(
+      { id: listingId, status: ListingStatus.ACTIVE },
+      { status: ListingStatus.SOLD },
+    );
+    if (result.affected === 0) {
+      throw new ConflictException('Esta carta ya fue comprada o no está disponible');
+    }
+
+    return this.ordersService.createForListing({
+      listingId,
+      listingTitle: listing.title,
+      priceCents: Math.round(listing.price * 100),
+      sellerId: listing.sellerId,
+      buyerId,
+      imageUrls: listing.imageUrls ?? undefined,
+    });
   }
 
   myListings(sellerId: string) {
