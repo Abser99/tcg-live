@@ -82,12 +82,17 @@ import { PushToken } from './notifications/entities/push-token.entity';
     CacheModule.registerAsync({
       isGlobal: true,
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        stores: [
-          new Keyv({ store: new CacheableMemory({ ttl: 30000, lruSize: 5000 }) }),
-          createKeyv(`redis://${config.get('redis.host')}:${config.get('redis.port')}`),
-        ],
-      }),
+      useFactory: (config: ConfigService) => {
+        const redisUrl =
+          process.env.REDIS_URL ??
+          `redis://${config.get('redis.host')}:${config.get('redis.port')}`;
+        return {
+          stores: [
+            new Keyv({ store: new CacheableMemory({ ttl: 30000, lruSize: 5000 }) }),
+            createKeyv(redisUrl),
+          ],
+        };
+      },
     }),
     UsersModule,
     AuthModule,
