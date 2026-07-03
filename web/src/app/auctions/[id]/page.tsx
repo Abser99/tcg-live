@@ -81,7 +81,7 @@ function AuctionDetailPageInner() {
     return (
       <div className="min-h-screen bg-[#0F0F14] text-white">
         <Navbar />
-        <div className="pt-24 mx-auto max-w-7xl px-6">
+        <div className="pt-24 mx-auto max-w-[1600px] px-6">
           <div className="grid lg:grid-cols-[1fr_380px] gap-8 animate-pulse">
             <div className="space-y-4">
               <div className="rounded-2xl bg-[#16161E] aspect-video" />
@@ -135,7 +135,7 @@ function AuctionDetailPageInner() {
     <div className="min-h-screen bg-[#0F0F14] text-white">
       <Navbar />
       <div className="pt-20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-4">
+        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 py-4">
           <Link
             href="/auctions"
             className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-white transition-colors"
@@ -144,8 +144,8 @@ function AuctionDetailPageInner() {
           </Link>
         </div>
 
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 pb-16">
-          <div className="grid lg:grid-cols-[1fr_360px] gap-6 items-start">
+        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 pb-16">
+          <div className="grid lg:grid-cols-[1fr_420px] gap-6 items-start">
             {/* Left panel: stream video OR product card */}
             <div className="order-1 lg:col-start-1 lg:row-start-1">
               {auction.isStream
@@ -392,7 +392,6 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [closeItemMsg,  setCloseItemMsg]  = useState("");
 
   // Panel minijuego
-  const [showMinigame,    setShowMinigame]    = useState(false);
   const [streamWinners,   setStreamWinners]   = useState<{ username: string; category: string; itemName: string }[]>([]);
   const [mgCategory,      setMgCategory]      = useState("todos");
   const [mgSpinning,      setMgSpinning]      = useState(false);
@@ -988,28 +987,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
             );
           })()}
 
-          {/* Tab toggle */}
-          <div className="flex border-b border-white/5">
-            {[
-              { key: false, label: "🃏 Agregar carta" },
-              { key: true,  label: `🎲 Minijuego${streamWinners.length > 0 ? ` (${streamWinners.length})` : ""}` },
-            ].map(({ key, label }) => (
-              <button
-                key={String(key)}
-                onClick={() => setShowMinigame(key)}
-                className="flex-1 py-2.5 text-xs font-bold transition-all"
-                style={showMinigame === key
-                  ? { color: "#a78bfa", borderBottom: "2px solid #6C3AE8" }
-                  : { color: "#52525b", borderBottom: "2px solid transparent" }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
           {/* ── Agregar carta ── */}
-          {!showMinigame && (
-            <div className="p-3 flex flex-col gap-2">
+            <div className="p-3 flex flex-col gap-2 border-t border-white/5">
+              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-0.5">🃏 Agregar carta</p>
               {addCardError && <p className="text-xs text-red-400">{addCardError}</p>}
 
               {/* Nombre + precio */}
@@ -1066,11 +1046,10 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                 </button>
               </div>
             </div>
-          )}
 
-          {/* ── Minijuego ── */}
-          {showMinigame && (
-            <div className="p-3 flex flex-col gap-3">
+          {/* ── Minijuego (siempre visible) ── */}
+            <div className="p-3 flex flex-col gap-3 border-t border-white/5">
+              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-0.5">🎲 Minijuego{streamWinners.length > 0 ? ` (${streamWinners.length})` : ""}</p>
 
               {/* Selector de tipo */}
               <div className="grid grid-cols-5 gap-1">
@@ -1241,7 +1220,6 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
               )}
 
             </div>
-          )}
         </div>
       )}
 
