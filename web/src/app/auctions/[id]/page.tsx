@@ -398,6 +398,20 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [mgSpinning,      setMgSpinning]      = useState(false);
   const [mgWinner,        setMgWinner]        = useState<string | null>(null);
   const mgIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Minigame type selector
+  const [mgType,             setMgType]             = useState<"ruleta"|"carrera"|"chat"|"relampago"|"precio">("ruleta");
+  // Rifa de chat
+  const [chatRaffleWinner,   setChatRaffleWinner]   = useState<string | null>(null);
+  const [chatRaffleSpinning, setChatRaffleSpinning] = useState(false);
+  const chatRaffleRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Relámpago
+  const [lightningDuration,  setLightningDuration]  = useState(60);
+  const [lightningEndsAt,    setLightningEndsAt]    = useState<number | null>(null);
+  const [lightningLeft,      setLightningLeft]      = useState(0);
+  // Precio oculto
+  const [priceInput,         setPriceInput]         = useState("");
+  const [priceRevealed,      setPriceRevealed]      = useState(false);
+  const [revealedPrice,      setRevealedPrice]      = useState("");
 
   // Chat en vivo
   const [chatMessages, setChatMessages] = useState<{ username: string; text: string; ts: number }[]>([]);
@@ -463,6 +477,11 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         const msg = JSON.parse(new TextDecoder().decode(data));
         if (msg.type === "chat") {
           setChatMessages(prev => [...prev, { username: msg.username, text: censorText(msg.text), ts: msg.ts }]);
+        } else if (msg.type === "lightning") {
+          setLightningEndsAt(msg.startsAt + msg.duration * 1000);
+        } else if (msg.type === "price_reveal") {
+          setRevealedPrice(String(msg.price));
+          setPriceRevealed(true);
         }
       } catch {}
     });
@@ -563,8 +582,24 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   }
 
   useEffect(() => {
-    return () => { if (mgIntervalRef.current) clearInterval(mgIntervalRef.current); };
+    return () => {
+      if (mgIntervalRef.current) clearInterval(mgIntervalRef.current);
+      if (chatRaffleRef.current) clearInterval(chatRaffleRef.current);
+    };
   }, []);
+
+  // Lightning countdown tick
+  useEffect(() => {
+    if (!lightningEndsAt) { setLightningLeft(0); return; }
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((lightningEndsAt - Date.now()) / 1000));
+      setLightningLeft(left);
+      if (left === 0) setLightningEndsAt(null);
+    };
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [lightningEndsAt]);
 
   function spinMinigame() {
     const pool = mgCategory === "todos"
@@ -586,6 +621,53 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         setMgSpinning(false);
       }
     }, 80);
+  }
+
+  function spinChatRaffle() {
+    const pool = Array.from(new Set(chatMessages.map(m => m.username)))
+      .filter(u => u !== user?.username && u !== "sistema");
+    if (pool.length === 0) return;
+    setChatRaffleSpinning(true);
+    setChatRaffleWinner(null);
+    let ticks = 0;
+    const total = 20 + Math.floor(Math.random() * 15);
+    if (chatRaffleRef.current) clearInterval(chatRaffleRef.current);
+    chatRaffleRef.current = setInterval(() => {
+      setChatRaffleWinner(pool[Math.floor(Math.random() * pool.length)]);
+      ticks++;
+      if (ticks >= total) {
+        clearInterval(chatRaffleRef.current!);
+        chatRaffleRef.current = null;
+        setChatRaffleSpinning(false);
+      }
+    }, 80);
+  }
+
+  async function launchLightning() {
+    if (!roomRef.current) return;
+    const startsAt = Date.now();
+    setLightningEndsAt(startsAt + lightningDuration * 1000);
+    try {
+      await roomRef.current.localParticipant.publishData(
+        new TextEncoder().encode(JSON.stringify({ type: "lightning", duration: lightningDuration, startsAt })),
+        { reliable: true }
+      );
+    } catch {}
+  }
+
+  async function revealHiddenPrice() {
+    if (!priceInput.trim()) return;
+    const p = priceInput.trim();
+    setRevealedPrice(p);
+    setPriceRevealed(true);
+    if (roomRef.current) {
+      try {
+        await roomRef.current.localParticipant.publishData(
+          new TextEncoder().encode(JSON.stringify({ type: "price_reveal", price: p })),
+          { reliable: true }
+        );
+      } catch {}
+    }
   }
 
   async function startStream() {
@@ -770,6 +852,32 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
             <p className="text-zinc-400 text-xs">Vendedor</p>
           </div>
         </div>
+
+        {/* ⚡ Relámpago overlay — visible to everyone */}
+        {lightningEndsAt && lightningLeft > 0 && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none"
+            style={{ background: "rgba(0,0,0,0.6)" }}>
+            <p className="text-[11px] font-black text-amber-400 uppercase tracking-widest mb-2">⚡ RELÁMPAGO</p>
+            <p className="text-7xl font-black text-white tabular-nums leading-none">{lightningLeft}</p>
+            <p className="text-xs text-zinc-400 mt-2">segundos</p>
+          </div>
+        )}
+
+        {/* 💰 Precio oculto overlay — visible to everyone when revealed */}
+        {priceRevealed && revealedPrice && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.75)" }}>
+            <p className="text-[11px] font-black text-[#a78bfa] uppercase tracking-widest mb-2">💰 PRECIO OCULTO</p>
+            <p className="text-5xl font-black text-white">${revealedPrice} <span className="text-xl text-zinc-400 font-normal">MXN</span></p>
+            <button
+              onClick={() => { setPriceRevealed(false); setRevealedPrice(""); }}
+              className="mt-4 text-xs text-zinc-500 hover:text-white transition-colors px-4 py-2 rounded-lg"
+              style={{ background: "rgba(255,255,255,0.08)" }}
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
 
         {/* Seller streaming controls (overlay) */}
         {isSeller && streaming && (
@@ -963,66 +1071,175 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           {/* ── Minijuego ── */}
           {showMinigame && (
             <div className="p-3 flex flex-col gap-3">
-              {streamWinners.length === 0 ? (
-                <p className="text-xs text-zinc-600 text-center py-4">
-                  Los compradores que ganen cartas en este stream aparecerán aquí.
-                </p>
+
+              {/* Selector de tipo */}
+              <div className="grid grid-cols-5 gap-1">
+                {([
+                  { key: "ruleta",    icon: "🎲", label: "Ruleta"   },
+                  { key: "carrera",   icon: "🏁", label: "Carrera"  },
+                  { key: "chat",      icon: "🎟️", label: "Chat"     },
+                  { key: "relampago", icon: "⚡", label: "Rayo"     },
+                  { key: "precio",    icon: "💰", label: "Precio"   },
+                ] as const).map(({ key, icon, label }) => (
+                  <button key={key} onClick={() => setMgType(key)}
+                    className="py-1.5 rounded-lg flex flex-col items-center gap-0.5 transition-all"
+                    style={mgType === key
+                      ? { background: "rgba(108,58,232,0.3)", border: "1px solid rgba(108,58,232,0.5)" }
+                      : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+                  >
+                    <span className="text-base leading-none">{icon}</span>
+                    <span className="text-[9px] font-bold" style={{ color: mgType === key ? "#a78bfa" : "#52525b" }}>{label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* ── 🎲 Ruleta de ganadores ── */}
+              {mgType === "ruleta" && (streamWinners.length === 0 ? (
+                <p className="text-xs text-zinc-600 text-center py-3">Nadie ha ganado cartas aún — los compradores aparecerán aquí.</p>
               ) : (
                 <>
-                  {/* Filtro por categoría */}
                   <div className="flex gap-1.5 flex-wrap">
                     {["todos", ...Array.from(new Set(streamWinners.map(w => w.category)))].map(cat => (
-                      <button
-                        key={cat}
-                        onClick={() => setMgCategory(cat)}
+                      <button key={cat} onClick={() => setMgCategory(cat)}
                         className="px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all"
                         style={mgCategory === cat
                           ? { background: "rgba(108,58,232,0.3)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.5)" }
-                          : { background: "rgba(255,255,255,0.05)", color: "#71717a", border: "1px solid rgba(255,255,255,0.08)" }}
-                      >
-                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                        {" "}({cat === "todos" ? streamWinners.length : streamWinners.filter(w => w.category === cat).length})
+                          : { background: "rgba(255,255,255,0.05)", color: "#71717a", border: "1px solid rgba(255,255,255,0.08)" }}>
+                        {cat.charAt(0).toUpperCase() + cat.slice(1)} ({cat === "todos" ? streamWinners.length : streamWinners.filter(w => w.category === cat).length})
                       </button>
                     ))}
                   </div>
+                  {mgWinner && (
+                    <div className="rounded-xl py-3 text-center"
+                      style={{ background: mgSpinning ? "rgba(255,255,255,0.04)" : "rgba(74,222,128,0.1)", border: `1px solid ${mgSpinning ? "rgba(255,255,255,0.08)" : "rgba(74,222,128,0.3)"}` }}>
+                      {mgSpinning
+                        ? <p className="text-sm font-black text-zinc-400 animate-pulse">@{mgWinner}</p>
+                        : <><p className="text-[10px] text-green-400 font-bold uppercase tracking-widest mb-0.5">¡Ganador!</p><p className="text-lg font-black text-white">@{mgWinner}</p></>}
+                    </div>
+                  )}
+                  <button onClick={spinMinigame} disabled={mgSpinning}
+                    className="w-full py-2.5 rounded-xl font-black text-sm text-white disabled:opacity-60"
+                    style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)" }}>
+                    {mgSpinning ? "Girando…" : "🎲 Girar"}
+                  </button>
+                </>
+              ))}
 
-                  {/* Lista de elegibles */}
-                  <div className="max-h-24 overflow-y-auto flex flex-col gap-1">
-                    {(mgCategory === "todos" ? streamWinners : streamWinners.filter(w => w.category === mgCategory)).map((w, i) => (
-                      <div key={i} className="flex items-center justify-between text-xs px-2 py-1 rounded-lg" style={{ background: "rgba(255,255,255,0.03)" }}>
-                        <span className="font-bold text-[#a78bfa]">@{w.username}</span>
-                        <span className="text-zinc-600">{w.itemName} · {w.category}</span>
+              {/* ── 🏁 Carrera de compradores ── */}
+              {mgType === "carrera" && (() => {
+                const counts = streamWinners.reduce<Record<string, number>>((acc, w) => { acc[w.username] = (acc[w.username] ?? 0) + 1; return acc; }, {});
+                const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+                const maxVal = sorted[0]?.[1] ?? 1;
+                const medals = ["🥇","🥈","🥉"];
+                return sorted.length === 0 ? (
+                  <p className="text-xs text-zinc-600 text-center py-3">Nadie ha ganado cartas aún.</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Cartas ganadas este stream</p>
+                    {sorted.map(([username, count], i) => (
+                      <div key={username} className="flex items-center gap-2">
+                        <span className="text-sm w-5 text-center">{medals[i] ?? `${i+1}`}</span>
+                        <span className="text-xs font-bold text-[#a78bfa] w-20 truncate">@{username}</span>
+                        <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                          <div className="h-full rounded-full transition-all duration-700"
+                            style={{ width: `${(count / maxVal) * 100}%`, background: i === 0 ? "linear-gradient(90deg,#f59e0b,#f97316)" : "linear-gradient(90deg,#6C3AE8,#8B5CF6)" }} />
+                        </div>
+                        <span className="text-[10px] text-zinc-400 w-4 text-right font-bold">{count}</span>
                       </div>
                     ))}
                   </div>
+                );
+              })()}
 
-                  {/* Resultado del spin */}
-                  {mgWinner && (
-                    <div
-                      className="rounded-xl py-3 text-center"
-                      style={{ background: mgSpinning ? "rgba(255,255,255,0.04)" : "rgba(74,222,128,0.1)", border: `1px solid ${mgSpinning ? "rgba(255,255,255,0.08)" : "rgba(74,222,128,0.3)"}` }}
-                    >
-                      {mgSpinning
-                        ? <p className="text-sm font-black text-zinc-400 animate-pulse">@{mgWinner}</p>
-                        : <>
-                            <p className="text-[10px] text-green-400 font-bold uppercase tracking-widest mb-0.5">¡Ganador!</p>
-                            <p className="text-lg font-black text-white">@{mgWinner}</p>
-                          </>
-                      }
+              {/* ── 🎟️ Rifa de chat ── */}
+              {mgType === "chat" && (() => {
+                const chatters = Array.from(new Set(chatMessages.map(m => m.username))).filter(u => u !== user?.username && u !== "sistema");
+                return chatters.length === 0 ? (
+                  <p className="text-xs text-zinc-600 text-center py-3">Nadie ha escrito en el chat aún.</p>
+                ) : (
+                  <>
+                    <p className="text-[10px] text-zinc-500">{chatters.length} participantes en el chat</p>
+                    <div className="max-h-20 overflow-y-auto flex flex-wrap gap-1">
+                      {chatters.map(u => (
+                        <span key={u} className="text-[10px] font-bold text-[#a78bfa] px-2 py-0.5 rounded-full" style={{ background: "rgba(108,58,232,0.12)", border: "1px solid rgba(108,58,232,0.2)" }}>@{u}</span>
+                      ))}
                     </div>
-                  )}
+                    {chatRaffleWinner && (
+                      <div className="rounded-xl py-3 text-center"
+                        style={{ background: chatRaffleSpinning ? "rgba(255,255,255,0.04)" : "rgba(74,222,128,0.1)", border: `1px solid ${chatRaffleSpinning ? "rgba(255,255,255,0.08)" : "rgba(74,222,128,0.3)"}` }}>
+                        {chatRaffleSpinning
+                          ? <p className="text-sm font-black text-zinc-400 animate-pulse">@{chatRaffleWinner}</p>
+                          : <><p className="text-[10px] text-green-400 font-bold uppercase tracking-widest mb-0.5">¡Ganador!</p><p className="text-lg font-black text-white">@{chatRaffleWinner}</p></>}
+                      </div>
+                    )}
+                    <button onClick={spinChatRaffle} disabled={chatRaffleSpinning}
+                      className="w-full py-2.5 rounded-xl font-black text-sm text-white disabled:opacity-60"
+                      style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}>
+                      {chatRaffleSpinning ? "Girando…" : "🎟️ Rifar entre el chat"}
+                    </button>
+                  </>
+                );
+              })()}
 
-                  {/* Botón girar */}
-                  <button
-                    onClick={spinMinigame}
-                    disabled={mgSpinning}
-                    className="w-full py-2.5 rounded-xl font-black text-sm text-white disabled:opacity-60 transition-all"
-                    style={{ background: "linear-gradient(135deg, #f59e0b, #f97316)", boxShadow: "0 4px 16px rgba(245,158,11,0.35)" }}
-                  >
-                    {mgSpinning ? "Girando…" : "🎲 Girar para elegir ganador"}
-                  </button>
-                </>
+              {/* ── ⚡ Relámpago ── */}
+              {mgType === "relampago" && (
+                <div className="flex flex-col gap-3">
+                  <p className="text-[10px] text-zinc-500 leading-relaxed">Activa un contador visible para todos los viewers. Úsalo para crear urgencia antes de subastar la siguiente carta.</p>
+                  <div className="flex gap-1.5">
+                    {[30, 60, 90, 120].map(s => (
+                      <button key={s} onClick={() => setLightningDuration(s)}
+                        className="flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+                        style={lightningDuration === s
+                          ? { background: "rgba(245,158,11,0.25)", color: "#fbbf24", border: "1px solid rgba(245,158,11,0.4)" }
+                          : { background: "rgba(255,255,255,0.04)", color: "#52525b", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        {s}s
+                      </button>
+                    ))}
+                  </div>
+                  {lightningLeft > 0 ? (
+                    <div className="rounded-xl py-3 text-center" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }}>
+                      <p className="text-[10px] text-amber-400 font-bold uppercase tracking-widest mb-0.5">⚡ EN CURSO</p>
+                      <p className="text-3xl font-black text-white tabular-nums">{lightningLeft}s</p>
+                    </div>
+                  ) : (
+                    <button onClick={launchLightning}
+                      className="w-full py-2.5 rounded-xl font-black text-sm text-white"
+                      style={{ background: "linear-gradient(135deg, #d97706, #f59e0b)" }}>
+                      ⚡ Activar relámpago {lightningDuration}s
+                    </button>
+                  )}
+                </div>
               )}
+
+              {/* ── 💰 Precio oculto ── */}
+              {mgType === "precio" && (
+                <div className="flex flex-col gap-3">
+                  <p className="text-[10px] text-zinc-500 leading-relaxed">Escribe el precio secreto de la siguiente carta. Los viewers verán el reveal en pantalla cuando presiones "Revelar".</p>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-xs">$</span>
+                    <input
+                      type="text"
+                      value={priceInput}
+                      onChange={e => setPriceInput(e.target.value)}
+                      placeholder="ej. 850"
+                      className="w-full bg-[#0F0F14] border border-white/10 rounded-xl pl-7 pr-4 py-2.5 text-sm text-white placeholder:text-zinc-700 focus:outline-none focus:border-[#6C3AE8]/60"
+                    />
+                  </div>
+                  <button
+                    onClick={revealHiddenPrice}
+                    disabled={!priceInput.trim()}
+                    className="w-full py-2.5 rounded-xl font-black text-sm text-white disabled:opacity-40"
+                    style={{ background: "linear-gradient(135deg, #7c3aed, #a78bfa)" }}>
+                    💰 Revelar a todos
+                  </button>
+                  <button
+                    onClick={() => { setPriceInput(""); setPriceRevealed(false); setRevealedPrice(""); }}
+                    className="w-full py-1.5 rounded-xl text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+                    Reiniciar
+                  </button>
+                </div>
+              )}
+
             </div>
           )}
         </div>
