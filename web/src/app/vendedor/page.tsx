@@ -23,10 +23,11 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 const AUCTION_STATUS_STYLE: Record<string, { label: string; color: string; bg: string }> = {
-  live:     { label: "EN VIVO",        color: "#f87171", bg: "rgba(239,68,68,0.12)"  },
-  ending:   { label: "CERRANDO",       color: "#fbbf24", bg: "rgba(245,158,11,0.12)" },
-  upcoming: { label: "PRÓXIMO",        color: "#a78bfa", bg: "rgba(108,58,232,0.12)" },
-  ended:    { label: "FINALIZADA",     color: "#71717a", bg: "rgba(113,113,122,0.12)" },
+  live:      { label: "EN VIVO",       color: "#f87171", bg: "rgba(239,68,68,0.12)"  },
+  ending:    { label: "CERRANDO",      color: "#fbbf24", bg: "rgba(245,158,11,0.12)" },
+  upcoming:  { label: "PROGRAMADA",    color: "#a78bfa", bg: "rgba(108,58,232,0.12)" },
+  scheduled: { label: "PROGRAMADA",    color: "#a78bfa", bg: "rgba(108,58,232,0.12)" },
+  ended:     { label: "FINALIZADA",    color: "#71717a", bg: "rgba(113,113,122,0.12)" },
 };
 
 const SALE_STATUS_STYLE = {
@@ -618,9 +619,9 @@ export default function VendedorPage() {
           <div className="space-y-4">
             {/* Filter */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              {(["all", "live", "ending", "upcoming", "ended"] as const).map((f) => {
-                const count = f === "all" ? myAuctions.length : myAuctions.filter(a => a.status === f).length;
-                const labels: Record<string, string> = { all: "Todas", live: "En vivo", ending: "Cerrando", upcoming: "Próximas", ended: "Terminadas" };
+              {(["all", "live", "ending", "scheduled", "ended"] as const).map((f) => {
+                const count = f === "all" ? myAuctions.length : myAuctions.filter(a => a.status === f || (f === "scheduled" && a.status === "upcoming")).length;
+                const labels: Record<string, string> = { all: "Todas", live: "En vivo", ending: "Cerrando", scheduled: "Programadas", ended: "Terminadas" };
                 const active = saleFilter === f;
                 return (
                   <button
@@ -747,7 +748,7 @@ export default function VendedorPage() {
                           >
                             {s?.label ?? a.status}
                           </span>
-                          {a.status !== "upcoming" && (
+                          {a.status !== "upcoming" && a.status !== "scheduled" && (
                             <span className="text-[11px] text-zinc-600">{a.totalBids ?? 0} pujas</span>
                           )}
                         </div>
@@ -756,7 +757,7 @@ export default function VendedorPage() {
                       {/* Price */}
                       <div className="text-right shrink-0">
                         <p className="text-xs text-zinc-600 mb-0.5">
-                          {a.status === "upcoming" ? "Precio inicial" : "Puja actual"}
+                          {(a.status === "upcoming" || a.status === "scheduled") ? "Precio inicial" : "Puja actual"}
                         </p>
                         <p className="font-black text-lg">${(currentBid / 100).toLocaleString("es-MX")}</p>
                         {a.binPrice && (
@@ -766,7 +767,7 @@ export default function VendedorPage() {
 
                       {/* Actions */}
                       <div className="flex flex-col gap-1.5 shrink-0">
-                        {a.status === "upcoming" && (
+                        {(a.status === "upcoming" || a.status === "scheduled") && (
                           <button
                             disabled={startingId === a.id}
                             onClick={async () => {
