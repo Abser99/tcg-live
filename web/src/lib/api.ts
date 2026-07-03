@@ -262,7 +262,7 @@ export interface ApiUser {
 export interface ApiAuction {
   id: string;
   sellerId?: string;
-  status: "live" | "ending" | "upcoming" | "ended";
+  status: "live" | "ending" | "upcoming" | "scheduled" | "cancelled" | "ended";
   isStream?: boolean;
   title?: string;
   name?: string;
