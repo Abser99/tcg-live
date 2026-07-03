@@ -72,11 +72,11 @@ export class User {
   zipCode: string;
 
   /** Seller's CLABE interbancaria for SPEI payout */
-  @Column({ nullable: true, length: 18 })
+  @Column({ type: 'varchar', nullable: true, length: 18 })
   clabe: string | null;
 
   /** Seller's Mercado Pago email for MP payout (alternative to CLABE) */
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   mpPayoutEmail: string | null;
 
   @Column({ nullable: true })
