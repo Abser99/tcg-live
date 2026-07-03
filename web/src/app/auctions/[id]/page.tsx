@@ -368,8 +368,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   );
   const isLive   = a.status === "live" || a.status === "ending";
 
-  const roomRef    = useRef<Room | null>(null);
-  const videoRef   = useRef<HTMLVideoElement>(null);
+  const roomRef        = useRef<Room | null>(null);
+  const videoRef       = useRef<HTMLVideoElement>(null);
+  const startingRef    = useRef(false); // prevents double startStream() calls
   const [streaming,      setStreaming]      = useState(false);
   const [connecting,     setConnecting]     = useState(false);
   const [roomConnected,  setRoomConnected]  = useState(false);
@@ -588,6 +589,8 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   }
 
   async function startStream() {
+    if (startingRef.current || streaming) return; // prevent double-call
+    startingRef.current = true;
     setConnecting(true);
     setStreamError(null);
     try {
@@ -607,29 +610,40 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         }
       });
 
-      await room.localParticipant.setCameraEnabled(true);
-      await room.localParticipant.setMicrophoneEnabled(true);
+      // Try camera and mic independently — missing device warns but doesn't abort stream
+      let camOk = false;
+      try {
+        await room.localParticipant.setCameraEnabled(true);
+        camOk = true;
+      } catch (camErr: any) {
+        const n = camErr?.name ?? "";
+        if (n === "NotAllowedError") {
+          setStreamError("El navegador bloqueó la cámara. Permite el acceso en la barra de direcciones.");
+        } else if (n === "NotReadableError") {
+          setStreamError("La cámara está en uso por otra aplicación. Ciérrala y vuelve a intentarlo.");
+        } else {
+          setStreamError("No se encontró cámara. Conecta una cámara y vuelve a intentarlo, o transmite solo con audio.");
+        }
+      }
 
-      const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-      if (camPub?.track && videoRef.current) camPub.track.attach(videoRef.current);
+      try {
+        await room.localParticipant.setMicrophoneEnabled(true);
+      } catch { /* mic unavailable — continue anyway */ }
+
+      if (camOk) {
+        const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+        if (camPub?.track && videoRef.current) camPub.track.attach(videoRef.current);
+      }
 
       setStreaming(true);
       capture("stream_started", { auctionId: a.id });
     } catch (err: any) {
       console.error("Stream error:", err);
       const msg: string = err?.message ?? err?.name ?? String(err);
-      const name: string = err?.name ?? "";
-      if (name === "NotFoundError" || msg.toLowerCase().includes("not found") || msg.includes("object can not be found")) {
-        setStreamError("No se encontró cámara. Conecta una cámara (webcam o celular) y vuelve a intentarlo.");
-      } else if (name === "NotAllowedError" || msg.includes("NotAllowed") || msg.toLowerCase().includes("permission")) {
-        setStreamError("El navegador bloqueó la cámara. Haz clic en el ícono de cámara en la barra de direcciones y permite el acceso.");
-      } else if (name === "NotReadableError" || msg.includes("in use")) {
-        setStreamError("La cámara está en uso por otra aplicación. Ciérrala y vuelve a intentarlo.");
-      } else {
-        setStreamError(`Error al iniciar stream: ${msg}`);
-      }
+      setStreamError(`Error al conectar: ${msg}`);
     } finally {
       setConnecting(false);
+      startingRef.current = false;
     }
   }
 
