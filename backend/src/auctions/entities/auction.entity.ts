@@ -68,6 +68,9 @@ export class Auction {
   @Column({ nullable: true })
   livestreamRoomId: string;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  archivedAt: Date | null;
+
   @OneToMany(() => AuctionItem, (item) => item.auction, { cascade: true })
   items: AuctionItem[];
 

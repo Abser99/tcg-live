@@ -28,6 +28,7 @@ const AUCTION_STATUS_STYLE: Record<string, { label: string; color: string; bg: s
   upcoming:  { label: "PROGRAMADA",    color: "#a78bfa", bg: "rgba(108,58,232,0.12)" },
   scheduled: { label: "PROGRAMADA",    color: "#a78bfa", bg: "rgba(108,58,232,0.12)" },
   ended:     { label: "FINALIZADA",    color: "#71717a", bg: "rgba(113,113,122,0.12)" },
+  cancelled: { label: "CANCELADA",     color: "#71717a", bg: "rgba(113,113,122,0.12)" },
 };
 
 const SALE_STATUS_STYLE = {
@@ -686,13 +687,30 @@ export default function VendedorPage() {
                             </div>
                             <p className="font-bold text-sm leading-tight truncate">{title}</p>
                           </div>
-                          <Link
-                            href={`/auctions/${a.id}`}
-                            className="text-xs font-semibold px-3 py-1.5 rounded-lg text-center shrink-0 transition-all"
-                            style={{ background: "rgba(255,255,255,0.05)", color: "#71717a", border: "1px solid rgba(255,255,255,0.08)" }}
-                          >
-                            Ver
-                          </Link>
+                          <div className="flex flex-col gap-1.5 shrink-0">
+                            <Link
+                              href={`/auctions/${a.id}`}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg text-center transition-all"
+                              style={{ background: "rgba(255,255,255,0.05)", color: "#71717a", border: "1px solid rgba(255,255,255,0.08)" }}
+                            >
+                              Ver
+                            </Link>
+                            <button
+                              onClick={async () => {
+                                if (!confirm("¿Archivar esta subasta? Desaparecerá de tu panel.")) return;
+                                try {
+                                  await auctionsApi.archive(a.id);
+                                  setMyAuctions(prev => prev.filter(x => x.id !== a.id));
+                                } catch (err: any) {
+                                  alert(err?.response?.data?.message ?? "Error al archivar");
+                                }
+                              }}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg text-center transition-all"
+                              style={{ background: "rgba(113,113,122,0.08)", color: "#52525b", border: "1px solid rgba(113,113,122,0.15)" }}
+                            >
+                              Archivar
+                            </button>
+                          </div>
                         </div>
                         <div className="grid grid-cols-3 gap-2 mt-3">
                           <div className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
@@ -768,22 +786,39 @@ export default function VendedorPage() {
                       {/* Actions */}
                       <div className="flex flex-col gap-1.5 shrink-0">
                         {(a.status === "upcoming" || a.status === "scheduled") && (
-                          <button
-                            disabled={startingId === a.id}
-                            onClick={async () => {
-                              setStartingId(a.id);
-                              try {
-                                await auctionsApi.start(a.id);
-                                const res = await auctionsApi.my().catch(() => null);
-                                if (res) setMyAuctions(res.data);
-                              } catch {}
-                              finally { setStartingId(null); }
-                            }}
-                            className="text-xs font-black px-3 py-1.5 rounded-lg text-white text-center disabled:opacity-60"
-                            style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)" }}
-                          >
-                            {startingId === a.id ? "..." : "Iniciar"}
-                          </button>
+                          <>
+                            <button
+                              disabled={startingId === a.id}
+                              onClick={async () => {
+                                setStartingId(a.id);
+                                try {
+                                  await auctionsApi.start(a.id);
+                                  const res = await auctionsApi.my().catch(() => null);
+                                  if (res) setMyAuctions(res.data);
+                                } catch {}
+                                finally { setStartingId(null); }
+                              }}
+                              className="text-xs font-black px-3 py-1.5 rounded-lg text-white text-center disabled:opacity-60"
+                              style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)" }}
+                            >
+                              {startingId === a.id ? "..." : "Iniciar"}
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!confirm("¿Cancelar esta subasta? Esta acción no se puede deshacer.")) return;
+                                try {
+                                  await auctionsApi.cancel(a.id);
+                                  setMyAuctions(prev => prev.filter(x => x.id !== a.id));
+                                } catch (err: any) {
+                                  alert(err?.response?.data?.message ?? "Error al cancelar");
+                                }
+                              }}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg text-center transition-all"
+                              style={{ background: "rgba(113,113,122,0.08)", color: "#52525b", border: "1px solid rgba(113,113,122,0.15)" }}
+                            >
+                              Cancelar
+                            </button>
+                          </>
                         )}
                         {(a.status === "live" || a.status === "ending") && (
                           <Link

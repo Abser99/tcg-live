@@ -7,7 +7,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, LessThan, Repository } from 'typeorm';
+import { DataSource, IsNull, LessThan, Repository } from 'typeorm';
 import { Auction, AuctionGame, AuctionStatus } from './entities/auction.entity';
 import { AuctionItem, AuctionItemStatus } from './entities/auction-item.entity';
 import { Bid } from './entities/bid.entity';
@@ -114,7 +114,7 @@ export class AuctionsService implements OnModuleInit {
 
   async findMy(sellerId: string): Promise<Auction[]> {
     return this.auctionsRepo.find({
-      where: { sellerId },
+      where: { sellerId, archivedAt: IsNull() },
       relations: ['items'],
       order: { createdAt: 'DESC' },
     });
@@ -258,6 +258,33 @@ export class AuctionsService implements OnModuleInit {
     this.gateway.emitAuctionEnded(id);
 
     return saved;
+  }
+
+  async cancel(id: string, sellerId: string): Promise<Auction> {
+    const auction = await this.findOne(id);
+    this.assertOwner(auction.sellerId, sellerId);
+    if (auction.status !== AuctionStatus.SCHEDULED) {
+      throw new BadRequestException('Solo puedes cancelar subastas que aún no han comenzado');
+    }
+    auction.status = AuctionStatus.CANCELLED;
+    return this.auctionsRepo.save(auction);
+  }
+
+  async archive(id: string, sellerId: string): Promise<Auction> {
+    const auction = await this.auctionsRepo.findOne({ where: { id, sellerId } });
+    if (!auction) throw new NotFoundException('Subasta no encontrada');
+    if (auction.status !== AuctionStatus.ENDED && auction.status !== AuctionStatus.CANCELLED) {
+      throw new BadRequestException('Solo puedes archivar subastas terminadas o canceladas');
+    }
+    if (auction.status === AuctionStatus.ENDED) {
+      const orders = await this.ordersService.getAuctionOrders(id, sellerId);
+      const pending = orders.filter(o => o.status !== 'delivered');
+      if (pending.length > 0) {
+        throw new BadRequestException('Hay órdenes pendientes de entrega. Confirma todos los envíos antes de archivar.');
+      }
+    }
+    auction.archivedAt = new Date();
+    return this.auctionsRepo.save(auction);
   }
 
   async placeBid(itemId: string, bidderId: string, dto: PlaceBidDto): Promise<Bid> {

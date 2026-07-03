@@ -143,6 +143,20 @@ export class AuctionsController {
     return this.auctionsService.end(id, user.id);
   }
 
+  @Patch(':id/cancel')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  cancel(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.auctionsService.cancel(id, user.id);
+  }
+
+  @Patch(':id/archive')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  archive(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.auctionsService.archive(id, user.id);
+  }
+
   @Post(':id/relist')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.SELLER, UserRole.ADMIN)

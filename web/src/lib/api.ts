@@ -86,6 +86,8 @@ export const auctionsApi = {
     api.patch(`/auctions/items/${itemId}/close`),
   update: (id: string, dto: { title?: string; game?: string }) =>
     api.patch<ApiAuction>(`/auctions/${id}`, dto),
+  cancel:  (id: string) => api.patch<ApiAuction>(`/auctions/${id}/cancel`),
+  archive: (id: string) => api.patch<ApiAuction>(`/auctions/${id}/archive`),
 };
 
 // ─── Orders ────────────────────────────────────────────────────
