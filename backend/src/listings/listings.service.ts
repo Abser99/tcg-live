@@ -67,7 +67,7 @@ export class ListingsService {
     return this.ordersService.createForListing({
       listingId,
       listingTitle: listing.title,
-      priceCents: Math.round(listing.price * 100),
+      priceCents: listing.price, // already stored in MXN cents
       sellerId: listing.sellerId,
       buyerId,
       imageUrls: listing.imageUrls ?? undefined,

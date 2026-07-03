@@ -137,7 +137,7 @@ function PurchaseModal({
                 {sellerName}{verified && <span className="text-[#a78bfa] ml-1">✓</span>}
               </p>
               <p className="text-xl font-black text-white mt-2">
-                ${listing.price.toLocaleString("es-MX")}{" "}
+                ${(listing.price / 100).toLocaleString("es-MX")}{" "}
                 <span className="text-xs text-zinc-500 font-normal">MXN</span>
               </p>
             </div>
@@ -274,7 +274,7 @@ function ListingCard({
           <div>
             <p className="text-[10px] text-zinc-600 mb-0.5">Precio</p>
             <p className="text-xl font-black text-white">
-              ${l.price.toLocaleString("es-MX")}{" "}
+              ${(l.price / 100).toLocaleString("es-MX")}{" "}
               <span className="text-xs text-zinc-500 font-normal">MXN</span>
             </p>
           </div>
