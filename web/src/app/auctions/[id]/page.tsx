@@ -1358,17 +1358,21 @@ function BidPanel({
               >
                 + Dirección
               </Link>
+            ) : isSeller ? (
+              <div className="shrink-0 px-4 py-3 rounded-xl text-xs text-zinc-600 border border-white/5 text-center">
+                Tu subasta
+              </div>
             ) : (
               <button
                 onClick={placeBid}
-                disabled={bidAmount <= currentBid || placing || hasAddress === null}
+                disabled={!itemId || bidAmount <= currentBid || placing || hasAddress === null}
                 className="shrink-0 px-5 py-3 rounded-xl font-black text-white text-sm transition-all active:scale-95 disabled:opacity-40"
                 style={{
                   background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)",
-                  boxShadow: bidAmount > currentBid ? "0 4px 16px rgba(108,58,232,0.45)" : "none",
+                  boxShadow: itemId && bidAmount > currentBid ? "0 4px 16px rgba(108,58,232,0.45)" : "none",
                 }}
               >
-                {placing ? "…" : hasAddress === null ? "…" : "Pujar →"}
+                {placing ? "…" : !itemId ? "Sin carta activa" : hasAddress === null ? "…" : "Pujar →"}
               </button>
             )}
           </div>
