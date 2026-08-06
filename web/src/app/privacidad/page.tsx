@@ -10,34 +10,34 @@ export const metadata: Metadata = {
 
 export default function PrivacidadPage() {
   return (
-    <div className="min-h-screen bg-[#0F0F14] text-white">
+    <div className="min-h-screen" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
       <Navbar />
 
-      <main className="mx-auto max-w-4xl px-6 py-20">
+      <main id="main" className="mx-auto max-w-4xl px-6 py-20">
         {/* Header */}
         <div className="mb-12">
-          <p className="text-sm font-medium text-[#a78bfa] mb-3 uppercase tracking-widest">
+          <p className="text-sm font-medium text-[var(--accent-text)] mb-3 uppercase tracking-widest">
             Legal
           </p>
           <h1 className="text-4xl md:text-5xl font-black mb-4">
             Política de Privacidad
           </h1>
-          <p className="text-zinc-500 text-sm">
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             Última actualización: 23 de junio de 2026
           </p>
         </div>
 
         <div
           className="rounded-2xl p-8 md:p-12 space-y-10"
-          style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
         >
           {/* LFPDPPP notice */}
           <div
-            className="rounded-xl px-5 py-4 text-sm text-[#a78bfa]"
-            style={{ background: "rgba(108,58,232,0.1)", border: "1px solid rgba(108,58,232,0.2)" }}
+            className="rounded-xl px-5 py-4 text-sm text-[var(--accent-text)]"
+            style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)" }}
           >
             Este Aviso de Privacidad se emite en cumplimiento de la{" "}
-            <strong className="text-white">
+            <strong style={{ color: "var(--text-primary)" }}>
               Ley Federal de Protección de Datos Personales en Posesión de los
               Particulares (LFPDPPP)
             </strong>{" "}
@@ -46,25 +46,25 @@ export default function PrivacidadPage() {
 
           <Section title="1. Identidad y Domicilio del Responsable">
             <p>
-              <strong className="text-white">TCG Live</strong> (en adelante "el
+              <strong style={{ color: "var(--text-primary)" }}>TCG Live</strong> (en adelante "el
               Responsable") es la plataforma responsable del tratamiento de tus datos
               personales. Puedes contactarnos a través de:
             </p>
             <div
               className="mt-4 rounded-xl px-5 py-4"
-              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
             >
-              <p className="text-sm text-zinc-300">
-                <span className="text-zinc-500">Correo electrónico:</span>{" "}
+              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                <span style={{ color: "var(--text-muted)" }}>Correo electrónico:</span>{" "}
                 <a
                   href="mailto:tcgsubastas@gmail.com"
-                  className="text-[#a78bfa] hover:text-white transition-colors"
+                  className="text-[var(--accent-text)] hover:text-[var(--text-primary)] transition-colors"
                 >
                   tcgsubastas@gmail.com
                 </a>
               </p>
-              <p className="text-sm text-zinc-300 mt-1">
-                <span className="text-zinc-500">País de operación:</span>{" "}
+              <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
+                <span style={{ color: "var(--text-muted)" }}>País de operación:</span>{" "}
                 Estados Unidos Mexicanos
               </p>
             </div>
@@ -107,7 +107,7 @@ export default function PrivacidadPage() {
                 ]}
               />
             </div>
-            <p className="mt-4 text-xs text-zinc-600">
+            <p className="mt-4 text-xs" style={{ color: "var(--text-muted)" }}>
               No recabamos datos personales sensibles (origen racial, estado de salud,
               creencias religiosas, etc.) como parte de nuestros servicios.
             </p>
@@ -117,10 +117,10 @@ export default function PrivacidadPage() {
             <p>
               Tus datos personales son tratados para las siguientes finalidades:
             </p>
-            <p className="mt-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+            <p className="mt-3 text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-muted)" }}>
               Finalidades primarias (necesarias para el servicio)
             </p>
-            <ul className="space-y-1.5 list-disc list-inside text-zinc-400 text-sm">
+            <ul className="space-y-1.5 list-disc list-inside text-sm" style={{ color: "var(--text-secondary)" }}>
               <li>Crear y administrar tu cuenta de usuario.</li>
               <li>Procesar y gestionar subastas, pujas y transacciones.</li>
               <li>Facilitar el pago a través de Mercado Pago.</li>
@@ -128,10 +128,10 @@ export default function PrivacidadPage() {
               <li>Gestionar disputas y reclamaciones.</li>
               <li>Cumplir con obligaciones legales y fiscales aplicables.</li>
             </ul>
-            <p className="mt-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+            <p className="mt-4 text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--text-muted)" }}>
               Finalidades secundarias (puedes oponerte)
             </p>
-            <ul className="space-y-1.5 list-disc list-inside text-zinc-400 text-sm">
+            <ul className="space-y-1.5 list-disc list-inside text-sm" style={{ color: "var(--text-secondary)" }}>
               <li>
                 Enviarte notificaciones sobre subastas, ofertas y novedades de la plataforma.
               </li>
@@ -143,7 +143,7 @@ export default function PrivacidadPage() {
               un correo a{" "}
               <a
                 href="mailto:tcgsubastas@gmail.com"
-                className="text-[#a78bfa] hover:text-white transition-colors"
+                className="text-[var(--accent-text)] hover:text-[var(--text-primary)] transition-colors"
               >
                 tcgsubastas@gmail.com
               </a>{" "}
@@ -184,7 +184,7 @@ export default function PrivacidadPage() {
                 country="Estados Unidos"
               />
             </div>
-            <p className="mt-4 text-xs text-zinc-600">
+            <p className="mt-4 text-xs" style={{ color: "var(--text-muted)" }}>
               No vendemos ni cedemos tus datos personales a terceros con fines comerciales
               ajenos a la operación de TCG Live.
             </p>
@@ -220,14 +220,14 @@ export default function PrivacidadPage() {
               Para ejercer tus derechos ARCO, envía un correo a{" "}
               <a
                 href="mailto:tcgsubastas@gmail.com"
-                className="text-[#a78bfa] hover:text-white transition-colors"
+                className="text-[var(--accent-text)] hover:text-[var(--text-primary)] transition-colors"
               >
                 tcgsubastas@gmail.com
               </a>{" "}
-              con el asunto <strong className="text-white">"Derechos ARCO"</strong> indicando:
+              con el asunto <strong style={{ color: "var(--text-primary)" }}>"Derechos ARCO"</strong> indicando:
               tu nombre, correo de registro, el derecho que deseas ejercer y los datos
               correspondientes. Responderemos dentro de los{" "}
-              <strong className="text-white">20 días hábiles</strong> siguientes.
+              <strong style={{ color: "var(--text-primary)" }}>20 días hábiles</strong> siguientes.
             </p>
           </Section>
 
@@ -235,7 +235,7 @@ export default function PrivacidadPage() {
             <p>
               TCG Live usa cookies y tecnologías similares para:
             </p>
-            <ul className="mt-3 space-y-1.5 list-disc list-inside text-zinc-400 text-sm">
+            <ul className="mt-3 space-y-1.5 list-disc list-inside text-sm" style={{ color: "var(--text-secondary)" }}>
               <li>Mantener tu sesión activa de forma segura.</li>
               <li>Recordar tus preferencias de idioma y tema.</li>
               <li>Analizar el uso de la plataforma con herramientas de analítica (PostHog).</li>
@@ -251,7 +251,7 @@ export default function PrivacidadPage() {
             <p>
               Implementamos medidas técnicas y organizativas para proteger tus datos:
             </p>
-            <ul className="mt-3 space-y-1.5 list-disc list-inside text-zinc-400 text-sm">
+            <ul className="mt-3 space-y-1.5 list-disc list-inside text-sm" style={{ color: "var(--text-secondary)" }}>
               <li>Transmisión cifrada mediante HTTPS/TLS en todas las comunicaciones.</li>
               <li>Contraseñas almacenadas con hash bcrypt, nunca en texto plano.</li>
               <li>Acceso restringido a datos personales solo para personal autorizado.</li>
@@ -265,7 +265,7 @@ export default function PrivacidadPage() {
               por el periodo mínimo requerido por la legislación fiscal y comercial mexicana
               aplicable (generalmente 5 años para registros de transacciones). Al solicitar la
               cancelación de tu cuenta, eliminaremos o anonimizaremos tus datos en un plazo
-              máximo de <strong className="text-white">30 días hábiles</strong>, salvo
+              máximo de <strong style={{ color: "var(--text-primary)" }}>30 días hábiles</strong>, salvo
               obligación legal de conservación.
             </p>
           </Section>
@@ -275,7 +275,7 @@ export default function PrivacidadPage() {
               Podemos modificar este Aviso de Privacidad en cualquier momento para reflejar
               cambios en la legislación, en nuestras prácticas o en los servicios. Las
               modificaciones sustanciales se comunicarán con al menos{" "}
-              <strong className="text-white">15 días de anticipación</strong> mediante correo
+              <strong style={{ color: "var(--text-primary)" }}>15 días de anticipación</strong> mediante correo
               electrónico a la dirección de registro.
             </p>
             <p className="mt-3">
@@ -292,17 +292,17 @@ export default function PrivacidadPage() {
             </p>
             <div
               className="mt-4 rounded-xl px-5 py-4 flex items-center gap-3"
-              style={{ background: "rgba(108,58,232,0.08)", border: "1px solid rgba(108,58,232,0.18)" }}
+              style={{ background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.18)" }}
             >
               <div
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0"
-                style={{ background: "rgba(108,58,232,0.2)" }}
+                style={{ background: "rgba(37,99,235,0.2)" }}
               >
                 ✉
               </div>
               <a
                 href="mailto:tcgsubastas@gmail.com"
-                className="text-[#a78bfa] hover:text-white transition-colors font-medium text-sm"
+                className="text-[var(--accent-text)] hover:text-[var(--text-primary)] transition-colors font-medium text-sm"
               >
                 tcgsubastas@gmail.com
               </a>
@@ -315,7 +315,7 @@ export default function PrivacidadPage() {
                 href="https://www.inai.org.mx"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[#a78bfa] hover:text-white transition-colors"
+                className="text-[var(--accent-text)] hover:text-[var(--text-primary)] transition-colors"
               >
                 www.inai.org.mx
               </a>
@@ -324,14 +324,14 @@ export default function PrivacidadPage() {
         </div>
 
         {/* Footer nav */}
-        <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-zinc-600">
-          <Link href="/" className="hover:text-zinc-300 transition-colors">
+        <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm" style={{ color: "var(--text-muted)" }}>
+          <Link href="/" className="hover:text-[var(--text-primary)] transition-colors">
             ← Inicio
           </Link>
-          <Link href="/terminos" className="hover:text-zinc-300 transition-colors">
+          <Link href="/terminos" className="hover:text-[var(--text-primary)] transition-colors">
             Términos de Servicio
           </Link>
-          <a href="mailto:tcgsubastas@gmail.com" className="hover:text-zinc-300 transition-colors">
+          <a href="mailto:tcgsubastas@gmail.com" className="hover:text-[var(--text-primary)] transition-colors">
             Contacto
           </a>
         </div>
@@ -352,12 +352,12 @@ function Section({
   return (
     <section>
       <h2
-        className="text-lg font-bold text-white mb-3 pb-2"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+        className="text-lg font-bold mb-3 pb-2"
+        style={{ color: "var(--text-primary)", borderBottom: "1px solid var(--border-subtle)" }}
       >
         {title}
       </h2>
-      <div className="text-zinc-400 text-sm leading-relaxed">{children}</div>
+      <div className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>{children}</div>
     </section>
   );
 }
@@ -366,13 +366,13 @@ function DataCategory({ label, items }: { label: string; items: string[] }) {
   return (
     <div
       className="rounded-xl px-4 py-3"
-      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
+      style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)" }}
     >
-      <p className="text-xs font-semibold text-zinc-400 mb-1.5">{label}</p>
+      <p className="text-xs font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>{label}</p>
       <ul className="space-y-0.5">
         {items.map((item) => (
-          <li key={item} className="text-xs text-zinc-500 flex items-center gap-2">
-            <span className="w-1 h-1 rounded-full bg-[#6C3AE8] flex-shrink-0" />
+          <li key={item} className="text-xs flex items-center gap-2" style={{ color: "var(--text-muted)" }}>
+            <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: "var(--brand)" }} />
             {item}
           </li>
         ))}
@@ -393,11 +393,11 @@ function TransferRow({
   return (
     <div
       className="rounded-xl px-4 py-3"
-      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
+      style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)" }}
     >
-      <p className="text-sm font-semibold text-zinc-300 mb-1">{name}</p>
-      <p className="text-xs text-zinc-500">{purpose}</p>
-      <p className="text-xs text-zinc-600 mt-1">Pais: {country}</p>
+      <p className="text-sm font-semibold mb-1" style={{ color: "var(--text-secondary)" }}>{name}</p>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>{purpose}</p>
+      <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>País: {country}</p>
     </div>
   );
 }
@@ -414,17 +414,17 @@ function ARCOCard({
   return (
     <div
       className="rounded-xl px-4 py-4 flex gap-3"
-      style={{ background: "rgba(108,58,232,0.06)", border: "1px solid rgba(108,58,232,0.15)" }}
+      style={{ background: "rgba(37,99,235,0.06)", border: "1px solid rgba(37,99,235,0.15)" }}
     >
       <div
         className="w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm flex-shrink-0 text-white"
-        style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+        style={{ background: "linear-gradient(135deg, #2563EB, #3B82F6)" }}
       >
         {letter}
       </div>
       <div>
-        <p className="text-sm font-bold text-white mb-0.5">{title}</p>
-        <p className="text-xs text-zinc-500 leading-relaxed">{desc}</p>
+        <p className="text-sm font-bold mb-0.5" style={{ color: "var(--text-primary)" }}>{title}</p>
+        <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>{desc}</p>
       </div>
     </div>
   );

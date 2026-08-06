@@ -1,41 +1,43 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import PokemonCardSearch from "@/components/PokemonCardSearch";
 import { useAuth } from "@/contexts/auth";
 import { useRouter } from "next/navigation";
 import { auctionsApi, ordersApi, listingsApi, shippingApi, type ApiAuction, type ApiOrder, type SellerStats, type ApiListing, type ShippingQuote } from "@/lib/api";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useAnalytics } from "@/hooks/useAnalytics";
+import { gameLabel, usdCentsToMxnCents } from "@/lib/format";
 
 type AuctionStatus = "live" | "ending" | "upcoming" | "scheduled" | "cancelled" | "ended";
 type Tab = "dashboard" | "subastas" | "crear" | "ventas" | "ordenes" | "cobros";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "dashboard", label: "Resumen"           },
-  { key: "subastas",  label: "Mis Subastas"     },
-  { key: "crear",     label: "Crear Subasta"    },
-  { key: "ventas",    label: "Mis Ventas"        },  // Crear Venta + activas
-  { key: "ordenes",   label: "Órdenes de Venta" },
-  { key: "cobros",    label: "💰 Cobros"         },
+  { key: "subastas",  label: "Mis Subastas"      },
+  { key: "crear",     label: "Crear Subasta"     },
+  { key: "ventas",    label: "Mis Ventas"         },
+  { key: "ordenes",   label: "Órdenes de Venta"  },
+  { key: "cobros",    label: "Cobros"             },
 ];
 
 const AUCTION_STATUS_STYLE: Record<string, { label: string; color: string; bg: string }> = {
-  live:      { label: "EN VIVO",       color: "#f87171", bg: "rgba(239,68,68,0.12)"  },
-  ending:    { label: "CERRANDO",      color: "#fbbf24", bg: "rgba(245,158,11,0.12)" },
-  upcoming:  { label: "PROGRAMADA",    color: "#a78bfa", bg: "rgba(108,58,232,0.12)" },
-  scheduled: { label: "PROGRAMADA",    color: "#a78bfa", bg: "rgba(108,58,232,0.12)" },
-  ended:     { label: "FINALIZADA",    color: "#71717a", bg: "rgba(113,113,122,0.12)" },
-  cancelled: { label: "CANCELADA",     color: "#71717a", bg: "rgba(113,113,122,0.12)" },
+  live:      { label: "EN VIVO",    color: "var(--error-text)", bg: "rgba(239,68,68,0.12)"   },
+  ending:    { label: "CERRANDO",   color: "#fbbf24", bg: "rgba(245,158,11,0.12)"  },
+  upcoming:  { label: "PROGRAMADA", color: "var(--accent-text)", bg: "rgba(37,99,235,0.12)"  },
+  scheduled: { label: "PROGRAMADA", color: "var(--accent-text)", bg: "rgba(37,99,235,0.12)"  },
+  ended:     { label: "FINALIZADA", color: "#71717a", bg: "rgba(113,113,122,0.12)" },
+  cancelled: { label: "CANCELADA",  color: "#71717a", bg: "rgba(113,113,122,0.12)" },
 };
 
 const SALE_STATUS_STYLE = {
-  pendiente_envio: { label: "Pendiente de envío", color: "#fbbf24", icon: "📦" },
-  enviado:         { label: "Enviado",             color: "#60a5fa", icon: "🚚" },
-  entregado:       { label: "Entregado",           color: "#4ade80", icon: "✅" },
-  disputa:         { label: "En disputa",          color: "#f87171", icon: "⚠️" },
+  pendiente_envio: { label: "Pendiente de envío", color: "#fbbf24", bg: "rgba(245,158,11,0.12)", icon: "📦" },
+  enviado:         { label: "Enviado",             color: "#60a5fa", bg: "rgba(96,165,250,0.12)", icon: "🚚" },
+  entregado:       { label: "Entregado",           color: "#4ade80", bg: "rgba(74,222,128,0.12)", icon: "✅" },
+  disputa:         { label: "En disputa",          color: "var(--error-text)", bg: "rgba(248,113,113,0.12)", icon: "⚠️" },
 };
 
 const CONDITIONS = ["NM", "LP", "MP", "HP", "PSA 10", "PSA 9", "PSA 8", "BGS 9.5", "BGS 9"];
@@ -68,6 +70,25 @@ const EMPTY_FORM: AuctionForm = {
   binPrice: "", duration: "", description: "", imageUrl: "",
 };
 
+const GAMES = [
+  { value: "pokemon",    label: "Pokémon" },
+  { value: "onepiece",   label: "One Piece" },
+  { value: "yugioh",     label: "Yu-Gi-Oh!" },
+  { value: "mtg",        label: "Magic: The Gathering" },
+  { value: "lorcana",    label: "Disney Lorcana" },
+  { value: "dragonball", label: "Dragon Ball Super" },
+  { value: "sports",     label: "Deportes / Sports Cards" },
+  { value: "other",      label: "Otro / Mixto" },
+];
+
+// Styled input for the form
+function FormInput({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
+}
+
+const inputCls = "w-full rounded-xl px-4 py-3 text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-[#2563EB]/40 transition-all";
+const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" };
+
 export default function VendedorPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -97,8 +118,8 @@ export default function VendedorPage() {
   const [startingId,    setStartingId]    = useState<string | null>(null);
 
   // Ventas (listings)
-  const [myListings,      setMyListings]      = useState<ApiListing[] | null>(null);
-  const [listingForm,     setListingForm]     = useState({ title: "", price: "", game: "", condition: "", description: "", imageUrl: "" });
+  const [myListings,       setMyListings]       = useState<ApiListing[] | null>(null);
+  const [listingForm,      setListingForm]      = useState({ title: "", price: "", game: "", condition: "", description: "", imageUrl: "" });
   const [listingUploading, setListingUploading] = useState(false);
   const [listingCreating,  setListingCreating]  = useState(false);
   const [listingError,     setListingError]     = useState("");
@@ -108,14 +129,45 @@ export default function VendedorPage() {
   const [myAuctions,   setMyAuctions]   = useState<ApiAuction[]>([]);
   const [sellerStats,  setSellerStats]  = useState<SellerStats | null>(null);
   const [sellerOrders, setSellerOrders] = useState<ApiOrder[] | null>(null);
+  const [dashboardError, setDashboardError] = useState(false);
+  const [tabLoadError,   setTabLoadError]   = useState(false);
 
   const loadedTabsRef = useRef<Set<string>>(new Set());
+
+  const loadDashboard = useCallback(() => {
+    setDashboardError(false);
+    Promise.all([
+      auctionsApi.my(),
+      ordersApi.sellerStats(),
+    ]).then(([auctionsRes, statsRes]) => {
+      setMyAuctions(auctionsRes.data);
+      setSellerStats(statsRes.data);
+    }).catch(() => setDashboardError(true));
+  }, []);
+
+  const loadTabData = useCallback((t: Tab) => {
+    setTabLoadError(false);
+    let promise: Promise<unknown> | null = null;
+    if (t === "ordenes" || t === "cobros") {
+      promise = ordersApi.selling().then(res => setSellerOrders(res.data));
+    } else if (t === "ventas") {
+      promise = listingsApi.my().then(res => setMyListings(res.data));
+    } else if (t === "subastas") {
+      promise = auctionsApi.my().then(res => setMyAuctions(res.data));
+    }
+    promise?.catch(() => setTabLoadError(true));
+  }, []);
 
   useEffect(() => {
     if (!showStreamForm) return;
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") setShowStreamForm(false); }
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [showStreamForm]);
 
   useEffect(() => { setTrackingInput(""); }, [shippingOrder]);
@@ -130,28 +182,17 @@ export default function VendedorPage() {
 
   useEffect(() => {
     if (!user) return;
-    // Dashboard tab always loads on mount
     loadedTabsRef.current.add("dashboard");
-    Promise.all([
-      auctionsApi.my().catch(() => null),
-      ordersApi.sellerStats().catch(() => null),
-    ]).then(([auctionsRes, statsRes]) => {
-      if (auctionsRes) setMyAuctions(auctionsRes.data);
-      if (statsRes)    setSellerStats(statsRes.data);
-    });
+    loadDashboard();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   useEffect(() => {
     if (!user) return;
     if (loadedTabsRef.current.has(tab)) return;
     loadedTabsRef.current.add(tab);
-    if (tab === "ordenes" || tab === "cobros") {
-      ordersApi.selling().catch(() => null).then(res => { if (res) setSellerOrders(res.data); });
-    } else if (tab === "ventas") {
-      listingsApi.my().catch(() => null).then(res => { if (res) setMyListings(res.data); });
-    } else if (tab === "subastas") {
-      auctionsApi.my().catch(() => null).then(res => { if (res) setMyAuctions(res.data); });
-    }
+    loadTabData(tab);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, user]);
 
   async function handleImageUpload(file: File) {
@@ -189,7 +230,7 @@ export default function VendedorPage() {
     }
     setCreating(true);
     try {
-      const durationMs = form.duration ? DURATION_MS[form.duration] : 30 * 60 * 1000; // default 30 min
+      const durationMs = form.duration ? DURATION_MS[form.duration] : 30 * 60 * 1000;
       const res = await auctionsApi.create({
         title: form.name,
         description: form.description || undefined,
@@ -203,7 +244,6 @@ export default function VendedorPage() {
         }],
       });
       const auctionId = res.data.id;
-      // Auto-start immediately with the chosen duration so buyers can bid right away
       await auctionsApi.start(auctionId, durationMs);
       capture("auction_created", { game: form.set || undefined, hasImage: !!form.imageUrl });
       router.push(`/auctions/${auctionId}`);
@@ -241,7 +281,7 @@ export default function VendedorPage() {
     try {
       await listingsApi.create({
         title:       listingForm.title,
-        price:       Math.round(Number(listingForm.price) * 100), // pesos → centavos
+        price:       Math.round(Number(listingForm.price) * 100),
         game:        listingForm.game || undefined,
         condition:   listingForm.condition || undefined,
         description: listingForm.description || undefined,
@@ -273,55 +313,54 @@ export default function VendedorPage() {
 
   const totalRevenue = sellerStats?.totalRevenue ?? 0;
 
-  const GAMES = [
-    { value: "pokemon",    label: "Pokémon" },
-    { value: "onepiece",   label: "One Piece" },
-    { value: "yugioh",     label: "Yu-Gi-Oh!" },
-    { value: "mtg",        label: "Magic: The Gathering" },
-    { value: "lorcana",    label: "Disney Lorcana" },
-    { value: "dragonball", label: "Dragon Ball Super" },
-    { value: "sports",     label: "Deportes / Sports Cards" },
-    { value: "other",      label: "Otro / Mixto" },
-  ];
-
   return (
     <ErrorBoundary>
-    <div className="min-h-screen bg-[#0F0F14] text-white">
+    <div className="min-h-screen" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
       <Navbar />
 
       {/* Stream setup modal */}
       {showStreamForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ background: "rgba(0,0,0,0.8)" }}>
           <div
             role="dialog"
             aria-modal="true"
+            aria-labelledby="stream-modal-heading"
             className="w-full max-w-sm rounded-2xl p-6"
-            style={{ background: "#16161E", border: "1px solid rgba(108,58,232,0.3)" }}
+            style={{ background: "var(--bg-surface)", border: "1px solid rgba(37,99,235,0.3)", boxShadow: "0 0 40px rgba(37,99,235,0.2), var(--card-shadow)" }}
           >
-            <h2 className="text-lg font-black text-white mb-1">Configura tu directo</h2>
-            <p className="text-xs text-zinc-500 mb-5">Este nombre aparecerá en la lista de subastas en vivo.</p>
+            <div className="flex items-center gap-3 mb-1">
+              <span className="w-8 h-8 rounded-lg flex items-center justify-center text-sm" style={{ background: "rgba(220,38,38,0.15)" }}>
+                🔴
+              </span>
+              <h2 id="stream-modal-heading" className="text-lg font-black" style={{ color: "var(--text-primary)" }}>Configura tu directo</h2>
+            </div>
+            <p className="text-xs mb-5" style={{ color: "var(--text-muted)" }}>Este nombre aparecerá en la lista de subastas en vivo.</p>
 
             <div className="flex flex-col gap-4">
               <div>
-                <label className="text-xs text-zinc-400 font-semibold mb-1.5 block">Título del stream</label>
+                <label htmlFor="stream-title" className="text-xs font-semibold mb-1.5 block" style={{ color: "var(--text-secondary)" }}>Título del stream</label>
                 <input
+                  id="stream-title"
                   autoFocus
                   type="text"
                   value={streamTitle}
                   onChange={e => setStreamTitle(e.target.value)}
                   placeholder="Ej: Subastas Pokémon SV Stellar Crown"
                   maxLength={80}
-                  className="w-full bg-[#0F0F14] border border-white/15 rounded-xl px-4 py-3 text-white text-sm placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60"
+                  className={inputCls}
+                  style={inputStyle}
                   onKeyDown={e => e.key === "Enter" && streamTitle.trim() && launchLivestream()}
                 />
               </div>
 
               <div>
-                <label className="text-xs text-zinc-400 font-semibold mb-1.5 block">Categoría</label>
+                <label htmlFor="stream-category" className="text-xs font-semibold mb-1.5 block" style={{ color: "var(--text-secondary)" }}>Categoría</label>
                 <select
+                  id="stream-category"
                   value={streamGame}
                   onChange={e => setStreamGame(e.target.value)}
-                  className="w-full bg-[#0F0F14] border border-white/15 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#6C3AE8]/60"
+                  className={inputCls}
+                  style={inputStyle}
                 >
                   {GAMES.map(g => (
                     <option key={g.value} value={g.value}>{g.label}</option>
@@ -332,8 +371,8 @@ export default function VendedorPage() {
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setShowStreamForm(false)}
-                  className="flex-1 py-3 rounded-xl text-sm font-bold text-zinc-400 border border-white/10 hover:text-white transition-colors"
-                  style={{ background: "rgba(255,255,255,0.04)" }}
+                  className="flex-1 py-3 rounded-xl text-sm font-bold transition-colors"
+                  style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}
                 >
                   Cancelar
                 </button>
@@ -341,9 +380,9 @@ export default function VendedorPage() {
                   onClick={launchLivestream}
                   disabled={!streamTitle.trim()}
                   className="flex-1 py-3 rounded-xl text-sm font-black text-white transition-all disabled:opacity-40"
-                  style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)" }}
+                  style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 4px 16px rgba(220,38,38,0.4)" }}
                 >
-                  🔴 Ir en vivo
+                  Ir en vivo
                 </button>
               </div>
             </div>
@@ -351,9 +390,18 @@ export default function VendedorPage() {
         </div>
       )}
 
+      <main id="main">
       {/* Header */}
-      <div className="pt-24 pb-0 border-b border-white/5">
-        <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="pt-24 pb-0" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+        {/* Ambient glow */}
+        <div className="absolute left-0 right-0 overflow-hidden pointer-events-none" aria-hidden="true" style={{ top: "80px", height: "200px" }}>
+          <div
+            className="absolute left-1/4 w-96 h-48 opacity-20 rounded-full"
+            style={{ background: "radial-gradient(circle, #2563EB, transparent 70%)", filter: "blur(60px)" }}
+          />
+        </div>
+
+        <div className="relative mx-auto max-w-5xl px-6 py-10">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
             {/* Avatar */}
             <div className="relative shrink-0">
@@ -361,15 +409,15 @@ export default function VendedorPage() {
                 className="w-20 h-20 rounded-2xl flex items-center justify-center text-3xl"
                 style={{
                   background: "linear-gradient(135deg, #1e1e2e, #2d1b69)",
-                  border: "1px solid rgba(108,58,232,0.4)",
-                  boxShadow: "0 0 32px rgba(108,58,232,0.3)",
+                  border: "1px solid rgba(37,99,235,0.4)",
+                  boxShadow: "0 0 32px rgba(37,99,235,0.3)",
                 }}
               >
                 🧑‍💼
               </div>
               <span
-                className="absolute -bottom-1.5 -right-1.5 text-xs font-black px-2 py-0.5 rounded-full border border-[#0F0F14]"
-                style={{ background: "#6C3AE8" }}
+                className="absolute -bottom-1.5 -right-1.5 text-[10px] font-black px-2 py-0.5 rounded-full"
+                style={{ background: "#2563EB", border: "2px solid var(--bg-base)", color: "#fff" }}
               >
                 Vendedor
               </span>
@@ -377,74 +425,117 @@ export default function VendedorPage() {
 
             {/* Info */}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-black">{user?.username ?? "—"}</h1>
-                {user?.role === "SELLER" && <span className="text-[#a78bfa] text-sm">✓ Verificado</span>}
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-2xl font-black" style={{ color: "var(--text-primary)" }}>{user?.username ?? "—"}</h1>
+                {user?.role === "SELLER" && (
+                  <span className="text-sm font-semibold" style={{ color: "var(--accent-text)" }}>✓ Verificado</span>
+                )}
               </div>
-              <p className="text-zinc-500 text-sm mt-0.5">Panel de vendedor</p>
+              <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>Panel de vendedor</p>
 
-              <div className="flex flex-wrap items-center gap-5 mt-4">
+              <div className="flex flex-wrap items-center gap-6 mt-4">
                 {[
-                  { label: "Subastas activas", value: sellerStats?.activeAuctions ?? myAuctions.filter(a => a.status === "live").length },
-                  { label: "Total vendido",    value: `$${(totalRevenue / 100).toLocaleString("es-MX")} MXN` },
-                  { label: "Pendientes envío", value: sellerStats?.pendingOrders ?? (sellerOrders?.filter(o => o.status === "pending" || o.status === "pendiente_pago").length ?? 0) },
-                  { label: "Mis subastas",     value: myAuctions.length },
+                  { label: "Subastas activas", value: sellerStats?.activeAuctions ?? myAuctions.filter(a => a.status === "live").length, color: "var(--error-text)" },
+                  { label: "Total vendido",    value: `$${(totalRevenue / 100).toLocaleString("es-MX")} MXN`, color: "var(--accent-text)" },
+                  { label: "Pendientes envío", value: sellerStats?.pendingOrders ?? (sellerOrders?.filter(o => o.status === "pending" || o.status === "pendiente_pago").length ?? 0), color: "#fbbf24" },
+                  { label: "Mis subastas",     value: myAuctions.length, color: "#60a5fa" },
                 ].map((s) => (
                   <div key={s.label}>
-                    <p className="text-xl font-black">{s.value}</p>
-                    <p className="text-[11px] text-zinc-500">{s.label}</p>
+                    <p className="text-xl font-black" style={{ color: s.color }}>{s.value}</p>
+                    <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{s.label}</p>
                   </div>
                 ))}
               </div>
             </div>
 
+            {/* CTA buttons */}
             <div className="flex items-center gap-3 shrink-0">
-              <button
-                onClick={() => setShowStreamForm(true)}
-                disabled={launchingStream}
-                className="flex items-center gap-2 text-sm font-black text-white px-5 py-2.5 rounded-xl transition-all disabled:opacity-60"
-                style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 4px 20px rgba(220,38,38,0.4)" }}
-              >
-                <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                {launchingStream ? "Iniciando..." : "Iniciar Directo"}
-              </button>
+              {/* Go Live button — prominent with pulsing glow */}
+              <div className="relative">
+                {launchingStream && (
+                  <div
+                    className="absolute inset-0 rounded-2xl animate-ping opacity-40"
+                    style={{ background: "rgba(220,38,38,0.5)" }}
+                  />
+                )}
+                <button
+                  onClick={() => setShowStreamForm(true)}
+                  disabled={launchingStream}
+                  className="relative flex items-center gap-2.5 text-sm font-black text-white px-6 py-3 rounded-2xl transition-all disabled:opacity-60"
+                  style={{
+                    background: "linear-gradient(135deg, #dc2626, #ef4444)",
+                    boxShadow: launchingStream
+                      ? "0 0 0 4px rgba(220,38,38,0.3), 0 8px 32px rgba(220,38,38,0.6)"
+                      : "0 4px 24px rgba(220,38,38,0.5)",
+                  }}
+                >
+                  <span className="w-2 h-2 bg-white rounded-full animate-pulse shrink-0" />
+                  {launchingStream ? "Iniciando..." : "Iniciar Directo"}
+                </button>
+              </div>
+
               <button
                 onClick={() => setTab("crear")}
-                className="shrink-0 text-sm font-bold text-white px-5 py-2.5 rounded-xl transition-all"
-                style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 4px 20px rgba(108,58,232,0.35)" }}
+                className="shrink-0 text-sm font-bold text-white px-5 py-3 rounded-2xl transition-all"
+                style={{ background: "linear-gradient(135deg, #2563EB, #3B82F6)", boxShadow: "0 4px 20px rgba(37,99,235,0.35)" }}
               >
                 + Nueva subasta
               </button>
             </div>
           </div>
 
-          {/* Tabs */}
+          {/* Tab bar — pill-shaped */}
           <div className="relative mt-8">
             <div
-              className="flex items-center gap-1 overflow-x-auto pb-1"
-              style={{ msOverflowStyle: "none", scrollbarWidth: "none", maskImage: "linear-gradient(to right, transparent 0%, black 4%, black 92%, transparent 100%)", WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 4%, black 92%, transparent 100%)" }}
+              className="flex items-center gap-1.5 overflow-x-auto pb-1"
+              style={{
+                msOverflowStyle: "none",
+                scrollbarWidth: "none",
+                maskImage: "linear-gradient(to right, transparent 0%, black 3%, black 94%, transparent 100%)",
+                WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 3%, black 94%, transparent 100%)",
+              }}
             >
-            {TABS.map((t) => {
-              const active = tab === t.key;
-              const pendingOrdersCount = t.key === "ordenes" ? (sellerOrders?.filter(o => o.status === "pending" || o.status === "pendiente_pago").length ?? 0) : 0;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setTab(t.key)}
-                  role="tab"
-                  aria-selected={active}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-sm font-semibold whitespace-nowrap transition-all border-b-2"
-                  style={active ? { color: "#a78bfa", borderColor: "#6C3AE8", background: "rgba(108,58,232,0.08)" } : { color: "#71717a", borderColor: "transparent" }}
-                >
-                  {t.label}
-                  {pendingOrdersCount > 0 && (
-                    <span className="text-xs font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center" style={{ background: "rgba(245,158,11,0.2)", color: "#f59e0b" }}>
-                      {pendingOrdersCount}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+              {TABS.map((t) => {
+                const active = tab === t.key;
+                const pendingOrdersCount = t.key === "ordenes"
+                  ? (sellerOrders?.filter(o => o.status === "pending" || o.status === "pendiente_pago").length ?? 0)
+                  : 0;
+                const isCobros = t.key === "cobros";
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setTab(t.key)}
+                    role="tab"
+                    aria-selected={active}
+                    className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all"
+                    style={
+                      active
+                        ? {
+                            background: "rgba(37,99,235,0.18)",
+                            color: "var(--accent-text)",
+                            boxShadow: "0 0 16px rgba(37,99,235,0.3)",
+                            border: "1px solid rgba(37,99,235,0.4)",
+                          }
+                        : {
+                            color: "var(--text-muted)",
+                            background: "transparent",
+                            border: "1px solid transparent",
+                          }
+                    }
+                  >
+                    {isCobros && <span className="text-base">💰</span>}
+                    {t.label}
+                    {pendingOrdersCount > 0 && (
+                      <span
+                        className="text-xs font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+                        style={{ background: "rgba(245,158,11,0.2)", color: "#f59e0b" }}
+                      >
+                        {pendingOrdersCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -453,6 +544,24 @@ export default function VendedorPage() {
       {/* Tab content */}
       <div className="mx-auto max-w-5xl px-6 py-8">
 
+        {(dashboardError || tabLoadError) && (
+          <div
+            role="alert"
+            className="mb-6 px-4 py-3 rounded-xl text-sm flex items-center justify-between gap-3"
+            style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", color: "var(--error-text)" }}
+          >
+            <span>No se pudieron cargar tus datos de vendedor. Intenta de nuevo.</span>
+            <button
+              type="button"
+              onClick={() => { if (dashboardError) loadDashboard(); if (tabLoadError) loadTabData(tab); }}
+              className="shrink-0 font-semibold underline underline-offset-2"
+              style={{ color: "var(--accent-text)" }}
+            >
+              Reintentar
+            </button>
+          </div>
+        )}
+
         {/* ─── DASHBOARD ─── */}
         {tab === "dashboard" && (
           <div className="space-y-6">
@@ -460,40 +569,25 @@ export default function VendedorPage() {
             {/* Stats grid */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                {
-                  label: "Ingresos totales",
-                  value: `$${(totalRevenue / 100).toLocaleString("es-MX")}`,
-                  sub: "MXN",
-                  icon: "💰",
-                },
-                {
-                  label: "Subastas activas",
-                  value: sellerStats?.activeAuctions ?? myAuctions.filter(a => a.status === "live" || a.status === "ending").length,
-                  sub: "en curso",
-                  icon: "⚡",
-                },
-                {
-                  label: "Pendientes de envío",
-                  value: sellerStats?.pendingOrders ?? (sellerOrders?.filter(o => o.status === "pending" || o.status === "confirmed").length ?? 0),
-                  sub: "por enviar",
-                  icon: "📦",
-                },
-                {
-                  label: "Mis subastas",
-                  value: myAuctions.length,
-                  sub: "historial total",
-                  icon: "🏷",
-                },
+                { label: "Ingresos totales",    value: `$${(totalRevenue / 100).toLocaleString("es-MX")}`, sub: "MXN", icon: "💰", iconBg: "rgba(255,203,5,0.15)", valueColor: "var(--accent-text)" },
+                { label: "Subastas activas",     value: sellerStats?.activeAuctions ?? myAuctions.filter(a => a.status === "live" || a.status === "ending").length, sub: "en curso", icon: "⚡", iconBg: "rgba(239,68,68,0.12)", valueColor: "var(--error-text)" },
+                { label: "Pendientes de envío",  value: sellerStats?.pendingOrders ?? (sellerOrders?.filter(o => o.status === "pending" || o.status === "confirmed").length ?? 0), sub: "por enviar", icon: "📦", iconBg: "rgba(245,158,11,0.12)", valueColor: "#fbbf24" },
+                { label: "Mis subastas",         value: myAuctions.length, sub: "historial total", icon: "🏷", iconBg: "rgba(96,165,250,0.12)", valueColor: "#60a5fa" },
               ].map((s) => (
                 <div
                   key={s.label}
-                  className="rounded-2xl p-5"
-                  style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
+                  className="rounded-2xl p-5 transition-all"
+                  style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
                 >
-                  <p className="text-2xl mb-2">{s.icon}</p>
-                  <p className="text-2xl font-black">{s.value}</p>
-                  <p className="text-xs text-zinc-600 mt-0.5">{s.sub}</p>
-                  <p className="text-xs text-zinc-500 mt-2">{s.label}</p>
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl mb-3"
+                    style={{ background: s.iconBg }}
+                  >
+                    {s.icon}
+                  </div>
+                  <p className="text-2xl font-black" style={{ color: s.valueColor }}>{s.value}</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{s.sub}</p>
+                  <p className="text-xs mt-2" style={{ color: "var(--text-secondary)" }}>{s.label}</p>
                 </div>
               ))}
             </div>
@@ -504,29 +598,39 @@ export default function VendedorPage() {
               {/* Subasta en vivo */}
               <div
                 className="rounded-2xl p-5"
-                style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
+                style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
               >
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-sm">Subasta en vivo</h3>
-                  <span className="flex items-center gap-1.5 text-[11px] font-bold text-red-400">
+                  <h3 className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>Subasta en vivo</h3>
+                  <span className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--error-text)]">
                     <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
                     EN VIVO
                   </span>
                 </div>
                 {myAuctions.filter(a => a.status === "live").length === 0 ? (
-                  <p className="text-xs text-zinc-600 text-center py-6">Sin subastas en vivo ahora</p>
+                  <div className="py-8 text-center">
+                    <p className="text-3xl mb-2">📺</p>
+                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>Sin subastas en vivo ahora</p>
+                    <button
+                      onClick={() => setShowStreamForm(true)}
+                      className="mt-3 text-xs font-bold px-4 py-2 rounded-xl text-white transition-all"
+                      style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 4px 12px rgba(220,38,38,0.35)" }}
+                    >
+                      Iniciar directo
+                    </button>
+                  </div>
                 ) : myAuctions.filter(a => a.status === "live").map((a) => (
                   <div key={a.id}>
                     <div className="flex items-center gap-3 mb-4">
                       <div
                         className="w-10 h-14 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-lg shrink-0"
-                        style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}
+                        style={{ boxShadow: "0 0 16px rgba(59,130,246,0.4)" }}
                       >
                         🃏
                       </div>
                       <div>
-                        <p className="font-bold text-sm">{a.title ?? a.name ?? "Sin título"}</p>
-                        <p className="text-xs text-zinc-500">{a.game ?? ""} · {a.condition ?? ""}</p>
+                        <p className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>{a.title ?? a.name ?? "Sin título"}</p>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{gameLabel(a.game)} · {a.condition ?? ""}</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-3 gap-3">
@@ -538,10 +642,10 @@ export default function VendedorPage() {
                         <div
                           key={m.label}
                           className="rounded-xl p-3 text-center"
-                          style={{ background: "rgba(255,255,255,0.04)" }}
+                          style={{ background: "var(--bg-elevated)" }}
                         >
-                          <p className="font-black text-sm">{m.value}</p>
-                          <p className="text-xs text-zinc-600 mt-0.5">{m.label}</p>
+                          <p className="font-black text-sm" style={{ color: "var(--text-primary)" }}>{m.value}</p>
+                          <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{m.label}</p>
                         </div>
                       ))}
                     </div>
@@ -560,25 +664,31 @@ export default function VendedorPage() {
               {/* Órdenes recientes */}
               <div
                 className="rounded-2xl p-5"
-                style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
+                style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
               >
-                <h3 className="font-bold text-sm mb-4">Órdenes recientes</h3>
+                <h3 className="font-bold text-sm mb-4" style={{ color: "var(--text-primary)" }}>Órdenes recientes</h3>
                 {(sellerOrders ?? []).length === 0 ? (
-                  <p className="text-xs text-zinc-600 text-center py-6">Sin órdenes aún</p>
+                  <div className="py-8 text-center">
+                    <p className="text-3xl mb-2">📭</p>
+                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>Sin órdenes aún</p>
+                  </div>
                 ) : (
                   <div className="space-y-3">
                     {(sellerOrders ?? []).slice(0, 5).map((o) => {
                       const statusIcon: Record<string, string> = { pending: "⏳", confirmed: "✓", shipped: "🚚", delivered: "✅" };
                       return (
                         <div key={o.id} className="flex items-start gap-3">
-                          <span className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0" style={{ background: "rgba(255,255,255,0.05)" }}>
+                          <span
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0"
+                            style={{ background: "var(--bg-elevated)" }}
+                          >
                             {statusIcon[o.status] ?? "📋"}
                           </span>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs leading-snug">
+                            <p className="text-xs leading-snug" style={{ color: "var(--text-primary)" }}>
                               {o.items?.[0]?.cardName ?? "Carta"} — ${(o.totalAmount / 100).toLocaleString("es-MX")} MXN
                             </p>
-                            <p className="text-xs text-zinc-600 mt-0.5">
+                            <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
                               @{o.buyer?.username ?? "comprador"} · {new Date(o.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
                             </p>
                           </div>
@@ -593,21 +703,25 @@ export default function VendedorPage() {
             {/* Revenue summary */}
             <div
               className="rounded-2xl p-5"
-              style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
+              style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
             >
               <div className="flex items-center justify-between mb-5">
-                <h3 className="font-bold text-sm">Resumen de ventas</h3>
-                <span className="text-xs text-zinc-500">Total acumulado</span>
+                <h3 className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>Resumen de ventas</h3>
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>Total acumulado</span>
               </div>
               <div className="grid grid-cols-3 gap-4">
                 {[
-                  { label: "Ingresos totales", value: `$${(totalRevenue / 100).toLocaleString("es-MX")} MXN`, color: "#a78bfa" },
-                  { label: "Órdenes totales",  value: sellerOrders?.length ?? 0,                       color: "#4ade80" },
-                  { label: "Subastas totales", value: myAuctions.length,                               color: "#60a5fa" },
+                  { label: "Ingresos totales", value: `$${(totalRevenue / 100).toLocaleString("es-MX")} MXN`, color: "var(--accent-text)" },
+                  { label: "Órdenes totales",  value: sellerOrders?.length ?? 0,                              color: "#4ade80" },
+                  { label: "Subastas totales", value: myAuctions.length,                                      color: "#60a5fa" },
                 ].map(s => (
-                  <div key={s.label} className="rounded-xl p-4 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
+                  <div
+                    key={s.label}
+                    className="rounded-xl p-4 text-center"
+                    style={{ background: "var(--bg-elevated)" }}
+                  >
                     <p className="text-xl font-black" style={{ color: s.color }}>{s.value}</p>
-                    <p className="text-[11px] text-zinc-500 mt-1">{s.label}</p>
+                    <p className="text-[11px] mt-1" style={{ color: "var(--text-muted)" }}>{s.label}</p>
                   </div>
                 ))}
               </div>
@@ -618,7 +732,7 @@ export default function VendedorPage() {
         {/* ─── MIS SUBASTAS ─── */}
         {tab === "subastas" && (
           <div className="space-y-4">
-            {/* Filter */}
+            {/* Filter pills */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
               {(["all", "live", "ending", "scheduled", "ended"] as const).map((f) => {
                 const count = f === "all" ? myAuctions.length : myAuctions.filter(a => a.status === f || (f === "scheduled" && a.status === "upcoming")).length;
@@ -629,17 +743,17 @@ export default function VendedorPage() {
                     key={f}
                     onClick={() => setSaleFilter(f)}
                     aria-pressed={active}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all"
+                    className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all"
                     style={
                       active
-                        ? { background: "rgba(108,58,232,0.2)", border: "1px solid rgba(108,58,232,0.4)", color: "#a78bfa" }
-                        : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#71717a" }
+                        ? { background: "rgba(37,99,235,0.18)", border: "1px solid rgba(37,99,235,0.4)", color: "var(--accent-text)", boxShadow: "0 0 12px rgba(37,99,235,0.25)" }
+                        : { background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-muted)" }
                     }
                   >
                     {labels[f]}
                     <span
                       className="text-xs px-1.5 py-0.5 rounded-md"
-                      style={{ background: active ? "rgba(108,58,232,0.3)" : "rgba(255,255,255,0.06)" }}
+                      style={{ background: active ? "rgba(37,99,235,0.3)" : "var(--bg-hover)", color: active ? "var(--accent-text)" : "var(--text-muted)" }}
                     >
                       {count}
                     </span>
@@ -651,7 +765,7 @@ export default function VendedorPage() {
             {filteredAuctions.length === 0 ? (
               <div className="text-center py-24">
                 <p className="text-4xl mb-3">📭</p>
-                <p className="text-zinc-400 font-medium">Sin subastas en esta categoría</p>
+                <p className="font-medium" style={{ color: "var(--text-secondary)" }}>Sin subastas en esta categoría</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -660,7 +774,6 @@ export default function VendedorPage() {
                   const title = a.title ?? a.name ?? "Sin título";
                   const currentBid = a.currentBid ?? a.startingBid ?? 0;
 
-                  /* ── SUBASTA TERMINADA: mostrar resumen de ventas ── */
                   if (a.status === "ended") {
                     const allItems   = a.items ?? [];
                     const soldItems  = allItems.filter(i => i.status === "sold");
@@ -670,28 +783,25 @@ export default function VendedorPage() {
                       <div
                         key={a.id}
                         className="rounded-2xl p-4"
-                        style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
+                        style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span
-                                className="text-xs font-bold px-2 py-0.5 rounded-full"
-                                style={{ background: s?.bg, color: s?.color }}
-                              >
+                              <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: s?.bg, color: s?.color }}>
                                 {s?.label ?? "Terminada"}
                               </span>
                               {a.game && (
-                                <span className="text-xs text-zinc-600">{a.game}</span>
+                                <span className="text-xs" style={{ color: "var(--text-muted)" }}>{gameLabel(a.game)}</span>
                               )}
                             </div>
-                            <p className="font-bold text-sm leading-tight truncate">{title}</p>
+                            <p className="font-bold text-sm leading-tight truncate" style={{ color: "var(--text-primary)" }}>{title}</p>
                           </div>
                           <div className="flex flex-col gap-1.5 shrink-0">
                             <Link
                               href={`/auctions/${a.id}`}
                               className="text-xs font-semibold px-3 py-1.5 rounded-lg text-center transition-all"
-                              style={{ background: "rgba(255,255,255,0.05)", color: "#71717a", border: "1px solid rgba(255,255,255,0.08)" }}
+                              style={{ background: "var(--bg-elevated)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
                             >
                               Ver
                             </Link>
@@ -706,50 +816,51 @@ export default function VendedorPage() {
                                 }
                               }}
                               className="text-xs font-semibold px-3 py-1.5 rounded-lg text-center transition-all"
-                              style={{ background: "rgba(113,113,122,0.08)", color: "#52525b", border: "1px solid rgba(113,113,122,0.15)" }}
+                              style={{ background: "var(--bg-hover)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}
                             >
                               Archivar
                             </button>
                           </div>
                         </div>
                         <div className="grid grid-cols-3 gap-2 mt-3">
-                          <div className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
+                          <div className="rounded-xl p-2.5 text-center" style={{ background: "var(--bg-elevated)" }}>
                             <p className="text-base font-black text-green-400">{soldItems.length}</p>
-                            <p className="text-xs text-zinc-600 mt-0.5">vendidos</p>
+                            <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>vendidos</p>
                           </div>
-                          <div className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
-                            <p className="text-base font-black text-zinc-400">{totalItems - soldItems.length}</p>
-                            <p className="text-xs text-zinc-600 mt-0.5">sin vender</p>
+                          <div className="rounded-xl p-2.5 text-center" style={{ background: "var(--bg-elevated)" }}>
+                            <p className="text-base font-black" style={{ color: "var(--text-secondary)" }}>{totalItems - soldItems.length}</p>
+                            <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>sin vender</p>
                           </div>
-                          <div className="rounded-xl p-2.5 text-center" style={{ background: "rgba(255,255,255,0.03)" }}>
-                            <p className="text-base font-black text-violet-400">
+                          <div className="rounded-xl p-2.5 text-center" style={{ background: "var(--bg-elevated)" }}>
+                            <p className="text-base font-black" style={{ color: "var(--accent-text)" }}>
                               {revenue > 0 ? `$${(revenue / 100).toLocaleString("es-MX")}` : `$${(currentBid / 100).toLocaleString("es-MX")}`}
                             </p>
-                            <p className="text-xs text-zinc-600 mt-0.5">recaudado</p>
+                            <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>recaudado</p>
                           </div>
                         </div>
                       </div>
                     );
                   }
 
-                  /* ── SUBASTA ACTIVA / PRÓXIMA ── */
                   return (
                     <div
                       key={a.id}
-                      className="rounded-2xl p-4 flex items-center gap-4"
-                      style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
+                      className="rounded-2xl p-4 flex items-center gap-4 transition-all"
+                      style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
                     >
-                      {/* Card */}
+                      {/* Card image */}
                       {a.items?.[0]?.imageUrls?.[0] ? (
                         <img
                           src={a.items[0].imageUrls![0]}
                           alt={a.title ?? a.name ?? "Carta"}
+                          width={48}
+                          height={64}
                           className="w-12 h-16 object-contain rounded-xl shrink-0"
                         />
                       ) : (
                         <div
                           className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0"
-                          style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}
+                          style={{ boxShadow: "0 0 16px rgba(59,130,246,0.4)" }}
                         >
                           🃏
                         </div>
@@ -757,29 +868,30 @@ export default function VendedorPage() {
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm leading-tight">{title}</p>
-                        <p className="text-xs text-zinc-500 mt-0.5">{a.game ?? ""} {a.condition ? `· ${a.condition}` : ""}</p>
+                        <p className="font-bold text-sm leading-tight" style={{ color: "var(--text-primary)" }}>{title}</p>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                          {gameLabel(a.game)} {a.condition ? `· ${a.condition}` : ""}
+                        </p>
                         <div className="flex items-center gap-2 mt-2">
-                          <span
-                            className="text-xs font-bold px-2 py-0.5 rounded-full"
-                            style={{ background: s?.bg, color: s?.color }}
-                          >
+                          <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: s?.bg, color: s?.color }}>
                             {s?.label ?? a.status}
                           </span>
                           {a.status !== "upcoming" && a.status !== "scheduled" && (
-                            <span className="text-[11px] text-zinc-600">{a.totalBids ?? 0} pujas</span>
+                            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{a.totalBids ?? 0} pujas</span>
                           )}
                         </div>
                       </div>
 
                       {/* Price */}
                       <div className="text-right shrink-0">
-                        <p className="text-xs text-zinc-600 mb-0.5">
+                        <p className="text-xs mb-0.5" style={{ color: "var(--text-muted)" }}>
                           {(a.status === "upcoming" || a.status === "scheduled") ? "Precio inicial" : "Puja actual"}
                         </p>
-                        <p className="font-black text-lg">${(currentBid / 100).toLocaleString("es-MX")}</p>
+                        <p className="font-black text-lg" style={{ color: "var(--text-primary)" }}>
+                          ${(currentBid / 100).toLocaleString("es-MX")}
+                        </p>
                         {a.binPrice && (
-                          <p className="text-xs text-zinc-600 mt-0.5">BIN: ${(a.binPrice / 100).toLocaleString("es-MX")}</p>
+                          <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>BIN: ${(a.binPrice / 100).toLocaleString("es-MX")}</p>
                         )}
                       </div>
 
@@ -798,7 +910,7 @@ export default function VendedorPage() {
                                 } catch {}
                                 finally { setStartingId(null); }
                               }}
-                              className="text-xs font-black px-3 py-1.5 rounded-lg text-white text-center disabled:opacity-60"
+                              className="text-xs font-black px-3 py-1.5 rounded-lg text-white text-center disabled:opacity-60 transition-all"
                               style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)" }}
                             >
                               {startingId === a.id ? "..." : "Iniciar"}
@@ -814,7 +926,7 @@ export default function VendedorPage() {
                                 }
                               }}
                               className="text-xs font-semibold px-3 py-1.5 rounded-lg text-center transition-all"
-                              style={{ background: "rgba(113,113,122,0.08)", color: "#52525b", border: "1px solid rgba(113,113,122,0.15)" }}
+                              style={{ background: "var(--bg-hover)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}
                             >
                               Cancelar
                             </button>
@@ -833,7 +945,7 @@ export default function VendedorPage() {
                         <Link
                           href={`/auctions/${a.id}`}
                           className="text-xs font-semibold px-3 py-1.5 rounded-lg text-center transition-all"
-                          style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.2)" }}
+                          style={{ background: "rgba(37,99,235,0.12)", color: "var(--accent-text)", border: "1px solid rgba(37,99,235,0.2)" }}
                         >
                           Ver
                         </Link>
@@ -851,16 +963,25 @@ export default function VendedorPage() {
           <div className="max-w-2xl mx-auto">
             <form onSubmit={handleSubmit} className="space-y-5">
 
-                {createError && (
-                  <div className="px-4 py-3 rounded-xl text-sm text-red-400" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
-                    {createError}
-                  </div>
-                )}
+              {createError && (
+                <div className="px-4 py-3 rounded-xl text-sm text-[var(--error-text)]" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                  {createError}
+                </div>
+              )}
 
-                {/* Upload */}
+              {/* Image upload — big drop zone */}
+              <div
+                className="rounded-2xl overflow-hidden"
+                style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
+              >
+                <div className="px-5 pt-5 pb-2">
+                  <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+                    Foto del producto
+                  </p>
+                </div>
                 <label
-                  className="rounded-2xl border-2 border-dashed p-8 flex flex-col items-center gap-3 cursor-pointer transition-all hover:border-[#6C3AE8]/60 block"
-                  style={{ borderColor: form.imageUrl ? "rgba(74,222,128,0.4)" : "rgba(255,255,255,0.1)", background: "#16161E" }}
+                  className="block cursor-pointer"
+                  style={{ borderTop: "1px solid var(--border-subtle)" }}
                 >
                   <input
                     type="file"
@@ -868,65 +989,112 @@ export default function VendedorPage() {
                     className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); }}
                   />
-                  {form.imageUrl ? (
-                    <img src={form.imageUrl} alt="carta" width={96} height={128} className="w-24 h-32 object-contain rounded-xl" />
-                  ) : (
-                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl" style={{ background: "rgba(108,58,232,0.1)" }}>
-                      📸
-                    </div>
-                  )}
-                  <div className="text-center">
-                    <p className="font-semibold text-sm">
-                      {uploadingImg ? "Subiendo imagen..." : form.imageUrl ? "✓ Imagen subida — clic para cambiar" : <>Subir foto del producto <span className="text-[#6C3AE8]">*</span></>}
-                    </p>
-                    <p className="text-xs text-zinc-600 mt-1">{form.imageUrl ? "Clic para cambiar" : "Obligatorio · PNG, JPG hasta 10 MB"}</p>
+                  <div
+                    className="m-4 rounded-2xl border-2 border-dashed p-10 flex flex-col items-center gap-4 transition-all"
+                    style={{
+                      borderColor: form.imageUrl ? "rgba(74,222,128,0.5)" : "var(--border)",
+                      background: form.imageUrl ? "rgba(74,222,128,0.04)" : "var(--bg-elevated)",
+                    }}
+                  >
+                    {uploadingImg ? (
+                      <>
+                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "rgba(37,99,235,0.12)" }}>
+                          <div className="w-6 h-6 rounded-full border-2 border-[#2563EB] border-t-transparent animate-spin" />
+                        </div>
+                        <p className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>Subiendo imagen...</p>
+                      </>
+                    ) : form.imageUrl ? (
+                      <>
+                        <img src={form.imageUrl} alt={form.name ? `Carta: ${form.name}` : "Foto de la carta subida"} width={96} height={128} className="w-24 h-32 object-contain rounded-xl" style={{ boxShadow: "0 4px 16px rgba(0,0,0,0.3)" }} />
+                        <div className="text-center">
+                          <p className="text-sm font-semibold text-green-400">✓ Imagen lista</p>
+                          <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>Clic para cambiar la foto</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl" style={{ background: "rgba(37,99,235,0.10)" }}>
+                          📸
+                        </div>
+                        <div className="text-center">
+                          <p className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
+                            Subir foto del producto{" "}
+                            <span style={{ color: "var(--brand)" }}>*</span>
+                          </p>
+                          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Obligatorio · PNG, JPG hasta 10 MB</p>
+                        </div>
+                        <span
+                          className="text-xs font-semibold px-5 py-2.5 rounded-xl"
+                          style={{ background: "rgba(37,99,235,0.12)", color: "var(--accent-text)", border: "1px solid rgba(37,99,235,0.2)" }}
+                        >
+                          Seleccionar archivo
+                        </span>
+                      </>
+                    )}
                   </div>
-                  {!form.imageUrl && !uploadingImg && (
-                    <span className="text-xs font-semibold px-4 py-2 rounded-xl" style={{ background: "rgba(108,58,232,0.15)", color: "#a78bfa" }}>
-                      Seleccionar archivo
-                    </span>
-                  )}
                 </label>
+              </div>
+
+              {/* Card details section */}
+              <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}>
+                <p className="text-xs font-bold uppercase tracking-widest pb-3" style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border-subtle)" }}>
+                  Detalles de la carta
+                </p>
 
                 {/* Card name */}
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-2">
-                    Nombre de la carta <span className="text-[#6C3AE8]">*</span>
+                  <label htmlFor="auction-card-name" className="block text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
+                    Nombre de la carta <span style={{ color: "var(--brand)" }}>*</span>
                   </label>
-                  <input
-                    required
-                    type="text"
-                    placeholder="Ej. Charizard VMAX Rainbow"
+                  <PokemonCardSearch
+                    id="auction-card-name"
                     value={form.name}
-                    onChange={(e) => handleFormChange("name", e.target.value)}
-                    className="w-full bg-[#16161E] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
+                    onChange={(v) => handleFormChange("name", v)}
+                    onSelectCard={(card) => {
+                      setForm(f => ({
+                        ...f,
+                        name: card.name,
+                        set: card.set,
+                        imageUrl: card.imageLarge || card.image || f.imageUrl,
+                        startingBid: card.marketPriceCents != null
+                          ? String(Math.round(usdCentsToMxnCents(card.marketPriceCents) / 100))
+                          : f.startingBid,
+                      }));
+                    }}
+                    placeholder="Ej. Charizard VMAX Rainbow"
                   />
+                  <p className="text-[11px] mt-1.5" style={{ color: "var(--text-muted)" }}>
+                    Busca en la base de datos de Pokémon para autocompletar nombre, set, imagen y precio de mercado — convertido a MXN a un tipo de cambio de referencia (editable, revisa antes de publicar).
+                  </p>
                 </div>
 
                 {/* Set + Condition */}
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-400 mb-2">
+                    <label htmlFor="auction-set" className="block text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
                       Set / Colección
                     </label>
                     <input
+                      id="auction-set"
                       type="text"
                       value={form.set}
                       onChange={(e) => handleFormChange("set", e.target.value)}
-                      placeholder="Ej: Scarlet & Violet, Kamigawa, PHHY..."
-                      className="w-full bg-[#16161E] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
+                      placeholder="Ej: Scarlet & Violet, Kamigawa..."
+                      className={inputCls}
+                      style={inputStyle}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-400 mb-2">
-                      Condición <span className="text-[#6C3AE8]">*</span>
+                    <label htmlFor="auction-condition" className="block text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
+                      Condición <span style={{ color: "var(--brand)" }}>*</span>
                     </label>
                     <select
+                      id="auction-condition"
                       required
                       value={form.condition}
                       onChange={(e) => handleFormChange("condition", e.target.value)}
-                      className="w-full bg-[#16161E] border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
-                      style={{ color: form.condition ? "white" : "#52525b" }}
+                      className={inputCls}
+                      style={{ ...inputStyle, color: form.condition ? "var(--text-primary)" : "var(--text-muted)" }}
                     >
                       <option value="" disabled>Seleccionar grado</option>
                       {CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -934,38 +1102,64 @@ export default function VendedorPage() {
                   </div>
                 </div>
 
-                {/* Bids */}
+                {/* Description */}
+                <div>
+                  <label htmlFor="auction-description" className="block text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
+                    Descripción
+                  </label>
+                  <textarea
+                    id="auction-description"
+                    rows={3}
+                    placeholder="Describe el estado, características especiales, incluye certificado de autenticidad si aplica..."
+                    value={form.description}
+                    onChange={(e) => handleFormChange("description", e.target.value)}
+                    className={`${inputCls} resize-none`}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+
+              {/* Pricing section */}
+              <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}>
+                <p className="text-xs font-bold uppercase tracking-widest pb-3" style={{ color: "var(--text-muted)", borderBottom: "1px solid var(--border-subtle)" }}>
+                  Precio y duración
+                </p>
+
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-400 mb-2">
-                      Puja inicial (MXN) <span className="text-[#6C3AE8]">*</span>
+                    <label htmlFor="auction-starting-bid" className="block text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
+                      Puja inicial (MXN) <span style={{ color: "var(--brand)" }}>*</span>
                     </label>
                     <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">$</span>
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-muted)" }}>$</span>
                       <input
+                        id="auction-starting-bid"
                         required
                         type="number"
                         min={1}
                         placeholder="0"
                         value={form.startingBid}
                         onChange={(e) => handleFormChange("startingBid", e.target.value)}
-                        className="w-full bg-[#16161E] border border-white/10 rounded-xl pl-8 pr-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
+                        className={`${inputCls} pl-8`}
+                        style={inputStyle}
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-400 mb-2">
+                    <label htmlFor="auction-bin-price" className="block text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
                       Precio BIN (opcional)
                     </label>
                     <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">$</span>
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-muted)" }}>$</span>
                       <input
+                        id="auction-bin-price"
                         type="number"
                         min={1}
                         placeholder="Comprar ya"
                         value={form.binPrice}
                         onChange={(e) => handleFormChange("binPrice", e.target.value)}
-                        className="w-full bg-[#16161E] border border-white/10 rounded-xl pl-8 pr-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 transition-colors"
+                        className={`${inputCls} pl-8`}
+                        style={inputStyle}
                       />
                     </div>
                   </div>
@@ -973,8 +1167,8 @@ export default function VendedorPage() {
 
                 {/* Duration */}
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-2">
-                    Duración de la subasta <span className="text-[#6C3AE8]">*</span>
+                  <label className="block text-xs font-semibold mb-3" style={{ color: "var(--text-secondary)" }}>
+                    Duración de la subasta <span style={{ color: "var(--brand)" }}>*</span>
                   </label>
                   <div className="flex flex-wrap gap-2">
                     {DURATIONS.map((d) => (
@@ -985,8 +1179,8 @@ export default function VendedorPage() {
                         className="px-4 py-2 rounded-xl text-sm font-medium transition-all"
                         style={
                           form.duration === d
-                            ? { background: "rgba(108,58,232,0.2)", border: "1px solid rgba(108,58,232,0.5)", color: "#a78bfa" }
-                            : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#71717a" }
+                            ? { background: "rgba(37,99,235,0.18)", border: "1px solid rgba(37,99,235,0.5)", color: "var(--accent-text)", boxShadow: "0 0 12px rgba(37,99,235,0.2)" }
+                            : { background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-muted)" }
                         }
                       >
                         {d}
@@ -994,45 +1188,33 @@ export default function VendedorPage() {
                     ))}
                   </div>
                 </div>
+              </div>
 
-                {/* Description */}
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-2">
-                    Descripción
-                  </label>
-                  <textarea
-                    rows={3}
-                    placeholder="Describe el estado, características especiales, incluye certificado de autenticidad si aplica..."
-                    value={form.description}
-                    onChange={(e) => handleFormChange("description", e.target.value)}
-                    className="w-full bg-[#16161E] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 transition-colors resize-none"
-                  />
-                </div>
+              {/* Fee notice */}
+              <div
+                className="rounded-xl px-4 py-3 flex items-center gap-3"
+                style={{ background: "rgba(37,99,235,0.06)", border: "1px solid var(--border-brand)" }}
+              >
+                <span className="text-lg shrink-0">ℹ️</span>
+                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                  TCG Live cobra una comisión del{" "}
+                  <span className="font-semibold" style={{ color: "var(--text-primary)" }}>5%</span>{" "}
+                  sobre el precio final de venta. Sin cobros si la carta no se vende.
+                </p>
+              </div>
 
-                {/* Fee notice */}
-                <div
-                  className="rounded-xl px-4 py-3 flex items-center gap-3"
-                  style={{ background: "rgba(108,58,232,0.08)", border: "1px solid rgba(108,58,232,0.2)" }}
-                >
-                  <span className="text-lg">ℹ️</span>
-                  <p className="text-xs text-zinc-400">
-                    TCG Live cobra una comisión del <span className="text-white font-semibold">5%</span> sobre el precio final de venta.
-                    Sin cobros si la carta no se vende.
-                  </p>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="w-full py-3.5 rounded-xl text-sm font-black text-white transition-all disabled:opacity-60"
-                  style={{
-                    background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)",
-                    boxShadow: "0 4px 24px rgba(108,58,232,0.4)",
-                  }}
-                >
-                  {creating ? "Publicando..." : "Publicar subasta →"}
-                </button>
-              </form>
+              <button
+                type="submit"
+                disabled={creating}
+                className="w-full py-4 rounded-xl text-sm font-black text-white transition-all disabled:opacity-60"
+                style={{
+                  background: "linear-gradient(135deg, #2563EB, #3B82F6)",
+                  boxShadow: "0 4px 24px rgba(37,99,235,0.45)",
+                }}
+              >
+                {creating ? "Publicando..." : "Publicar subasta →"}
+              </button>
+            </form>
           </div>
         )}
 
@@ -1042,93 +1224,163 @@ export default function VendedorPage() {
 
             {/* Crear nueva venta */}
             {!listingDone ? (
-              <div className="rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
-                <h3 className="font-black text-base mb-5">Nueva venta (precio fijo)</h3>
-
-                {listingError && (
-                  <div className="mb-4 px-4 py-3 rounded-xl text-sm text-red-400" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
-                    {listingError}
-                  </div>
-                )}
-
-                <form onSubmit={handleListingSubmit} className="space-y-4">
-                  {/* Image upload */}
-                  <label className="rounded-xl border-2 border-dashed p-5 flex items-center gap-4 cursor-pointer transition-all hover:border-[#6C3AE8]/50 block"
-                    style={{ borderColor: listingForm.imageUrl ? "rgba(74,222,128,0.4)" : "rgba(255,255,255,0.1)" }}>
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleListingImageUpload(f); }} />
-                    {listingForm.imageUrl
-                      ? <img src={listingForm.imageUrl} alt="" width={64} height={80} className="w-16 h-20 object-contain rounded-lg shrink-0" />
-                      : <div className="w-16 h-20 rounded-lg flex items-center justify-center text-2xl shrink-0" style={{ background: "rgba(108,58,232,0.1)" }}>📸</div>
-                    }
-                    <div>
-                      <p className="text-sm font-semibold">{listingUploading ? "Subiendo..." : listingForm.imageUrl ? "✓ Imagen lista — clic para cambiar" : "Subir foto de la carta"}</p>
-                      <p className="text-xs text-zinc-600 mt-0.5">PNG, JPG hasta 10 MB</p>
+              <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}>
+                <div className="px-6 py-4" style={{ borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)" }}>
+                  <h3 className="font-black text-base" style={{ color: "var(--text-primary)" }}>Nueva venta (precio fijo)</h3>
+                </div>
+                <div className="p-6">
+                  {listingError && (
+                    <div className="mb-4 px-4 py-3 rounded-xl text-sm text-[var(--error-text)]" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                      {listingError}
                     </div>
-                  </label>
+                  )}
 
-                  {/* Title */}
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Nombre de la carta *</label>
-                    <input required value={listingForm.title} onChange={e => setListingForm(f => ({ ...f, title: e.target.value }))}
-                      placeholder="Ej. Charizard EX Rainbow Rare"
-                      className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60" />
-                  </div>
+                  <form onSubmit={handleListingSubmit} className="space-y-4">
+                    {/* Image upload */}
+                    <label
+                      className="rounded-xl border-2 border-dashed p-5 flex items-center gap-4 cursor-pointer transition-all block"
+                      style={{
+                        borderColor: listingForm.imageUrl ? "rgba(74,222,128,0.5)" : "var(--border)",
+                        background: listingForm.imageUrl ? "rgba(74,222,128,0.04)" : "var(--bg-elevated)",
+                      }}
+                    >
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleListingImageUpload(f); }}
+                      />
+                      {listingForm.imageUrl
+                        ? <img src={listingForm.imageUrl} alt="" width={64} height={80} className="w-16 h-20 object-contain rounded-lg shrink-0" style={{ boxShadow: "0 4px 12px rgba(0,0,0,0.2)" }} />
+                        : (
+                          <div className="w-16 h-20 rounded-lg flex items-center justify-center text-2xl shrink-0" style={{ background: "rgba(37,99,235,0.10)" }}>
+                            📸
+                          </div>
+                        )
+                      }
+                      <div>
+                        <p className="text-sm font-semibold" style={{ color: listingForm.imageUrl ? "#4ade80" : "var(--text-primary)" }}>
+                          {listingUploading ? "Subiendo..." : listingForm.imageUrl ? "✓ Imagen lista — clic para cambiar" : "Subir foto de la carta"}
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>PNG, JPG hasta 10 MB</p>
+                      </div>
+                    </label>
 
-                  {/* Price + Condition */}
-                  <div className="grid sm:grid-cols-2 gap-4">
+                    {/* Title */}
                     <div>
-                      <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Precio (MXN) *</label>
-                      <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">$</span>
-                        <input required type="number" min={1} value={listingForm.price}
-                          onChange={e => setListingForm(f => ({ ...f, price: e.target.value }))}
-                          placeholder="0"
-                          className="w-full bg-[#0F0F14] border border-white/10 rounded-xl pl-8 pr-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60" />
+                      <label htmlFor="listing-title" className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                        Nombre de la carta *
+                      </label>
+                      <PokemonCardSearch
+                        id="listing-title"
+                        value={listingForm.title}
+                        onChange={(v) => setListingForm(f => ({ ...f, title: v }))}
+                        onSelectCard={(card) => {
+                          setListingForm(f => ({
+                            ...f,
+                            title: card.name,
+                            game: f.game || "pokemon",
+                            imageUrl: card.imageLarge || card.image || f.imageUrl,
+                            price: card.marketPriceCents != null
+                              ? String(Math.round(usdCentsToMxnCents(card.marketPriceCents) / 100))
+                              : f.price,
+                          }));
+                        }}
+                        placeholder="Ej. Charizard EX Rainbow Rare"
+                      />
+                    </div>
+
+                    {/* Price + Condition */}
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="listing-price" className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>Precio (MXN) *</label>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--text-muted)" }}>$</span>
+                          <input
+                            id="listing-price"
+                            required
+                            type="number"
+                            min={1}
+                            value={listingForm.price}
+                            onChange={e => setListingForm(f => ({ ...f, price: e.target.value }))}
+                            placeholder="0"
+                            className={`${inputCls} pl-8`}
+                            style={inputStyle}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label htmlFor="listing-condition" className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>Condición *</label>
+                        <select
+                          id="listing-condition"
+                          required
+                          value={listingForm.condition}
+                          onChange={e => setListingForm(f => ({ ...f, condition: e.target.value }))}
+                          className={inputCls}
+                          style={{ ...inputStyle, color: listingForm.condition ? "var(--text-primary)" : "var(--text-muted)" }}
+                        >
+                          <option value="" disabled>Seleccionar</option>
+                          {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
                       </div>
                     </div>
+
+                    {/* Game */}
                     <div>
-                      <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Condición *</label>
-                      <select required value={listingForm.condition} onChange={e => setListingForm(f => ({ ...f, condition: e.target.value }))}
-                        className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#6C3AE8]/60"
-                        style={{ color: listingForm.condition ? "white" : "#52525b" }}>
-                        <option value="" disabled>Seleccionar</option>
-                        {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
+                      <label htmlFor="listing-game" className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>Juego</label>
+                      <input
+                        id="listing-game"
+                        value={listingForm.game}
+                        onChange={e => setListingForm(f => ({ ...f, game: e.target.value }))}
+                        placeholder="Pokémon, Magic, Yu-Gi-Oh!..."
+                        className={inputCls}
+                        style={inputStyle}
+                      />
                     </div>
-                  </div>
 
-                  {/* Game */}
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Juego</label>
-                    <input value={listingForm.game} onChange={e => setListingForm(f => ({ ...f, game: e.target.value }))}
-                      placeholder="Pokémon, Magic, Yu-Gi-Oh!..."
-                      className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60" />
-                  </div>
+                    {/* Description */}
+                    <div>
+                      <label htmlFor="listing-description" className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>Descripción</label>
+                      <textarea
+                        id="listing-description"
+                        rows={3}
+                        value={listingForm.description}
+                        onChange={e => setListingForm(f => ({ ...f, description: e.target.value }))}
+                        placeholder="Estado, características, incluye sleeve, etc..."
+                        className={`${inputCls} resize-none`}
+                        style={inputStyle}
+                      />
+                    </div>
 
-                  {/* Description */}
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-400 mb-1.5">Descripción</label>
-                    <textarea rows={3} value={listingForm.description} onChange={e => setListingForm(f => ({ ...f, description: e.target.value }))}
-                      placeholder="Estado, características, incluye sleeve, etc..."
-                      className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 resize-none" />
-                  </div>
-
-                  <button type="submit" disabled={listingCreating}
-                    className="w-full py-3.5 rounded-xl font-black text-white text-sm disabled:opacity-60"
-                    style={{ background: "linear-gradient(135deg, #059669, #10b981)", boxShadow: "0 4px 20px rgba(5,150,105,0.35)" }}>
-                    {listingCreating ? "Publicando..." : "Publicar venta →"}
-                  </button>
-                </form>
+                    <button
+                      type="submit"
+                      disabled={listingCreating}
+                      className="w-full py-3.5 rounded-xl font-black text-white text-sm disabled:opacity-60 transition-all"
+                      style={{ background: "linear-gradient(135deg, #059669, #10b981)", boxShadow: "0 4px 20px rgba(5,150,105,0.35)" }}
+                    >
+                      {listingCreating ? "Publicando..." : "Publicar venta →"}
+                    </button>
+                  </form>
+                </div>
               </div>
             ) : (
-              <div className="rounded-2xl p-8 text-center" style={{ background: "#16161E", border: "1px solid rgba(74,222,128,0.3)" }}>
-                <p className="text-3xl mb-3">✅</p>
-                <h3 className="font-black text-lg mb-1">¡Venta publicada!</h3>
-                <p className="text-zinc-500 text-sm mb-6">Ya aparece en la tienda para que los compradores la vean.</p>
-                <button onClick={() => { setListingDone(false); setListingForm({ title: "", price: "", game: "", condition: "", description: "", imageUrl: "" }); }}
-                  className="font-bold text-sm px-6 py-3 rounded-xl text-white"
-                  style={{ background: "linear-gradient(135deg, #059669, #10b981)" }}>
+              <div
+                className="rounded-2xl p-10 text-center"
+                style={{ background: "var(--bg-surface)", border: "1px solid rgba(74,222,128,0.3)", boxShadow: "0 0 32px rgba(74,222,128,0.08)" }}
+              >
+                <p className="text-4xl mb-3">✅</p>
+                <h3 className="font-black text-xl mb-1" style={{ color: "var(--text-primary)" }}>¡Venta publicada!</h3>
+                <p className="text-sm mb-6" style={{ color: "var(--text-muted)" }}>
+                  Ya aparece en la tienda para que los compradores la vean.
+                </p>
+                <button
+                  onClick={() => {
+                    setListingDone(false);
+                    setListingForm({ title: "", price: "", game: "", condition: "", description: "", imageUrl: "" });
+                  }}
+                  className="font-bold text-sm px-8 py-3 rounded-xl text-white transition-all"
+                  style={{ background: "linear-gradient(135deg, #059669, #10b981)", boxShadow: "0 4px 16px rgba(5,150,105,0.3)" }}
+                >
                   Publicar otra venta
                 </button>
               </div>
@@ -1137,32 +1389,51 @@ export default function VendedorPage() {
             {/* Mis ventas activas */}
             {(myListings ?? []).length > 0 && (
               <div>
-                <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-3">Mis ventas activas</p>
+                <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "var(--text-muted)" }}>
+                  Mis ventas activas
+                </p>
                 <div className="space-y-3">
                   {(myListings ?? []).map(l => (
-                    <div key={l.id} className="rounded-2xl p-4 flex items-center gap-4" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div
+                      key={l.id}
+                      className="rounded-2xl p-4 flex items-center gap-4 transition-all"
+                      style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
+                    >
                       {l.imageUrls?.[0]
                         ? <img src={l.imageUrls[0]} alt="" width={48} height={64} className="w-12 h-16 object-contain rounded-xl shrink-0" />
                         : <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0">🃏</div>
                       }
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm truncate">{l.title}</p>
-                        <p className="text-xs text-zinc-500 mt-0.5">{l.game ?? ""} {l.condition ? `· ${l.condition}` : ""}</p>
-                        <span className="mt-1.5 inline-block text-xs font-bold px-2 py-0.5 rounded-full"
-                          style={{ background: l.status === "active" ? "rgba(74,222,128,0.12)" : "rgba(113,113,122,0.12)", color: l.status === "active" ? "#4ade80" : "#71717a" }}>
+                        <p className="font-bold text-sm truncate" style={{ color: "var(--text-primary)" }}>{l.title}</p>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                          {gameLabel(l.game)} {l.condition ? `· ${l.condition}` : ""}
+                        </p>
+                        <span
+                          className="mt-1.5 inline-block text-xs font-bold px-2.5 py-1 rounded-full"
+                          style={{
+                            background: l.status === "active" ? "rgba(74,222,128,0.12)" : "var(--bg-elevated)",
+                            color: l.status === "active" ? "#4ade80" : "var(--text-muted)",
+                          }}
+                        >
                           {l.status === "active" ? "Activa" : l.status === "sold" ? "Vendida" : "Cancelada"}
                         </span>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="font-black text-lg">${((l.price ?? 0) / 100).toLocaleString("es-MX")}</p>
-                        <p className="text-xs text-zinc-600">MXN</p>
+                        <p className="font-black text-xl" style={{ color: "var(--text-primary)" }}>
+                          ${((l.price ?? 0) / 100).toLocaleString("es-MX")}
+                        </p>
+                        <p className="text-xs" style={{ color: "var(--text-muted)" }}>MXN</p>
                       </div>
                       {l.status === "active" && (
-                        <button onClick={async () => {
-                          await listingsApi.cancel(l.id).catch(() => {});
-                          const res = await listingsApi.my().catch(() => null);
-                          if (res) setMyListings(res.data);
-                        }} className="text-xs text-zinc-600 hover:text-red-400 transition-colors shrink-0 px-2">
+                        <button
+                          onClick={async () => {
+                            await listingsApi.cancel(l.id).catch(() => {});
+                            const res = await listingsApi.my().catch(() => null);
+                            if (res) setMyListings(res.data);
+                          }}
+                          className="text-xs shrink-0 px-3 py-2 rounded-lg transition-colors"
+                          style={{ color: "var(--text-muted)", background: "var(--bg-hover)" }}
+                        >
                           Cancelar
                         </button>
                       )}
@@ -1179,286 +1450,356 @@ export default function VendedorPage() {
           <div className="space-y-3">
             {sellerOrders === null && (
               <div className="flex items-center justify-center py-16">
-                <div className="w-5 h-5 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+                <div className="w-6 h-6 rounded-full border-2 border-[#2563EB] border-t-transparent animate-spin" />
               </div>
             )}
             {sellerOrders !== null && sellerOrders.length === 0 && (
               <div className="text-center py-16">
                 <p className="text-4xl mb-3">📭</p>
-                <p className="text-zinc-400 font-medium">Sin órdenes de venta aún</p>
-                <p className="text-xs text-zinc-600 mt-1">Las órdenes aparecerán aquí cuando terminen tus subastas</p>
+                <p className="font-medium" style={{ color: "var(--text-secondary)" }}>Sin órdenes de venta aún</p>
+                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                  Las órdenes aparecerán aquí cuando terminen tus subastas
+                </p>
               </div>
             )}
             {(sellerOrders ?? []).map((order) => {
               const statusKey = order.status as keyof typeof SALE_STATUS_STYLE;
-              const s = SALE_STATUS_STYLE[statusKey] ?? { label: order.status, color: "#71717a", icon: "📋" };
+              const s = SALE_STATUS_STYLE[statusKey] ?? { label: order.status, color: "var(--text-muted)", bg: "var(--bg-hover)", icon: "📋" };
               const isShipping = shippingOrder === order.id;
               const cardName = order.items?.[0]?.cardName ?? "Carta";
               const amount   = order.items?.reduce((sum, i) => sum + (i.finalPrice ?? 0), 0) ?? order.totalAmount ?? 0;
               const isPending = order.status === "pending" || order.status === "pendiente_pago" || order.status === "pending_payment";
               const isShipped = order.status === "shipped" || order.status === "en_camino";
               const date = new Date(order.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
+
               return (
                 <div
                   key={order.id}
-                  className="rounded-2xl p-5 transition-all"
-                  style={{
-                    background: "#16161E",
-                    border: "1px solid rgba(255,255,255,0.07)",
-                  }}
+                  className="rounded-2xl overflow-hidden transition-all"
+                  style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
                 >
-                  <div className="flex items-start gap-4">
-                    {order.items?.[0]?.imageUrls?.[0] ? (
-                      <img
-                        src={order.items[0].imageUrls[0]}
-                        alt={order.items[0].cardName ?? "Carta"}
-                        className="w-12 h-16 object-contain rounded-xl shrink-0"
-                      />
-                    ) : (
-                      <div className="w-12 h-16 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-xl shrink-0" style={{ boxShadow: "0 0 16px rgba(139,92,246,0.4)" }}>
-                        🃏
-                      </div>
-                    )}
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2 flex-wrap">
-                        <div>
-                          <p className="font-bold text-sm">{cardName}</p>
-                          <p className="text-xs text-zinc-500 mt-0.5">
-                            Comprador: <span className="text-zinc-400">@{order.buyer?.username ?? "—"}</span> · {date}
-                          </p>
+                  <div className="p-5">
+                    <div className="flex items-start gap-4">
+                      {/* Card image — prominent */}
+                      {order.items?.[0]?.imageUrls?.[0] ? (
+                        <img
+                          src={order.items[0].imageUrls[0]}
+                          alt={order.items[0].cardName ?? "Carta"}
+                          width={56}
+                          height={76}
+                          className="w-14 h-[76px] object-contain rounded-xl shrink-0"
+                          style={{ boxShadow: "0 4px 12px rgba(0,0,0,0.25)" }}
+                        />
+                      ) : (
+                        <div
+                          className="w-14 h-[76px] rounded-xl bg-gradient-to-br from-violet-600 to-indigo-800 flex items-center justify-center text-2xl shrink-0"
+                          style={{ boxShadow: "0 0 20px rgba(59,130,246,0.4)" }}
+                        >
+                          🃏
                         </div>
-                        <span className="text-xs font-semibold px-2.5 py-1 rounded-xl shrink-0" style={{ background: "rgba(255,255,255,0.05)", color: "#71717a" }}>
-                          {order.id.slice(0, 8)}…
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 mt-3">
-                        <span className="text-base">{s.icon}</span>
-                        <span className="text-sm font-semibold" style={{ color: s.color }}>{s.label}</span>
-                      </div>
-
-                      {order.trackingNumber && (
-                        <p className="text-[11px] text-zinc-600 mt-1.5 font-mono">Rastreo: {order.trackingNumber}</p>
                       )}
 
-                      {/* Shipping flow */}
-                      {isPending && order.paymentStatus === "paid" && (
-                        <div className="mt-3">
-                          {quoteOrder === order.id ? (
-                            // ── Shipping flow ────────────────────────────────
-                            <div className="rounded-xl p-4 space-y-4" style={{ background: "#0F0F14", border: "1px solid rgba(108,58,232,0.2)" }}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <div>
+                            <p className="font-bold text-base" style={{ color: "var(--text-primary)" }}>{cardName}</p>
+                            <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                              Comprador: <span style={{ color: "var(--text-secondary)" }}>@{order.buyer?.username ?? "—"}</span> · {date}
+                            </p>
+                          </div>
+                          <span
+                            className="text-xs font-semibold px-2.5 py-1 rounded-lg shrink-0 font-mono"
+                            style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}
+                          >
+                            {order.id.slice(0, 8)}…
+                          </span>
+                        </div>
 
-                              {/* Step 1 — Weight + quote */}
-                              {!shippingQuotes && !labelResult && (
-                                <div>
-                                  <p className="text-xs font-semibold text-zinc-400 mb-3">📦 Cotizar envío</p>
-                                  <div className="flex items-center gap-3">
-                                    <div className="flex-1">
-                                      <label className="text-xs text-zinc-500 block mb-1">Peso del paquete (kg)</label>
-                                      <input
-                                        type="number"
-                                        step="0.1"
-                                        min="0.1"
-                                        value={weightKg}
-                                        onChange={e => setWeightKg(e.target.value)}
-                                        className="w-full bg-[#16161E] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#6C3AE8]/60"
-                                        placeholder="0.1"
-                                      />
-                                    </div>
-                                    <button
-                                      disabled={quotesLoading || !weightKg || Number(weightKg) <= 0}
-                                      onClick={async () => {
-                                        setQuotesLoading(true);
-                                        try {
-                                          const sellerZip = user?.zipCode ?? "06600";
-                                          const buyerZip  = order.buyerZip ?? "06600";
-                                          const quotes = await shippingApi.quote({
-                                            originZip: sellerZip,
-                                            destinationZip: buyerZip,
-                                            weightKg: Number(weightKg),
-                                            items: order.items?.length ?? 1,
-                                          });
-                                          setShippingQuotes(quotes);
-                                        } catch {
-                                          setShippingError("Error al obtener cotizaciones. Intenta de nuevo.");
-                                        } finally {
-                                          setQuotesLoading(false);
-                                        }
-                                      }}
-                                      className="shrink-0 text-xs font-bold text-white px-4 py-2 rounded-xl disabled:opacity-50 mt-4"
-                                      style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
-                                    >
-                                      {quotesLoading ? "Cotizando…" : "Ver cotizaciones"}
-                                    </button>
-                                  </div>
-                                  {shippingError && (
-                                    <p className="text-xs text-red-400 mt-2">{shippingError}</p>
-                                  )}
-                                </div>
-                              )}
+                        {/* Status badge — colored pill */}
+                        <div className="flex items-center justify-between gap-2 mt-3">
+                          <span
+                            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full"
+                            style={{ background: s.bg, color: s.color }}
+                          >
+                            {s.icon} {s.label}
+                          </span>
 
-                              {/* Step 2 — Carrier selection */}
-                              {shippingQuotes && !labelResult && (
-                                <div>
-                                  <p className="text-xs font-semibold text-zinc-400 mb-3">Elige el servicio de envío</p>
-                                  <div className="space-y-2">
-                                    {shippingQuotes.map(q => (
+                          {/* Amount — large text */}
+                          <div className="text-right shrink-0">
+                            <p className="font-black text-xl" style={{ color: "var(--text-primary)" }}>
+                              ${(amount / 100).toLocaleString("es-MX")}
+                            </p>
+                            <p className="text-xs" style={{ color: "var(--text-muted)" }}>MXN</p>
+                          </div>
+                        </div>
+
+                        {order.trackingNumber && (
+                          <p className="text-[11px] mt-2 font-mono" style={{ color: "var(--text-muted)" }}>
+                            Rastreo: {order.trackingNumber}
+                          </p>
+                        )}
+
+                        {/* Shipping flow */}
+                        {isPending && order.paymentStatus === "paid" && (
+                          <div className="mt-4">
+                            {quoteOrder === order.id ? (
+                              // Shipping flow
+                              <div className="rounded-xl p-4 space-y-4" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-brand)" }}>
+
+                                {/* Step 1 — Weight + quote */}
+                                {!shippingQuotes && !labelResult && (
+                                  <div>
+                                    <p className="text-xs font-semibold mb-3" style={{ color: "var(--text-secondary)" }}>Cotizar envío</p>
+                                    <div className="flex items-center gap-3">
+                                      <div className="flex-1">
+                                        <label htmlFor="shipping-weight" className="text-xs block mb-1" style={{ color: "var(--text-muted)" }}>Peso del paquete (kg)</label>
+                                        <input
+                                          id="shipping-weight"
+                                          type="number"
+                                          step="0.1"
+                                          min="0.1"
+                                          value={weightKg}
+                                          onChange={e => setWeightKg(e.target.value)}
+                                          className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB]/40 transition-all"
+                                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+                                          placeholder="0.1"
+                                        />
+                                      </div>
                                       <button
-                                        key={q.carrierId}
-                                        onClick={() => setSelectedCarrier(selectedCarrier === q.carrierId ? null : q.carrierId)}
-                                        className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all text-left"
-                                        style={{
-                                          background: selectedCarrier === q.carrierId ? "rgba(108,58,232,0.15)" : "rgba(255,255,255,0.03)",
-                                          border: `1px solid ${selectedCarrier === q.carrierId ? "#6C3AE8" : "rgba(255,255,255,0.07)"}`,
+                                        disabled={quotesLoading || !weightKg || Number(weightKg) <= 0}
+                                        onClick={async () => {
+                                          if (!user?.zipCode) {
+                                            setShippingError("Completa tu dirección en Ajustes antes de generar cotizaciones de envío.");
+                                            return;
+                                          }
+                                          if (!order.buyerZip) {
+                                            setShippingError("Este comprador no tiene una dirección registrada — no se puede cotizar el envío.");
+                                            return;
+                                          }
+                                          setQuotesLoading(true);
+                                          try {
+                                            const quotes = await shippingApi.quote({
+                                              originZip: user.zipCode,
+                                              destinationZip: order.buyerZip,
+                                              weightKg: Number(weightKg),
+                                              items: order.items?.length ?? 1,
+                                            });
+                                            setShippingQuotes(quotes);
+                                          } catch {
+                                            setShippingError("Error al obtener cotizaciones. Intenta de nuevo.");
+                                          } finally {
+                                            setQuotesLoading(false);
+                                          }
                                         }}
+                                        className="shrink-0 text-xs font-bold text-white px-4 py-2.5 rounded-xl disabled:opacity-50 mt-4 transition-all"
+                                        style={{ background: "linear-gradient(135deg, #2563EB, #3B82F6)" }}
                                       >
-                                        <div>
-                                          <p className="text-sm font-bold">{q.carrier}</p>
-                                          <p className="text-[11px] text-zinc-500">{q.service} · {q.estimatedDays} día{q.estimatedDays !== 1 ? "s" : ""} hábil{q.estimatedDays !== 1 ? "es" : ""}</p>
-                                        </div>
-                                        <p className="text-sm font-black" style={{ color: "#a78bfa" }}>
-                                          ${(q.priceCents / 100).toLocaleString("es-MX")} MXN
-                                        </p>
+                                        {quotesLoading ? "Cotizando…" : "Ver cotizaciones"}
                                       </button>
-                                    ))}
+                                    </div>
+                                    {shippingError && (
+                                      <p className="text-xs text-[var(--error-text)] mt-2">{shippingError}</p>
+                                    )}
                                   </div>
-                                  {selectedCarrier && (
-                                    <button
-                                      disabled={generatingLabel}
-                                      onClick={async () => {
-                                        setGeneratingLabel(true);
-                                        try {
-                                          const sellerZip = user?.zipCode ?? "06600";
-                                          const buyerZip  = order.buyerZip ?? "06600";
-                                          const updated = await shippingApi.generateLabel(order.id, {
-                                            carrierId: selectedCarrier,
-                                            originZip: sellerZip,
-                                            destinationZip: buyerZip,
-                                            weightKg: Number(weightKg),
-                                          });
-                                          capture("label_generated", { orderId: order.id, carrier: selectedCarrier });
-                                          setLabelResult({
-                                            trackingNumber: updated.trackingNumber ?? "",
-                                            labelUrl:       updated.labelUrl ?? "",
-                                            carrier:        updated.carrier ?? selectedCarrier,
-                                          });
-                                          // Refresh orders list
-                                          const refreshed = await ordersApi.selling().catch(() => null);
-                                          if (refreshed) setSellerOrders(refreshed.data);
-                                        } catch {
-                                          setShippingError("Error al generar la guía. Intenta de nuevo.");
-                                        } finally {
-                                          setGeneratingLabel(false);
-                                        }
-                                      }}
-                                      className="mt-3 w-full text-sm font-bold text-white py-3 rounded-xl disabled:opacity-50"
-                                      style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 4px 16px rgba(108,58,232,0.35)" }}
-                                    >
-                                      {generatingLabel ? "Generando guía…" : "🚚 Generar guía de envío"}
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => { setShippingQuotes(null); setSelectedCarrier(null); }}
-                                    className="mt-2 text-xs text-zinc-600 w-full text-center py-1"
-                                  >
-                                    ← Cambiar peso
-                                  </button>
-                                </div>
-                              )}
+                                )}
 
-                              {/* Step 3 — Label result */}
-                              {labelResult && (
-                                <div className="text-center space-y-3">
-                                  <div className="text-3xl">✅</div>
-                                  <p className="text-sm font-bold text-green-400">¡Guía generada!</p>
-                                  <div className="rounded-xl px-4 py-3 text-left" style={{ background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.15)" }}>
-                                    <p className="text-xs text-zinc-400">Transportista: <span className="text-white font-semibold">{labelResult.carrier}</span></p>
-                                    <p className="text-xs text-zinc-400 mt-1 font-mono">Rastreo: <span className="text-white">{labelResult.trackingNumber}</span></p>
-                                  </div>
-                                  {labelResult.labelUrl && (
-                                    <a
-                                      href={labelResult.labelUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="block text-sm font-bold text-white py-2.5 rounded-xl"
-                                      style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                                {/* Step 2 — Carrier selection — radio-feel cards */}
+                                {shippingQuotes && !labelResult && (
+                                  <div>
+                                    <p className="text-xs font-semibold mb-3" style={{ color: "var(--text-secondary)" }}>
+                                      Elige el servicio de envío
+                                    </p>
+                                    <div className="space-y-2">
+                                      {shippingQuotes.map(q => {
+                                        const selected = selectedCarrier === q.carrierId;
+                                        return (
+                                          <button
+                                            key={q.carrierId}
+                                            onClick={() => setSelectedCarrier(selected ? null : q.carrierId)}
+                                            className="w-full flex items-center gap-4 px-4 py-4 rounded-xl transition-all text-left"
+                                            style={{
+                                              background: selected ? "rgba(37,99,235,0.10)" : "var(--bg-input)",
+                                              border: `2px solid ${selected ? "#2563EB" : "var(--border)"}`,
+                                              boxShadow: selected ? "0 0 16px rgba(37,99,235,0.2)" : "none",
+                                            }}
+                                          >
+                                            {/* Radio indicator */}
+                                            <div
+                                              className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all"
+                                              style={{ borderColor: selected ? "#2563EB" : "var(--border)" }}
+                                            >
+                                              {selected && (
+                                                <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#2563EB" }} />
+                                              )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{q.carrier}</p>
+                                              <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                                                {q.service} · {q.estimatedDays} día{q.estimatedDays !== 1 ? "s" : ""} hábil{q.estimatedDays !== 1 ? "es" : ""}
+                                              </p>
+                                            </div>
+                                            <p className="text-base font-black shrink-0" style={{ color: selected ? "var(--accent-text)" : "var(--text-primary)" }}>
+                                              ${(q.priceCents / 100).toLocaleString("es-MX")} MXN
+                                            </p>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                    {selectedCarrier && (
+                                      <button
+                                        disabled={generatingLabel}
+                                        onClick={async () => {
+                                          if (!user?.zipCode) {
+                                            setShippingError("Completa tu dirección en Ajustes antes de generar la guía.");
+                                            return;
+                                          }
+                                          if (!order.buyerZip) {
+                                            setShippingError("Este comprador no tiene una dirección registrada — no se puede generar la guía.");
+                                            return;
+                                          }
+                                          setGeneratingLabel(true);
+                                          try {
+                                            const updated = await shippingApi.generateLabel(order.id, {
+                                              carrierId: selectedCarrier,
+                                              originZip: user.zipCode,
+                                              destinationZip: order.buyerZip,
+                                              weightKg: Number(weightKg),
+                                            });
+                                            capture("label_generated", { orderId: order.id, carrier: selectedCarrier });
+                                            setLabelResult({
+                                              trackingNumber: updated.trackingNumber ?? "",
+                                              labelUrl:       updated.labelUrl ?? "",
+                                              carrier:        updated.carrier ?? selectedCarrier,
+                                            });
+                                            const refreshed = await ordersApi.selling().catch(() => null);
+                                            if (refreshed) setSellerOrders(refreshed.data);
+                                          } catch {
+                                            setShippingError("Error al generar la guía. Intenta de nuevo.");
+                                          } finally {
+                                            setGeneratingLabel(false);
+                                          }
+                                        }}
+                                        className="mt-4 w-full text-sm font-bold text-white py-3 rounded-xl disabled:opacity-50 transition-all"
+                                        style={{ background: "linear-gradient(135deg, #2563EB, #3B82F6)", boxShadow: "0 4px 16px rgba(37,99,235,0.35)" }}
+                                      >
+                                        {generatingLabel ? "Generando guía…" : "Generar guía de envío →"}
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => { setShippingQuotes(null); setSelectedCarrier(null); }}
+                                      className="mt-2 text-xs w-full text-center py-1 transition-colors"
+                                      style={{ color: "var(--text-muted)" }}
                                     >
-                                      📄 Descargar guía PDF
-                                    </a>
-                                  )}
+                                      ← Cambiar peso
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Step 3 — Label result */}
+                                {labelResult && (
+                                  <div className="text-center space-y-3">
+                                    <div className="text-3xl">✅</div>
+                                    <p className="text-sm font-bold text-green-400">¡Guía generada!</p>
+                                    <div
+                                      className="rounded-xl px-4 py-3 text-left"
+                                      style={{ background: "rgba(74,222,128,0.05)", border: "1px solid rgba(74,222,128,0.15)" }}
+                                    >
+                                      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                                        Transportista: <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{labelResult.carrier}</span>
+                                      </p>
+                                      <p className="text-xs mt-1 font-mono" style={{ color: "var(--text-muted)" }}>
+                                        Rastreo: <span style={{ color: "var(--text-primary)" }}>{labelResult.trackingNumber}</span>
+                                      </p>
+                                    </div>
+                                    {labelResult.labelUrl && (
+                                      <a
+                                        href={labelResult.labelUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="block text-sm font-bold text-white py-3 rounded-xl transition-all"
+                                        style={{ background: "linear-gradient(135deg, #2563EB, #3B82F6)", boxShadow: "0 4px 16px rgba(37,99,235,0.3)" }}
+                                      >
+                                        Descargar guía PDF
+                                      </a>
+                                    )}
+                                    <button
+                                      onClick={() => setQuoteOrder(null)}
+                                      className="text-xs transition-colors"
+                                      style={{ color: "var(--text-muted)" }}
+                                    >
+                                      Cerrar
+                                    </button>
+                                  </div>
+                                )}
+
+                                {!labelResult && (
                                   <button
                                     onClick={() => setQuoteOrder(null)}
-                                    className="text-xs text-zinc-600"
+                                    className="text-xs w-full text-center transition-colors"
+                                    style={{ color: "var(--text-muted)" }}
                                   >
-                                    Cerrar
+                                    Cancelar
                                   </button>
-                                </div>
-                              )}
-
-                              {/* Always show close/cancel */}
-                              {!labelResult && (
+                                )}
+                              </div>
+                            ) : (
+                              // Initial buttons
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <button
-                                  onClick={() => setQuoteOrder(null)}
-                                  className="text-xs text-zinc-600 w-full text-center"
+                                  onClick={() => { setQuoteOrder(order.id); setShippingOrder(null); }}
+                                  className="text-xs font-bold text-white px-5 py-2.5 rounded-xl transition-all"
+                                  style={{ background: "linear-gradient(135deg, #2563EB, #3B82F6)", boxShadow: "0 4px 16px rgba(37,99,235,0.35)" }}
+                                >
+                                  Cotizar y generar envío
+                                </button>
+                                <button
+                                  onClick={() => { setShippingOrder(order.id); setQuoteOrder(null); }}
+                                  className="text-xs px-4 py-2.5 rounded-xl transition-all"
+                                  style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+                                >
+                                  Ya tengo mi guía
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Manual tracking fallback */}
+                            {isShipping && quoteOrder !== order.id && (
+                              <div className="mt-2 flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Número de guía / rastreo"
+                                  value={trackingInput}
+                                  onChange={e => setTrackingInput(e.target.value)}
+                                  className="flex-1 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#2563EB]/40 transition-all"
+                                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+                                />
+                                <button
+                                  onClick={async () => {
+                                    if (trackingInput.trim()) {
+                                      await ordersApi.updateStatus(order.id, "shipped").catch(() => {});
+                                      await ordersApi.updateTracking(order.id, trackingInput.trim()).catch(() => {});
+                                      const refreshed = await ordersApi.selling().catch(() => null);
+                                      if (refreshed) setSellerOrders(refreshed.data);
+                                    }
+                                    setShippingOrder(null);
+                                  }}
+                                  className="text-xs font-bold text-white px-4 py-2 rounded-xl"
+                                  style={{ background: "linear-gradient(135deg, #2563EB, #3B82F6)" }}
+                                >
+                                  Confirmar
+                                </button>
+                                <button
+                                  onClick={() => setShippingOrder(null)}
+                                  className="text-xs px-3 py-2 transition-colors"
+                                  style={{ color: "var(--text-muted)" }}
                                 >
                                   Cancelar
                                 </button>
-                              )}
-                            </div>
-                          ) : (
-                            // ── Initial buttons ──────────────────────────────
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <button
-                                onClick={() => { setQuoteOrder(order.id); setShippingOrder(null); }}
-                                className="text-xs font-bold text-white px-5 py-2 rounded-xl"
-                                style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)", boxShadow: "0 4px 16px rgba(108,58,232,0.35)" }}
-                              >
-                                📦 Cotizar y generar envío
-                              </button>
-                              <button
-                                onClick={() => { setShippingOrder(order.id); setQuoteOrder(null); }}
-                                className="text-xs text-zinc-500 px-4 py-2 rounded-xl"
-                                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
-                              >
-                                Ya tengo mi guía
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Manual tracking fallback — shown when "Ya tengo mi guía" is clicked */}
-                          {isShipping && quoteOrder !== order.id && (
-                            <div className="mt-2 flex items-center gap-2">
-                              <input
-                                type="text"
-                                placeholder="Número de guía / rastreo"
-                                value={trackingInput}
-                                onChange={e => setTrackingInput(e.target.value)}
-                                className="flex-1 bg-[#0F0F14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60"
-                              />
-                              <button
-                                onClick={async () => {
-                                  if (trackingInput.trim()) {
-                                    await ordersApi.updateStatus(order.id, "shipped").catch(() => {});
-                                    await ordersApi.updateTracking(order.id, trackingInput.trim()).catch(() => {});
-                                    const refreshed = await ordersApi.selling().catch(() => null);
-                                    if (refreshed) setSellerOrders(refreshed.data);
-                                  }
-                                  setShippingOrder(null);
-                                }}
-                                className="text-xs font-bold text-white px-4 py-2 rounded-xl"
-                                style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
-                              >Confirmar</button>
-                              <button onClick={() => setShippingOrder(null)} className="text-xs text-zinc-600 px-3 py-2">Cancelar</button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <p className="font-black text-lg">${(amount / 100).toLocaleString("es-MX")}</p>
-                      <p className="text-xs text-zinc-600 mt-0.5">MXN</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1483,7 +1824,7 @@ export default function VendedorPage() {
             <div className="space-y-6">
               {sellerOrders === null && (
                 <div className="flex items-center justify-center py-16">
-                  <div className="w-5 h-5 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+                  <div className="w-6 h-6 rounded-full border-2 border-[#2563EB] border-t-transparent animate-spin" />
                 </div>
               )}
 
@@ -1491,34 +1832,62 @@ export default function VendedorPage() {
                 <>
                   {/* Summary cards */}
                   <div className="grid sm:grid-cols-2 gap-4">
-                    <div className="rounded-2xl p-5" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
-                      <p className="text-xs text-zinc-500 mb-1">Pendiente de cobro</p>
-                      <p className="text-2xl font-black" style={{ color: "#fbbf24" }}>
+                    <div
+                      className="rounded-2xl p-6"
+                      style={{
+                        background: "var(--bg-surface)",
+                        border: "1px solid rgba(245,158,11,0.2)",
+                        boxShadow: "0 4px 24px rgba(245,158,11,0.06)",
+                      }}
+                    >
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl mb-3" style={{ background: "rgba(245,158,11,0.12)" }}>
+                        ⏳
+                      </div>
+                      <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>Pendiente de cobro</p>
+                      <p className="text-3xl font-black" style={{ color: "#fbbf24" }}>
                         ${(pendingSum / 100).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
                       </p>
-                      <p className="text-[11px] text-zinc-600 mt-1">MXN — en espera de entrega confirmada</p>
+                      <p className="text-[11px] mt-1" style={{ color: "var(--text-muted)" }}>MXN — en espera de entrega confirmada</p>
                     </div>
-                    <div className="rounded-2xl p-5" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
-                      <p className="text-xs text-zinc-500 mb-1">Total cobrado</p>
-                      <p className="text-2xl font-black" style={{ color: "#4ade80" }}>
+                    <div
+                      className="rounded-2xl p-6"
+                      style={{
+                        background: "var(--bg-surface)",
+                        border: "1px solid rgba(74,222,128,0.2)",
+                        boxShadow: "0 4px 24px rgba(74,222,128,0.06)",
+                      }}
+                    >
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl mb-3" style={{ background: "rgba(74,222,128,0.12)" }}>
+                        ✅
+                      </div>
+                      <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>Total cobrado</p>
+                      <p className="text-3xl font-black" style={{ color: "#4ade80" }}>
                         ${(releasedSum / 100).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
                       </p>
-                      <p className="text-[11px] text-zinc-600 mt-1">MXN — ya liberado a tu cuenta</p>
+                      <p className="text-[11px] mt-1" style={{ color: "var(--text-muted)" }}>MXN — ya liberado a tu cuenta</p>
                     </div>
                   </div>
 
                   {cobrosOrders.length === 0 ? (
                     <div className="text-center py-16">
                       <p className="text-4xl mb-3">💰</p>
-                      <p className="text-zinc-400 font-medium">Sin cobros aún</p>
-                      <p className="text-xs text-zinc-600 mt-1">Los cobros aparecerán aquí cuando tus órdenes tengan pago registrado</p>
+                      <p className="font-medium" style={{ color: "var(--text-secondary)" }}>Sin cobros aún</p>
+                      <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                        Los cobros aparecerán aquí cuando tus órdenes tengan pago registrado
+                      </p>
                     </div>
                   ) : (
-                    <div className="rounded-2xl overflow-hidden" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div
+                      className="rounded-2xl overflow-hidden"
+                      style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
+                    >
                       {/* Table header */}
-                      <div className="grid grid-cols-5 gap-3 px-5 py-3 border-b border-white/5">
+                      <div
+                        className="grid grid-cols-5 gap-3 px-5 py-3"
+                        style={{ borderBottom: "1px solid var(--border-subtle)", background: "var(--bg-elevated)" }}
+                      >
                         {["Orden", "Artículos", "Total vendido", "Tu cobro (92%)", "Estado"].map(h => (
-                          <p key={h} className="text-xs font-bold text-zinc-600 uppercase tracking-widest">{h}</p>
+                          <p key={h} className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>{h}</p>
                         ))}
                       </div>
 
@@ -1536,29 +1905,32 @@ export default function VendedorPage() {
                         return (
                           <div
                             key={order.id}
-                            className="grid grid-cols-5 gap-3 px-5 py-4 border-b border-white/5 last:border-0 items-center"
+                            className="grid grid-cols-5 gap-3 px-5 py-4 items-center"
+                            style={{ borderBottom: "1px solid var(--border-subtle)" }}
                           >
                             {/* Orden ID */}
-                            <p className="text-xs font-mono text-zinc-500">{order.id.slice(0, 8)}…</p>
+                            <p className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>{order.id.slice(0, 8)}…</p>
 
                             {/* Artículos */}
                             <div className="min-w-0">
-                              <p className="text-xs font-semibold truncate">{cardName}</p>
+                              <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{cardName}</p>
                               {itemCount > 1 && (
-                                <p className="text-xs text-zinc-600">+{itemCount - 1} más</p>
+                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>+{itemCount - 1} más</p>
                               )}
                             </div>
 
                             {/* Total vendido */}
-                            <p className="text-sm font-bold">
-                              ${totalPesos.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
-                              <span className="block text-xs text-zinc-600 font-normal">
+                            <div>
+                              <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+                                ${totalPesos.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                              </p>
+                              <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
                                 Comisión: ${commission.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
-                              </span>
-                            </p>
+                              </p>
+                            </div>
 
                             {/* Tu cobro */}
-                            <p className="text-sm font-black" style={{ color: "#4ade80" }}>
+                            <p className="text-base font-black" style={{ color: "#4ade80" }}>
                               ${cobro.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
                             </p>
 
@@ -1566,17 +1938,21 @@ export default function VendedorPage() {
                             <div>
                               {isReleased ? (
                                 <>
-                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full"
-                                    style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80" }}>
+                                  <span
+                                    className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
+                                    style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80" }}
+                                  >
                                     ✅ Liberado
                                   </span>
                                   {releasedDate && (
-                                    <p className="text-xs text-zinc-600 mt-1">{releasedDate}</p>
+                                    <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{releasedDate}</p>
                                   )}
                                 </>
                               ) : (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full"
-                                  style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}>
+                                <span
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full"
+                                  style={{ background: "rgba(245,158,11,0.12)", color: "#f59e0b" }}
+                                >
                                   ⏳ Pendiente entrega
                                 </span>
                               )}
@@ -1593,6 +1969,7 @@ export default function VendedorPage() {
         })()}
 
       </div>
+      </main>
     </div>
     </ErrorBoundary>
   );

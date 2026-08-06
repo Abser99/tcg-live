@@ -1,11 +1,11 @@
 {
   "name": "TCG Live",
   "short_name": "TCG Live",
-  "description": "Subastas en vivo de cartas coleccionables en México",
+  "description": "Subastas en vivo de cartas TCG en México",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0F0F14",
-  "theme_color": "#6C3AE8",
+  "background_color": "#0A0E1A",
+  "theme_color": "#2563EB",
   "icons": [
     { "src": "/icon-192", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
     { "src": "/icon-512", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }

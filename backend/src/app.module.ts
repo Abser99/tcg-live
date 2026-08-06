@@ -16,6 +16,7 @@ import { AuthModule } from './auth/auth.module';
 import { AuctionsModule } from './auctions/auctions.module';
 import { SellerApplicationsModule } from './seller-applications/seller-applications.module';
 import { CardsModule } from './cards/cards.module';
+import { GeoModule } from './geo/geo.module';
 import { OrdersModule } from './orders/orders.module';
 import { ShippingModule } from './shipping/shipping.module';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
@@ -99,6 +100,7 @@ import { PushToken } from './notifications/entities/push-token.entity';
     AuctionsModule,
     SellerApplicationsModule,
     CardsModule,
+    GeoModule,
     OrdersModule,
     ShippingModule,
     PaymentMethodsModule,

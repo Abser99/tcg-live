@@ -8,10 +8,11 @@ import { useAuth } from "@/contexts/auth";
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
-  const [email, setEmail]       = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState("");
+  const [email, setEmail]             = useState("");
+  const [password, setPassword]       = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,97 +29,258 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0F0F14] text-white flex items-center justify-center p-6 relative overflow-hidden">
+    <div
+      className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden"
+      style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}
+    >
+      {/* Ambient glow backdrop */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-[#6C3AE8]/12 rounded-full blur-[120px]" />
-        <div className="absolute bottom-0 right-1/4 w-64 h-64 bg-violet-500/8 rounded-full blur-3xl" />
         <div
-          className="absolute inset-0 opacity-[0.02]"
-          style={{ backgroundImage: "radial-gradient(circle, #ffffff 1px, transparent 1px)", backgroundSize: "40px 40px" }}
+          className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[700px] h-[700px] rounded-full blur-[130px]"
+          style={{ background: "rgba(37,99,235,0.13)" }}
+        />
+        <div
+          className="absolute bottom-0 right-1/4 w-72 h-72 rounded-full blur-3xl"
+          style={{ background: "rgba(59,130,246,0.07)" }}
+        />
+        <div
+          className="absolute top-0 left-0 w-48 h-48 rounded-full blur-3xl"
+          style={{ background: "rgba(37,99,235,0.06)" }}
+        />
+        {/* Dot grid */}
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: "radial-gradient(circle, var(--text-primary) 1px, transparent 1px)",
+            backgroundSize: "40px 40px",
+            opacity: 0.025,
+          }}
         />
       </div>
 
-      <div className="relative w-full max-w-md">
+      {/* Floating TCG card decorations */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+        <span
+          className="absolute top-[10%] left-[7%] text-6xl float select-none"
+          style={{ filter: "blur(2px)", opacity: 0.065, animationDelay: "0s" }}
+        >🃏</span>
+        <span
+          className="absolute top-[22%] right-[5%] text-5xl float select-none"
+          style={{ filter: "blur(1.5px)", opacity: 0.055, animationDelay: "1.3s" }}
+        >⚡</span>
+        <span
+          className="absolute bottom-[22%] left-[4%] text-7xl float select-none"
+          style={{ filter: "blur(3px)", opacity: 0.045, animationDelay: "2.5s" }}
+        >🎴</span>
+        <span
+          className="absolute bottom-[35%] right-[9%] text-5xl float select-none"
+          style={{ filter: "blur(2px)", opacity: 0.055, animationDelay: "0.7s" }}
+        >✨</span>
+        <span
+          className="absolute top-[58%] left-[14%] text-4xl float select-none"
+          style={{ filter: "blur(1px)", opacity: 0.04, animationDelay: "3.1s" }}
+        >🌟</span>
+        <span
+          className="absolute top-[75%] right-[18%] text-5xl float select-none"
+          style={{ filter: "blur(2.5px)", opacity: 0.045, animationDelay: "1.8s" }}
+        >🃏</span>
+      </div>
+
+      {/* Form container */}
+      <main id="main" className="relative w-full max-w-md slide-up">
+
+        {/* Wordmark */}
         <div className="flex flex-col items-center mb-8">
-          <Link href="/">
+          <Link href="/" className="group mb-5">
             <div
-              className="w-12 h-12 rounded-2xl bg-[#6C3AE8] flex items-center justify-center font-black text-xl mb-4"
-              style={{ boxShadow: "0 0 30px rgba(108,58,232,0.5)" }}
+              className="flex items-center gap-2.5 px-5 py-2.5 rounded-2xl transition-all group-hover:scale-105 group-hover:brightness-110"
+              style={{
+                background: "linear-gradient(135deg, var(--brand), #3B82F6)",
+                boxShadow: "0 0 36px rgba(37,99,235,0.55)",
+              }}
             >
-              T
+              <span className="text-xl leading-none">⚡</span>
+              <span className="text-white font-black text-lg tracking-tight">TCGLive</span>
             </div>
           </Link>
-          <h1 className="text-3xl font-black">Bienvenido de vuelta</h1>
-          <p className="text-zinc-500 mt-2 text-sm">Inicia sesión en tu cuenta</p>
+          <h1 className="text-3xl font-black" style={{ color: "var(--text-primary)" }}>
+            Bienvenido de vuelta
+          </h1>
+          <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
+            Inicia sesión en tu cuenta
+          </p>
         </div>
 
+        {/* Glass card */}
         <div
           className="rounded-2xl p-8"
-          style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}
+          style={{
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border)",
+            boxShadow: "var(--card-shadow)",
+          }}
         >
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+
+            {/* Error pill */}
             {error && (
               <div
-                className="rounded-xl px-4 py-3 text-sm text-red-400 font-medium"
-                style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)" }}
+                className="slide-in flex items-center gap-2.5 rounded-full px-4 py-2.5 text-sm font-semibold"
+                style={{
+                  background: "rgba(248,113,113,0.12)",
+                  border: "1px solid rgba(248,113,113,0.28)",
+                  color: "var(--error-text)",
+                }}
               >
-                {error}
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span>{error}</span>
               </div>
             )}
 
+            {/* Email field */}
             <div>
-              <label className="block text-sm font-semibold mb-2 text-zinc-300">
+              <label htmlFor="login-email" className="block text-sm font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
                 Correo electrónico
               </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="tu@correo.com"
-                required
-                className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 transition-colors text-sm"
-              />
+              <div className="relative">
+                <span
+                  className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="4" width="20" height="16" rx="2"/>
+                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                  </svg>
+                </span>
+                <input
+                  id="login-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="tu@correo.com"
+                  required
+                  className="w-full rounded-xl pl-11 pr-4 py-3.5 text-sm transition-colors placeholder:opacity-40"
+                  style={{
+                    background: "var(--bg-input)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text-primary)",
+                  }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(37,99,235,0.6)")}
+                  onBlur={(e)  => (e.currentTarget.style.borderColor = "var(--border)")}
+                />
+              </div>
             </div>
 
+            {/* Password field */}
             <div>
-              <div className="flex justify-between mb-2">
-                <label className="text-sm font-semibold text-zinc-300">Contraseña</label>
-                <Link href="/olvide-contrasena" className="text-xs text-[#a78bfa] hover:text-white transition-colors">
+              <div className="flex justify-between items-center mb-2">
+                <label htmlFor="login-password" className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>
+                  Contraseña
+                </label>
+                <Link
+                  href="/olvide-contrasena"
+                  className="text-xs font-medium transition-opacity hover:opacity-80"
+                  style={{ color: "var(--accent-text)" }}
+                >
                   ¿Olvidaste tu contraseña?
                 </Link>
               </div>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 transition-colors text-sm"
-              />
+              <div className="relative">
+                <span
+                  className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                </span>
+                <input
+                  id="login-password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  className="w-full rounded-xl pl-11 pr-11 py-3.5 text-sm transition-colors placeholder:opacity-40"
+                  style={{
+                    background: "var(--bg-input)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text-primary)",
+                  }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(37,99,235,0.6)")}
+                  onBlur={(e)  => (e.currentTarget.style.borderColor = "var(--border)")}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-md transition-colors"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {showPassword ? (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+                      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+                      <path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+                      <line x1="2" y1="2" x2="22" y2="22" />
+                    </svg>
+                  ) : (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
 
+            {/* Submit button with spinner */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-4 rounded-xl font-black text-white transition-all active:scale-95 disabled:opacity-60 mt-1"
+              className="w-full py-4 rounded-xl font-black text-white transition-all active:scale-[0.97] disabled:opacity-60 mt-1 flex items-center justify-center gap-2.5"
               style={{
-                background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)",
-                boxShadow: "0 8px 25px rgba(108,58,232,0.35)",
+                background: "linear-gradient(135deg, var(--brand), #3B82F6)",
+                boxShadow: "0 8px 28px rgba(37,99,235,0.38)",
               }}
             >
-              {loading ? "Iniciando sesión..." : "Iniciar sesión →"}
+              {loading ? (
+                <>
+                  <svg
+                    className="animate-spin"
+                    width="17"
+                    height="17"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                  Iniciando sesión...
+                </>
+              ) : (
+                "Iniciar sesión →"
+              )}
             </button>
           </form>
-
         </div>
 
-        <p className="text-center mt-6 text-sm text-zinc-500">
+        <p className="text-center mt-6 text-sm" style={{ color: "var(--text-muted)" }}>
           ¿No tienes cuenta?{" "}
-          <Link href="/register" className="text-[#a78bfa] font-semibold hover:text-white transition-colors">
+          <Link
+            href="/register"
+            className="font-semibold transition-opacity hover:opacity-80"
+            style={{ color: "var(--accent-text)" }}
+          >
             Regístrate gratis →
           </Link>
         </p>
-      </div>
+      </main>
     </div>
   );
 }

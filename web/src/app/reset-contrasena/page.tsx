@@ -38,35 +38,38 @@ function ResetForm() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0F0F14] text-white flex items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-[#6C3AE8]/10 rounded-full blur-3xl pointer-events-none" />
+    <div
+      className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden"
+      style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}
+    >
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full blur-3xl pointer-events-none" style={{ background: "rgba(37,99,235,0.1)" }} />
 
-      <div className="relative w-full max-w-md">
+      <main id="main" className="relative w-full max-w-md">
         <div className="flex flex-col items-center mb-8">
           <Link href="/">
             <div
-              className="w-12 h-12 rounded-2xl bg-[#6C3AE8] flex items-center justify-center font-black text-xl mb-4"
-              style={{ boxShadow: "0 0 30px rgba(108,58,232,0.5)" }}
+              className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl mb-4 text-white"
+              style={{ background: "var(--brand)", boxShadow: "0 0 30px rgba(37,99,235,0.5)" }}
             >
               T
             </div>
           </Link>
           <h1 className="text-3xl font-black">Nueva contraseña</h1>
-          <p className="text-zinc-500 mt-2 text-sm">Elige una contraseña segura para tu cuenta</p>
+          <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>Elige una contraseña segura para tu cuenta</p>
         </div>
 
         <div
           className="rounded-2xl p-8"
-          style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
         >
           {done ? (
             <div className="text-center">
               <div className="text-4xl mb-4">✅</div>
               <p className="font-black text-lg mb-2">Contraseña actualizada</p>
-              <p className="text-zinc-400 text-sm">
+              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                 Tu contraseña fue restablecida. Redirigiendo al inicio de sesión...
               </p>
-              <Link href="/login" className="block mt-6 text-sm text-[#a78bfa] font-semibold hover:text-white transition-colors">
+              <Link href="/login" className="block mt-6 text-sm text-[var(--accent-text)] font-semibold hover:text-[var(--text-primary)] transition-colors">
                 Ir a iniciar sesión →
               </Link>
             </div>
@@ -74,7 +77,7 @@ function ResetForm() {
             <form onSubmit={handleSubmit} className="flex flex-col gap-5">
               {error && (
                 <div
-                  className="rounded-xl px-4 py-3 text-sm text-red-400 font-medium"
+                  className="rounded-xl px-4 py-3 text-sm text-[var(--error-text)] font-medium"
                   style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)" }}
                 >
                   {error}
@@ -82,27 +85,31 @@ function ResetForm() {
               )}
 
               <div>
-                <label className="block text-sm font-semibold mb-2 text-zinc-300">Nueva contraseña</label>
+                <label htmlFor="new-password" className="block text-sm font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>Nueva contraseña</label>
                 <input
+                  id="new-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Mínimo 8 caracteres"
                   required
                   minLength={8}
-                  className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 transition-colors text-sm"
+                  className="w-full rounded-xl px-4 py-3.5 transition-colors text-sm"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold mb-2 text-zinc-300">Confirmar contraseña</label>
+                <label htmlFor="confirm-password" className="block text-sm font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>Confirmar contraseña</label>
                 <input
+                  id="confirm-password"
                   type="password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   placeholder="Repite tu nueva contraseña"
                   required
-                  className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/60 transition-colors text-sm"
+                  className="w-full rounded-xl px-4 py-3.5 transition-colors text-sm"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
                 />
               </div>
 
@@ -111,20 +118,20 @@ function ResetForm() {
                 disabled={loading || !token}
                 className="w-full py-4 rounded-xl font-black text-white transition-all active:scale-95 disabled:opacity-60"
                 style={{
-                  background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)",
-                  boxShadow: "0 8px 25px rgba(108,58,232,0.35)",
+                  background: "linear-gradient(135deg, #2563EB, #3B82F6)",
+                  boxShadow: "0 8px 25px rgba(37,99,235,0.35)",
                 }}
               >
                 {loading ? "Guardando..." : "Guardar nueva contraseña"}
               </button>
 
-              <Link href="/olvide-contrasena" className="text-center text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+              <Link href="/olvide-contrasena" className="text-center text-xs hover:text-[var(--text-primary)] transition-colors" style={{ color: "var(--text-muted)" }}>
                 Solicitar un nuevo enlace
               </Link>
             </form>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

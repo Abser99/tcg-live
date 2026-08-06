@@ -128,6 +128,37 @@ export const watchlistApi = {
   remove: (id: string) => api.delete(`/watchlist/${id}`),
 };
 
+// ─── Cards (Pokémon TCG lookup) ─────────────────────────────────
+export interface PokemonCardResult {
+  id: string;
+  name: string;
+  set: string;
+  series: string;
+  number: string;
+  rarity: string | null;
+  image: string;
+  imageLarge: string;
+  marketPriceCents: number | null;
+}
+
+export const cardsApi = {
+  searchPokemon: (q: string) =>
+    api.get<PokemonCardResult[]>("/cards/search-pokemon", { params: { q } }),
+};
+
+// ─── Geo (Mexican postal code lookup) ───────────────────────────
+export interface ZipLookupResult {
+  cp: string;
+  colonias: string[];
+  municipio: string;
+  estado: string;
+  ciudad: string;
+}
+
+export const geoApi = {
+  lookupZip: (cp: string) => api.get<ZipLookupResult | null>(`/geo/cp/${cp}`),
+};
+
 // ─── Listings ──────────────────────────────────────────────────
 export const listingsApi = {
   list: (params?: { q?: string; game?: string }) =>
@@ -286,6 +317,7 @@ export interface ApiAuction {
 export interface ApiAuctionItem {
   id: string;
   cardName: string;
+  cardSet?: string;
   condition: string;
   startingBid: number;
   currentBid?: number;

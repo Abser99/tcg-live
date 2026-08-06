@@ -8,7 +8,7 @@ export function GET() {
     (
       <div
         style={{
-          background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)",
+          background: "linear-gradient(135deg, #2563EB, #3B82F6)",
           width: "100%",
           height: "100%",
           display: "flex",

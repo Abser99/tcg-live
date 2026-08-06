@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
@@ -21,7 +21,7 @@ const DOC_LABELS: Record<string, string> = {
 const STATUS_STYLE: Record<string, { label: string; color: string; bg: string }> = {
   pending:  { label: "Pendiente", color: "#f59e0b", bg: "rgba(245,158,11,0.12)"  },
   approved: { label: "Aprobado",  color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
-  rejected: { label: "Rechazado", color: "#f87171", bg: "rgba(248,113,113,0.12)" },
+  rejected: { label: "Rechazado", color: "var(--error-text)", bg: "rgba(248,113,113,0.12)" },
 };
 
 export default function AdminPage() {
@@ -62,6 +62,12 @@ export default function AdminPage() {
   const [suspendError,     setSuspendError]      = useState("");
   const [userFlash,        setUserFlash]         = useState<string | null>(null);
 
+  // Modal focus targets
+  const selectedModalRef    = useRef<HTMLDivElement>(null);
+  const suspendModalRef     = useRef<HTMLDivElement>(null);
+  const disputeModalRef     = useRef<HTMLDivElement>(null);
+  const docPreviewModalRef  = useRef<HTMLDivElement>(null);
+
   const DISPUTE_REASON_LABELS: Record<string, string> = {
     not_received:     "No recibió el paquete",
     wrong_item:       "Artículo incorrecto",
@@ -74,12 +80,49 @@ export default function AdminPage() {
     open:         { label: "Abierta",     color: "#f59e0b", bg: "rgba(245,158,11,0.12)"  },
     under_review: { label: "En revisión", color: "#60a5fa", bg: "rgba(96,165,250,0.12)"  },
     resolved:     { label: "Resuelta",    color: "#4ade80", bg: "rgba(74,222,128,0.12)"  },
-    rejected:     { label: "Rechazada",   color: "#f87171", bg: "rgba(248,113,113,0.12)" },
+    rejected:     { label: "Rechazada",   color: "var(--error-text)", bg: "rgba(248,113,113,0.12)" },
   };
 
   useEffect(() => {
     if (!authLoading && (!user || user.role !== "ADMIN")) router.replace("/");
   }, [authLoading, user, router]);
+
+  // ── Modal accessibility: Escape-to-close, body scroll lock, focus on open ──
+  useEffect(() => {
+    if (!selected) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") { setSelected(null); setRejectNote(""); } }
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    selectedModalRef.current?.focus();
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [selected]);
+
+  useEffect(() => {
+    if (!suspendTarget) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") { setSuspendTarget(null); setSuspendReason(""); setSuspendError(""); } }
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    suspendModalRef.current?.focus();
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [suspendTarget]);
+
+  useEffect(() => {
+    if (!disputeSelected) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") { setDisputeSelected(null); setDisputeNote(""); } }
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    disputeModalRef.current?.focus();
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [disputeSelected]);
+
+  useEffect(() => {
+    if (!docPreview) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setDocPreview(null); }
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    docPreviewModalRef.current?.focus();
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [docPreview]);
 
   const loadData = useCallback(async () => {
     if (!user || user.role !== "ADMIN") return;
@@ -248,23 +291,24 @@ export default function AdminPage() {
       });
 
   return (
-    <div className="min-h-screen bg-[#0F0F14] text-white">
+    <div className="min-h-screen" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
       <Navbar />
 
-      <div className="pt-24 pb-0 border-b border-white/5">
+      <main id="main">
+      <div className="pt-24 pb-0" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
         <div className="mx-auto max-w-5xl px-6 py-8">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-2xl font-black">Panel de Administración</h1>
-              <p className="text-zinc-500 text-sm mt-1">Revisión de solicitudes y documentos KYC</p>
+              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Revisión de solicitudes y documentos KYC</p>
             </div>
             <div className="flex gap-2">
               {(["pending", "approved", "rejected", "all"] as const).map(f => (
                 <button key={f} onClick={() => setFilter(f)}
                   className="text-xs font-bold px-3 py-1.5 rounded-lg transition-all capitalize"
                   style={filter === f
-                    ? { background: "rgba(108,58,232,0.25)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.4)" }
-                    : { background: "rgba(255,255,255,0.04)", color: "#71717a", border: "1px solid transparent" }}>
+                    ? { background: "rgba(37,99,235,0.25)", color: "var(--accent-text)", border: "1px solid rgba(37,99,235,0.4)" }
+                    : { background: "var(--bg-hover)", color: "var(--text-muted)", border: "1px solid transparent" }}>
                   {f === "all" ? "Todos" : f === "pending" ? "Pendientes" : f === "approved" ? "Aprobados" : "Rechazados"}
                 </button>
               ))}
@@ -282,8 +326,8 @@ export default function AdminPage() {
               <button key={t.key} onClick={() => setTab(t.key as typeof tab)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-t-xl text-sm font-semibold border-b-2 transition-all"
                 style={tab === t.key
-                  ? { color: "#a78bfa", borderColor: "#6C3AE8", background: "rgba(108,58,232,0.08)" }
-                  : { color: "#71717a", borderColor: "transparent" }}>
+                  ? { color: "var(--accent-text)", borderColor: "#2563EB", background: "rgba(37,99,235,0.08)" }
+                  : { color: "var(--text-muted)", borderColor: "transparent" }}>
                 {t.label}
                 {t.count > 0 && (
                   <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
@@ -300,36 +344,37 @@ export default function AdminPage() {
       <div className="mx-auto max-w-5xl px-6 py-8">
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="w-6 h-6 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+            <div className="w-6 h-6 rounded-full border-2 border-[#2563EB] border-t-transparent animate-spin" />
           </div>
         ) : (
           <>
             {/* ── SOLICITUDES ── */}
             {tab === "applications" && (
               <div className="space-y-3">
+                <h2 className="sr-only">Solicitudes de vendedor</h2>
                 {applications.length === 0 && (
-                  <div className="text-center py-16 text-zinc-500">No hay solicitudes {filter !== "all" ? filter === "pending" ? "pendientes" : filter : ""}</div>
+                  <div className="text-center py-16" style={{ color: "var(--text-muted)" }}>No hay solicitudes {filter !== "all" ? filter === "pending" ? "pendientes" : filter : ""}</div>
                 )}
                 {applications.map(app => {
                   const s = STATUS_STYLE[app.status];
                   const userDocs = documents.filter(d => d.userId === app.userId);
                   return (
-                    <div key={app.id} className="rounded-2xl p-5" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div key={app.id} className="rounded-2xl p-5" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
                       <div className="flex items-start justify-between gap-4 flex-wrap">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-3 flex-wrap">
                             <p className="font-black text-base">{app.fullName}</p>
                             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.color }}>{s.label}</span>
                           </div>
-                          <p className="text-xs text-zinc-500 mt-1">
+                          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
                             @{app.user?.username ?? "—"} · {app.user?.email ?? "—"} · {app.state}
                           </p>
-                          <p className="text-sm text-zinc-300 mt-3 leading-relaxed">{app.description}</p>
-                          <p className="text-[11px] text-zinc-600 mt-2">
+                          <p className="text-sm mt-3 leading-relaxed" style={{ color: "var(--text-secondary)" }}>{app.description}</p>
+                          <p className="text-[11px] mt-2" style={{ color: "var(--text-muted)" }}>
                             Solicitado: {new Date(app.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" })}
                           </p>
                           {app.reviewNote && (
-                            <p className="text-xs text-red-400 mt-2">Nota: {app.reviewNote}</p>
+                            <p className="text-xs text-[var(--error-text)] mt-2">Nota: {app.reviewNote}</p>
                           )}
                         </div>
 
@@ -342,7 +387,7 @@ export default function AdminPage() {
                             </button>
                             <button onClick={() => setSelected(app)}
                               className="text-xs font-black px-5 py-2.5 rounded-xl"
-                              style={{ background: "rgba(248,113,113,0.12)", color: "#f87171", border: "1px solid rgba(248,113,113,0.3)" }}>
+                              style={{ background: "rgba(248,113,113,0.12)", color: "var(--error-text)", border: "1px solid rgba(248,113,113,0.3)" }}>
                               ✕ Rechazar
                             </button>
                           </div>
@@ -351,21 +396,21 @@ export default function AdminPage() {
 
                       {/* Documentos del usuario */}
                       {userDocs.length > 0 && (
-                        <div className="mt-4 pt-4 border-t border-white/5">
-                          <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Documentos subidos</p>
+                        <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                          <p className="text-[11px] font-bold uppercase tracking-widest mb-3" style={{ color: "var(--text-muted)" }}>Documentos subidos</p>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                             {userDocs.map(doc => {
                               const ds = STATUS_STYLE[doc.status];
                               const isPDF = doc.fileUrl?.toLowerCase().includes(".pdf") || doc.fileUrl?.includes("/raw/");
                               return (
-                                <div key={doc.id} className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${ds.color}22` }}>
+                                <div key={doc.id} className="rounded-xl p-3" style={{ background: "var(--bg-elevated)", border: `1px solid ${ds.color}22` }}>
                                   <p className="text-[11px] font-bold truncate mb-1">{DOC_LABELS[doc.documentType] ?? doc.documentType}</p>
                                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: ds.bg, color: ds.color }}>{ds.label}</span>
-                                  {doc.emissionDate && <p className="text-[10px] text-zinc-600 mt-1">Emisión: {doc.emissionDate}</p>}
+                                  {doc.emissionDate && <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>Emisión: {doc.emissionDate}</p>}
                                   <div className="flex gap-1 mt-2">
                                     <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer"
                                       className="text-[10px] font-bold px-2 py-1 rounded-lg"
-                                      style={{ background: "rgba(108,58,232,0.2)", color: "#a78bfa" }}>
+                                      style={{ background: "rgba(37,99,235,0.2)", color: "var(--accent-text)" }}>
                                       {isPDF ? "Ver PDF" : "Ver"}
                                     </a>
                                     {doc.status === "pending" && (
@@ -375,7 +420,7 @@ export default function AdminPage() {
                                           style={{ background: "rgba(74,222,128,0.15)", color: "#4ade80" }}>✓</button>
                                         <button onClick={() => reviewDocument(doc.id, "rejected")} disabled={actionLoading}
                                           className="text-[10px] font-bold px-2 py-1 rounded-lg disabled:opacity-50"
-                                          style={{ background: "rgba(248,113,113,0.12)", color: "#f87171" }}>✕</button>
+                                          style={{ background: "rgba(248,113,113,0.12)", color: "var(--error-text)" }}>✕</button>
                                       </>
                                     )}
                                   </div>
@@ -394,32 +439,33 @@ export default function AdminPage() {
             {/* ── DISPUTAS ── */}
             {tab === "disputes" && (
               <div className="space-y-3">
+                <h2 className="sr-only">Disputas</h2>
                 {filteredDisputes.length === 0 && (
-                  <div className="text-center py-16 text-zinc-500">No hay disputas</div>
+                  <div className="text-center py-16" style={{ color: "var(--text-muted)" }}>No hay disputas</div>
                 )}
                 {filteredDisputes.map(d => {
                   const s = DISPUTE_STATUS_STYLE[d.status] ?? DISPUTE_STATUS_STYLE.open;
                   const isOpen = d.status === "open" || d.status === "under_review";
                   return (
-                    <div key={d.id} className="rounded-2xl p-5" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div key={d.id} className="rounded-2xl p-5" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
                       <div className="flex items-start justify-between gap-4 flex-wrap">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-3 flex-wrap mb-1">
                             <p className="font-black text-base">{DISPUTE_REASON_LABELS[d.reason] ?? d.reason}</p>
                             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.color }}>{s.label}</span>
                           </div>
-                          <p className="text-xs text-zinc-500">
+                          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                             Comprador: @{d.buyer?.username ?? d.buyerId.slice(0, 8)} · Vendedor: @{d.seller?.username ?? d.sellerId.slice(0, 8)}
                           </p>
-                          <p className="text-[11px] text-zinc-600 mt-0.5 font-mono">Orden: {d.orderId}</p>
-                          <p className="text-sm text-zinc-300 mt-3 leading-relaxed">{d.description}</p>
-                          <p className="text-[11px] text-zinc-600 mt-2">
+                          <p className="text-[11px] mt-0.5 font-mono" style={{ color: "var(--text-muted)" }}>Orden: {d.orderId}</p>
+                          <p className="text-sm mt-3 leading-relaxed" style={{ color: "var(--text-secondary)" }}>{d.description}</p>
+                          <p className="text-[11px] mt-2" style={{ color: "var(--text-muted)" }}>
                             {new Date(d.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" })}
                           </p>
                           {d.resolutionNote && (
-                            <div className="mt-3 p-3 rounded-xl" style={{ background: "rgba(108,58,232,0.08)", border: "1px solid rgba(108,58,232,0.2)" }}>
-                              <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-1">Resolución</p>
-                              <p className="text-sm text-zinc-300">{d.resolutionNote}</p>
+                            <div className="mt-3 p-3 rounded-xl" style={{ background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)" }}>
+                              <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: "var(--text-muted)" }}>Resolución</p>
+                              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{d.resolutionNote}</p>
                             </div>
                           )}
                         </div>
@@ -427,7 +473,7 @@ export default function AdminPage() {
                           <button
                             onClick={() => { setDisputeSelected(d); setDisputeNote(""); setDisputeStatus("resolved"); }}
                             className="shrink-0 text-xs font-black px-5 py-2.5 rounded-xl"
-                            style={{ background: "rgba(108,58,232,0.2)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.3)" }}
+                            style={{ background: "rgba(37,99,235,0.2)", color: "var(--accent-text)", border: "1px solid rgba(37,99,235,0.3)" }}
                           >
                             Responder →
                           </button>
@@ -442,6 +488,7 @@ export default function AdminPage() {
             {/* ── USUARIOS ── */}
             {tab === "users" && (
               <div>
+                <h2 className="sr-only">Usuarios</h2>
                 {/* Flash */}
                 {userFlash && (
                   <div className="mb-4 px-4 py-3 rounded-xl text-sm font-semibold"
@@ -452,34 +499,37 @@ export default function AdminPage() {
 
                 {/* Search */}
                 <div className="mb-4">
+                  <label htmlFor="admin-user-search" className="sr-only">Buscar por usuario o correo</label>
                   <input
+                    id="admin-user-search"
                     type="text"
                     value={userSearch}
                     onChange={e => setUserSearch(e.target.value)}
                     placeholder="Buscar por usuario o correo..."
-                    className="w-full bg-[#16161E] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50"
+                    className="w-full rounded-xl px-4 py-2.5 text-sm placeholder:text-zinc-500 focus:border-[#2563EB]/50 transition-colors"
+                    style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
                   />
                 </div>
 
                 {usersLoading && allUsers.length === 0 ? (
                   <div className="flex items-center justify-center py-20">
-                    <div className="w-6 h-6 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+                    <div className="w-6 h-6 rounded-full border-2 border-[#2563EB] border-t-transparent animate-spin" />
                   </div>
                 ) : (
                   <>
                     {filteredUsers.length === 0 && (
-                      <div className="text-center py-16 text-zinc-500">No se encontraron usuarios</div>
+                      <div className="text-center py-16" style={{ color: "var(--text-muted)" }}>No se encontraron usuarios</div>
                     )}
 
                     <div className="space-y-2">
                       {filteredUsers.map(u => (
                         <div key={u.id} className="flex items-center gap-4 rounded-2xl p-4 flex-wrap"
-                          style={{ background: "#16161E", border: `1px solid ${u.isSuspended ? "rgba(248,113,113,0.2)" : "rgba(255,255,255,0.07)"}` }}>
+                          style={{ background: "var(--bg-surface)", border: `1px solid ${u.isSuspended ? "rgba(248,113,113,0.2)" : "var(--border)"}` }}>
 
                           {/* Avatar placeholder + info */}
                           <div className="flex items-center gap-3 flex-1 min-w-0">
                             <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-black"
-                              style={{ background: u.isSuspended ? "rgba(248,113,113,0.15)" : "rgba(108,58,232,0.2)", color: u.isSuspended ? "#f87171" : "#a78bfa" }}>
+                              style={{ background: u.isSuspended ? "rgba(248,113,113,0.15)" : "rgba(37,99,235,0.2)", color: u.isSuspended ? "var(--error-text)" : "var(--accent-text)" }}>
                               {u.username.slice(0, 1).toUpperCase()}
                             </div>
                             <div className="min-w-0">
@@ -487,7 +537,7 @@ export default function AdminPage() {
                                 <p className="font-bold text-sm">@{u.username}</p>
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                                   style={u.isSuspended
-                                    ? { background: "rgba(248,113,113,0.15)", color: "#f87171" }
+                                    ? { background: "rgba(248,113,113,0.15)", color: "var(--error-text)" }
                                     : { background: "rgba(74,222,128,0.12)", color: "#4ade80" }}>
                                   {u.isSuspended ? "Suspendido" : "Activo"}
                                 </span>
@@ -498,13 +548,13 @@ export default function AdminPage() {
                                   </span>
                                 )}
                               </div>
-                              <p className="text-xs text-zinc-500 truncate">{u.email}</p>
+                              <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{u.email}</p>
                               {u.isSuspended && u.suspendReason && (
-                                <p className="text-[11px] text-red-400 mt-0.5 truncate" title={u.suspendReason}>
+                                <p className="text-[11px] text-[var(--error-text)] mt-0.5 truncate" title={u.suspendReason}>
                                   Motivo: {u.suspendReason}
                                 </p>
                               )}
-                              <p className="text-[11px] text-zinc-600 mt-0.5">
+                              <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
                                 Registro: {new Date(u.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}
                               </p>
                             </div>
@@ -525,7 +575,7 @@ export default function AdminPage() {
                                 onClick={() => { setSuspendTarget(u); setSuspendReason(""); setSuspendError(""); }}
                                 disabled={actionLoading}
                                 className="text-xs font-black px-4 py-2 rounded-xl disabled:opacity-50"
-                                style={{ background: "rgba(248,113,113,0.12)", color: "#f87171", border: "1px solid rgba(248,113,113,0.3)" }}>
+                                style={{ background: "rgba(248,113,113,0.12)", color: "var(--error-text)", border: "1px solid rgba(248,113,113,0.3)" }}>
                                 Suspender
                               </button>
                             )}
@@ -541,7 +591,7 @@ export default function AdminPage() {
                           onClick={() => loadUsers(usersPage + 1, true)}
                           disabled={usersLoading}
                           className="text-sm font-bold px-6 py-2.5 rounded-xl disabled:opacity-50"
-                          style={{ background: "rgba(108,58,232,0.2)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.3)" }}>
+                          style={{ background: "rgba(37,99,235,0.2)", color: "var(--accent-text)", border: "1px solid rgba(37,99,235,0.3)" }}>
                           {usersLoading ? "Cargando..." : "Cargar más"}
                         </button>
                       </div>
@@ -554,26 +604,27 @@ export default function AdminPage() {
             {/* ── DOCUMENTOS KYC ── */}
             {tab === "documents" && (
               <div className="space-y-2">
+                <h2 className="sr-only">Documentos KYC</h2>
                 {documents.length === 0 && (
-                  <div className="text-center py-16 text-zinc-500">No hay documentos</div>
+                  <div className="text-center py-16" style={{ color: "var(--text-muted)" }}>No hay documentos</div>
                 )}
                 {documents.map(doc => {
                   const s = STATUS_STYLE[doc.status];
                   return (
-                    <div key={doc.id} className="flex items-center gap-4 rounded-2xl p-4 flex-wrap" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div key={doc.id} className="flex items-center gap-4 rounded-2xl p-4 flex-wrap" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-bold text-sm">{DOC_LABELS[doc.documentType] ?? doc.documentType}</p>
                           <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.color }}>{s.label}</span>
                         </div>
-                        <p className="text-xs text-zinc-500 mt-0.5">@{doc.user?.username ?? "—"} · {doc.user?.email ?? "—"}</p>
-                        {doc.emissionDate && <p className="text-[11px] text-zinc-600 mt-0.5">Emisión: {doc.emissionDate}</p>}
-                        {doc.rejectionNote && <p className="text-xs text-red-400 mt-1">Rechazado: {doc.rejectionNote}</p>}
+                        <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>@{doc.user?.username ?? "—"} · {doc.user?.email ?? "—"}</p>
+                        {doc.emissionDate && <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>Emisión: {doc.emissionDate}</p>}
+                        {doc.rejectionNote && <p className="text-xs text-[var(--error-text)] mt-1">Rechazado: {doc.rejectionNote}</p>}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer"
                           className="text-xs font-bold px-4 py-2 rounded-xl"
-                          style={{ background: "rgba(108,58,232,0.2)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.3)" }}>
+                          style={{ background: "rgba(37,99,235,0.2)", color: "var(--accent-text)", border: "1px solid rgba(37,99,235,0.3)" }}>
                           Ver documento
                         </a>
                         {doc.status === "pending" && (
@@ -585,7 +636,7 @@ export default function AdminPage() {
                             </button>
                             <button onClick={() => reviewDocument(doc.id, "rejected")} disabled={actionLoading}
                               className="text-xs font-black px-4 py-2 rounded-xl disabled:opacity-50"
-                              style={{ background: "rgba(248,113,113,0.12)", color: "#f87171", border: "1px solid rgba(248,113,113,0.3)" }}>
+                              style={{ background: "rgba(248,113,113,0.12)", color: "var(--error-text)", border: "1px solid rgba(248,113,113,0.3)" }}>
                               ✕ Rechazar
                             </button>
                           </>
@@ -599,6 +650,7 @@ export default function AdminPage() {
             {/* ── COBROS PENDIENTES ── */}
             {tab === "cobros" && (
               <div className="space-y-4">
+                <h2 className="sr-only">Cobros pendientes</h2>
                 {payoutFlash && (
                   <div className="px-4 py-3 rounded-xl text-sm font-semibold"
                     style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.25)" }}>
@@ -608,10 +660,10 @@ export default function AdminPage() {
 
                 {payoutsLoading && pendingPayouts === null ? (
                   <div className="flex items-center justify-center py-20">
-                    <div className="w-6 h-6 rounded-full border-2 border-[#6C3AE8] border-t-transparent animate-spin" />
+                    <div className="w-6 h-6 rounded-full border-2 border-[#2563EB] border-t-transparent animate-spin" />
                   </div>
                 ) : (pendingPayouts ?? []).length === 0 ? (
-                  <div className="text-center py-16 text-zinc-500">No hay cobros pendientes</div>
+                  <div className="text-center py-16" style={{ color: "var(--text-muted)" }}>No hay cobros pendientes</div>
                 ) : (
                   <div className="space-y-3">
                     {(pendingPayouts ?? []).map(order => {
@@ -626,12 +678,12 @@ export default function AdminPage() {
                       const sellerMp    = order.seller?.mpPayoutEmail ?? null;
 
                       return (
-                        <div key={order.id} className="rounded-2xl p-5" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}>
+                        <div key={order.id} className="rounded-2xl p-5" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
                           <div className="flex items-start justify-between gap-4 flex-wrap">
                             <div className="flex-1 min-w-0">
                               {/* Header row */}
                               <div className="flex items-center gap-3 flex-wrap mb-2">
-                                <span className="text-xs font-mono text-zinc-500">{order.id.slice(0, 8)}…</span>
+                                <span className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>{order.id.slice(0, 8)}…</span>
                                 {isReleased ? (
                                   <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
                                     style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80" }}>
@@ -646,26 +698,26 @@ export default function AdminPage() {
                               </div>
 
                               {/* Parties */}
-                              <p className="text-xs text-zinc-400">
-                                Vendedor: <span className="font-bold text-white">@{order.seller?.username ?? "—"}</span>
+                              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                                Vendedor: <span className="font-bold" style={{ color: "var(--text-primary)" }}>@{order.seller?.username ?? "—"}</span>
                                 {" · "}
-                                Comprador: <span className="font-bold text-white">@{order.buyer?.username ?? "—"}</span>
+                                Comprador: <span className="font-bold" style={{ color: "var(--text-primary)" }}>@{order.buyer?.username ?? "—"}</span>
                                 {" · "}{orderDate}
                               </p>
 
                               {/* Amounts */}
                               <div className="flex flex-wrap gap-4 mt-3">
                                 <div>
-                                  <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Total orden</p>
+                                  <p className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>Total orden</p>
                                   <p className="text-sm font-bold">${total.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</p>
                                 </div>
                                 <div>
-                                  <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Cobro vendedor (92%)</p>
+                                  <p className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>Cobro vendedor (92%)</p>
                                   <p className="text-sm font-black" style={{ color: "#4ade80" }}>${cobro.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</p>
                                 </div>
                                 {isReleased && relDate && (
                                   <div>
-                                    <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Liberado el</p>
+                                    <p className="text-[10px] uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>Liberado el</p>
                                     <p className="text-sm font-semibold">{relDate}</p>
                                   </div>
                                 )}
@@ -675,7 +727,7 @@ export default function AdminPage() {
                               <div className="mt-3 flex flex-wrap gap-2">
                                 {sellerClabe ? (
                                   <span className="text-[11px] px-2 py-1 rounded-lg font-mono"
-                                    style={{ background: "rgba(108,58,232,0.1)", color: "#a78bfa", border: "1px solid rgba(108,58,232,0.2)" }}>
+                                    style={{ background: "rgba(37,99,235,0.1)", color: "var(--accent-text)", border: "1px solid rgba(37,99,235,0.2)" }}>
                                     CLABE: {sellerClabe}
                                   </span>
                                 ) : null}
@@ -687,7 +739,7 @@ export default function AdminPage() {
                                 ) : null}
                                 {!sellerClabe && !sellerMp && (
                                   <span className="text-[11px] px-2 py-1 rounded-lg"
-                                    style={{ background: "rgba(248,113,113,0.08)", color: "#f87171", border: "1px solid rgba(248,113,113,0.2)" }}>
+                                    style={{ background: "rgba(248,113,113,0.08)", color: "var(--error-text)", border: "1px solid rgba(248,113,113,0.2)" }}>
                                     Sin datos de cobro registrados
                                   </span>
                                 )}
@@ -699,7 +751,7 @@ export default function AdminPage() {
                               <div className="shrink-0">
                                 {confirmPayoutId === order.id ? (
                                   <div className="flex flex-col items-end gap-2">
-                                    <span className="text-xs text-zinc-400">¿Confirmar liberación de ${((order.payoutAmount ?? 0) / 100).toLocaleString("es-MX")} MXN?</span>
+                                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>¿Confirmar liberación de ${((order.payoutAmount ?? 0) / 100).toLocaleString("es-MX")} MXN?</span>
                                     <div className="flex items-center gap-2">
                                       <button
                                         onClick={async () => {
@@ -707,9 +759,9 @@ export default function AdminPage() {
                                           setConfirmPayoutId(null);
                                         }}
                                         className="text-xs font-bold text-white px-3 py-1.5 rounded-lg"
-                                        style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                                        style={{ background: "linear-gradient(135deg, #2563EB, #3B82F6)" }}
                                       >Sí, liberar</button>
-                                      <button onClick={() => setConfirmPayoutId(null)} className="text-xs text-zinc-500 px-3 py-1.5">Cancelar</button>
+                                      <button onClick={() => setConfirmPayoutId(null)} className="text-xs px-3 py-1.5" style={{ color: "var(--text-muted)" }}>Cancelar</button>
                                     </div>
                                   </div>
                                 ) : (
@@ -717,7 +769,7 @@ export default function AdminPage() {
                                     onClick={() => setConfirmPayoutId(order.id)}
                                     disabled={releasingPayout === order.id}
                                     className="text-xs font-bold text-white px-4 py-2 rounded-xl disabled:opacity-50"
-                                    style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+                                    style={{ background: "linear-gradient(135deg, #2563EB, #3B82F6)" }}
                                   >
                                     {releasingPayout === order.id ? "Liberando…" : "💸 Liberar pago"}
                                   </button>
@@ -739,16 +791,32 @@ export default function AdminPage() {
       {/* Modal rechazar solicitud */}
       {selected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
-          <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <h3 className="font-black text-lg mb-1">Rechazar solicitud</h3>
-            <p className="text-sm text-zinc-500 mb-4">@{selected.user?.username} — {selected.fullName}</p>
-            <textarea value={rejectNote} onChange={e => setRejectNote(e.target.value)} rows={3}
+          <div
+            ref={selectedModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reject-app-heading"
+            tabIndex={-1}
+            className="relative w-full max-w-md rounded-2xl p-6"
+            style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+          >
+            <button
+              onClick={() => { setSelected(null); setRejectNote(""); }}
+              aria-label="Cerrar"
+              className="absolute top-4 right-4 text-xl transition-opacity hover:opacity-60"
+              style={{ color: "var(--text-muted)" }}
+            >✕</button>
+            <h2 id="reject-app-heading" className="font-black text-lg mb-1">Rechazar solicitud</h2>
+            <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>@{selected.user?.username} — {selected.fullName}</p>
+            <label htmlFor="reject-note" className="sr-only">Motivo del rechazo</label>
+            <textarea id="reject-note" value={rejectNote} onChange={e => setRejectNote(e.target.value)} rows={3}
               placeholder="Motivo del rechazo (se le mostrará al usuario)..."
-              className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-red-500/50 resize-none mb-4" />
+              className="w-full rounded-xl px-4 py-3 text-sm placeholder:text-zinc-500 focus:border-red-500/50 resize-none mb-4 transition-colors"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
             <div className="flex gap-3">
               <button onClick={() => { setSelected(null); setRejectNote(""); }}
-                className="flex-1 py-3 rounded-xl font-bold text-zinc-400 text-sm"
-                style={{ background: "rgba(255,255,255,0.05)" }}>
+                className="flex-1 py-3 rounded-xl font-bold text-sm"
+                style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
                 Cancelar
               </button>
               <button onClick={() => reviewApplication(selected.id, "rejected")} disabled={actionLoading || !rejectNote.trim()}
@@ -763,32 +831,63 @@ export default function AdminPage() {
 
       {docPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 cursor-zoom-out" style={{ background: "rgba(0,0,0,0.9)" }} onClick={() => setDocPreview(null)}>
-          <img src={docPreview} alt="Documento" className="max-w-full max-h-full rounded-xl object-contain" />
+          <div
+            ref={docPreviewModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Vista previa de documento"
+            tabIndex={-1}
+            className="relative"
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setDocPreview(null)}
+              aria-label="Cerrar"
+              className="absolute -top-10 right-0 text-xl text-white transition-opacity hover:opacity-60"
+            >✕</button>
+            <img src={docPreview} alt="Documento" className="max-w-full max-h-full rounded-xl object-contain" />
+          </div>
         </div>
       )}
 
       {/* Modal suspender usuario */}
       {suspendTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
-          <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <h3 className="font-black text-lg mb-1">Suspender usuario</h3>
-            <p className="text-sm text-zinc-500 mb-4">@{suspendTarget.username} · {suspendTarget.email}</p>
-            <label className="text-xs font-semibold text-zinc-400 block mb-2">Motivo de la suspensión</label>
+          <div
+            ref={suspendModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="suspend-user-heading"
+            tabIndex={-1}
+            className="relative w-full max-w-md rounded-2xl p-6"
+            style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+          >
+            <button
+              onClick={() => { setSuspendTarget(null); setSuspendReason(""); setSuspendError(""); }}
+              aria-label="Cerrar"
+              className="absolute top-4 right-4 text-xl transition-opacity hover:opacity-60"
+              style={{ color: "var(--text-muted)" }}
+            >✕</button>
+            <h2 id="suspend-user-heading" className="font-black text-lg mb-1">Suspender usuario</h2>
+            <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>@{suspendTarget.username} · {suspendTarget.email}</p>
+            <label htmlFor="suspend-reason" className="text-xs font-semibold block mb-2" style={{ color: "var(--text-secondary)" }}>Motivo de la suspensión</label>
             <textarea
+              id="suspend-reason"
               value={suspendReason}
               onChange={e => { setSuspendReason(e.target.value); setSuspendError(""); }}
               rows={3}
               placeholder="Describe el motivo (mínimo 10 caracteres)..."
-              className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-red-500/50 resize-none mb-2"
+              className="w-full rounded-xl px-4 py-3 text-sm placeholder:text-zinc-500 focus:border-red-500/50 resize-none mb-2 transition-colors"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
             />
             {suspendError && (
-              <p className="text-xs text-red-400 mb-3">{suspendError}</p>
+              <p className="text-xs text-[var(--error-text)] mb-3">{suspendError}</p>
             )}
             <div className="flex gap-3 mt-2">
               <button
                 onClick={() => { setSuspendTarget(null); setSuspendReason(""); setSuspendError(""); }}
-                className="flex-1 py-3 rounded-xl font-bold text-zinc-400 text-sm"
-                style={{ background: "rgba(255,255,255,0.05)" }}>
+                className="flex-1 py-3 rounded-xl font-bold text-sm"
+                style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
                 Cancelar
               </button>
               <button
@@ -806,21 +905,35 @@ export default function AdminPage() {
       {/* Modal resolver disputa */}
       {disputeSelected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
-          <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <h3 className="font-black text-lg mb-1">Resolver disputa</h3>
-            <p className="text-sm text-zinc-500 mb-4">
+          <div
+            ref={disputeModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dispute-resolve-heading"
+            tabIndex={-1}
+            className="relative w-full max-w-md rounded-2xl p-6"
+            style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+          >
+            <button
+              onClick={() => { setDisputeSelected(null); setDisputeNote(""); }}
+              aria-label="Cerrar"
+              className="absolute top-4 right-4 text-xl transition-opacity hover:opacity-60"
+              style={{ color: "var(--text-muted)" }}
+            >✕</button>
+            <h2 id="dispute-resolve-heading" className="font-black text-lg mb-1">Resolver disputa</h2>
+            <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
               {DISPUTE_REASON_LABELS[disputeSelected.reason]} · @{disputeSelected.buyer?.username ?? "comprador"}
             </p>
 
             <div className="mb-4">
-              <label className="text-xs font-semibold text-zinc-400 block mb-2">Resultado</label>
+              <label className="text-xs font-semibold block mb-2" style={{ color: "var(--text-secondary)" }}>Resultado</label>
               <div className="flex gap-2">
                 <button
                   onClick={() => setDisputeStatus("resolved")}
                   className="flex-1 py-2 rounded-xl text-sm font-bold transition-all"
                   style={disputeStatus === "resolved"
                     ? { background: "rgba(74,222,128,0.2)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.4)" }
-                    : { background: "rgba(255,255,255,0.05)", color: "#71717a", border: "1px solid transparent" }}
+                    : { background: "var(--bg-hover)", color: "var(--text-muted)", border: "1px solid transparent" }}
                 >
                   ✓ A favor del comprador
                 </button>
@@ -828,26 +941,29 @@ export default function AdminPage() {
                   onClick={() => setDisputeStatus("rejected")}
                   className="flex-1 py-2 rounded-xl text-sm font-bold transition-all"
                   style={disputeStatus === "rejected"
-                    ? { background: "rgba(248,113,113,0.2)", color: "#f87171", border: "1px solid rgba(248,113,113,0.4)" }
-                    : { background: "rgba(255,255,255,0.05)", color: "#71717a", border: "1px solid transparent" }}
+                    ? { background: "rgba(248,113,113,0.2)", color: "var(--error-text)", border: "1px solid rgba(248,113,113,0.4)" }
+                    : { background: "var(--bg-hover)", color: "var(--text-muted)", border: "1px solid transparent" }}
                 >
                   ✕ A favor del vendedor
                 </button>
               </div>
             </div>
 
+            <label htmlFor="dispute-note" className="sr-only">Explicación de la resolución</label>
             <textarea
+              id="dispute-note"
               value={disputeNote}
               onChange={e => setDisputeNote(e.target.value)}
               rows={4}
               placeholder="Explica la resolución al comprador..."
-              className="w-full bg-[#0F0F14] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#6C3AE8]/50 resize-none mb-4"
+              className="w-full rounded-xl px-4 py-3 text-sm placeholder:text-zinc-500 focus:border-[#2563EB]/50 resize-none mb-4 transition-colors"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
             />
             <div className="flex gap-3">
               <button
                 onClick={() => { setDisputeSelected(null); setDisputeNote(""); }}
-                className="flex-1 py-3 rounded-xl font-bold text-zinc-400 text-sm"
-                style={{ background: "rgba(255,255,255,0.05)" }}
+                className="flex-1 py-3 rounded-xl font-bold text-sm"
+                style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}
               >
                 Cancelar
               </button>
@@ -863,6 +979,7 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+      </main>
     </div>
   );
 }

@@ -9,7 +9,7 @@ function Content() {
   const orderId = params.get("external_reference") ?? params.get("order_id") ?? "";
 
   return (
-    <div className="min-h-screen bg-[#0F0F14] text-white flex items-center justify-center p-6">
+    <main id="main" className="min-h-screen flex items-center justify-center p-6" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
       <div className="max-w-md w-full text-center">
         <div
           className="w-24 h-24 rounded-3xl mx-auto mb-6 flex items-center justify-center text-5xl"
@@ -23,16 +23,16 @@ function Content() {
         </div>
 
         <h1 className="text-3xl font-black mb-2">Pago en proceso</h1>
-        <p className="text-zinc-400 mb-1">
+        <p className="mb-1" style={{ color: "var(--text-secondary)" }}>
           Tu pago está siendo procesado. Esto puede tardar hasta 2 días hábiles (OXXO / SPEI).
         </p>
         {orderId && (
-          <p className="text-xs text-zinc-600 mt-2 font-mono">Orden: {orderId}</p>
+          <p className="text-xs mt-2 font-mono" style={{ color: "var(--text-muted)" }}>Orden: {orderId}</p>
         )}
 
         <div
           className="rounded-2xl p-6 mt-8 text-left"
-          style={{ background: "#16161E", border: "1px solid rgba(255,255,255,0.07)" }}
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
         >
           <h2 className="font-bold mb-3">¿Qué sigue?</h2>
           <div className="space-y-3">
@@ -43,7 +43,7 @@ function Content() {
             ].map((s, i) => (
               <div key={i} className="flex items-start gap-3">
                 <span className="text-lg">{s.icon}</span>
-                <p className="text-sm text-zinc-400 leading-snug">{s.text}</p>
+                <p className="text-sm leading-snug" style={{ color: "var(--text-secondary)" }}>{s.text}</p>
               </div>
             ))}
           </div>
@@ -53,20 +53,20 @@ function Content() {
           <Link
             href="/perfil"
             className="flex-1 py-3 rounded-xl font-bold text-white text-sm text-center transition-all"
-            style={{ background: "linear-gradient(135deg, #6C3AE8, #8B5CF6)" }}
+            style={{ background: "linear-gradient(135deg, #2563EB, #3B82F6)" }}
           >
             Ver mis órdenes →
           </Link>
           <Link
             href="/auctions"
-            className="flex-1 py-3 rounded-xl font-semibold text-sm text-center text-zinc-400 hover:text-white transition-colors"
-            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+            className="flex-1 py-3 rounded-xl font-semibold text-sm text-center hover:text-[var(--text-primary)] transition-colors"
+            style={{ background: "var(--bg-hover)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
           >
             Ir a subastas
           </Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 

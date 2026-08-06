@@ -1,94 +1,159 @@
 @import "tailwindcss";
 
+/* ── Design tokens — dark mode default ── */
+/* Palette: electric Pokémon blue + Pikachu gold, deep blue-black base (no more purple/black) */
 :root {
-  --background: #0F0F14;
-  --foreground: #ededed;
+  --bg-base:     #0A0E1A;
+  --bg-surface:  #111827;
+  --bg-elevated: #1B2438;
+  --bg-input:    #151D30;
+  --bg-hover:    rgba(255,255,255,0.04);
+
+  --text-primary:   #ffffff;
+  --text-secondary: #a3adc2;
+  --text-muted:     #7B87A3;
+
+  --border:        rgba(255,255,255,0.08);
+  --border-subtle: rgba(255,255,255,0.04);
+  --border-brand:  rgba(37,99,235,0.4);
+
+  --nav-bg: rgba(10,14,26,0.90);
+  --card-shadow: 0 4px 24px rgba(0,0,0,0.45);
+
+  --brand:       #2563EB;
+  --brand-light: #FFCB05;
+  --brand-dark:  #1D4ED8;
+  /* Gold as TEXT needs a darker variant in light mode to pass WCAG AA (4.5:1) —
+     --brand-light stays as-is for decorative/icon/glow use on dark surfaces. */
+  --accent-text: #FFCB05;
+  --error-text:  #f87171;
 }
 
+/* ── Light mode overrides ── */
+[data-theme="light"] {
+  --bg-base:     #F0F5FF;
+  --bg-surface:  #FFFFFF;
+  --bg-elevated: #E3EDFF;
+  --bg-input:    #EAF1FF;
+  --bg-hover:    rgba(37,99,235,0.06);
+
+  --text-primary:   #0F1E42;
+  --text-secondary: #4B5A80;
+  --text-muted:     #5A6684;
+
+  --border:        rgba(37,99,235,0.16);
+  --border-subtle: rgba(37,99,235,0.08);
+  --border-brand:  rgba(37,99,235,0.35);
+
+  --nav-bg: rgba(240,245,255,0.92);
+  --card-shadow: 0 4px 24px rgba(37,99,235,0.10);
+
+  --accent-text: #8A6200;
+  --error-text:  #C4302B;
+}
+
+/* ── Tailwind custom tokens ── */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --color-brand: #6C3AE8;
-  --color-brand-dark: #5128C0;
-  --color-brand-light: #a78bfa;
+  --color-background: var(--bg-base);
+  --color-foreground: var(--text-primary);
+  --color-font-sans: var(--font-geist-sans);
+  --color-font-mono: var(--font-geist-mono);
+  --color-brand:       var(--brand);
+  --color-brand-dark:  var(--brand-dark);
+  --color-brand-light: var(--brand-light);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  transition: background 0.2s ease, color 0.15s ease;
 }
 
 /* ── Focus ring system — WCAG 2.1 AA ── */
 :focus-visible {
-  outline: 2px solid #6C3AE8;
+  outline: 2px solid #2563EB;
   outline-offset: 2px;
   border-radius: 4px;
 }
-
-:focus:not(:focus-visible) {
-  outline: none;
-}
+:focus:not(:focus-visible) { outline: none; }
 
 /* ── Branded scrollbar ── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(108, 58, 232, 0.25) transparent;
+  scrollbar-color: rgba(37,99,235,0.25) transparent;
 }
-
-*::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-*::-webkit-scrollbar-thumb {
-  background: rgba(108, 58, 232, 0.25);
-  border-radius: 99px;
-}
-
-*::-webkit-scrollbar-thumb:hover {
-  background: rgba(108, 58, 232, 0.45);
-}
+*::-webkit-scrollbar       { width: 4px; height: 4px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: rgba(37,99,235,0.25); border-radius: 99px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(37,99,235,0.45); }
 
 /* ── Animations ── */
 @keyframes float {
-  0%, 100% { transform: translateY(0px) rotate(-1deg); }
-  50%       { transform: translateY(-14px) rotate(1deg); }
+  0%,100% { transform: translateY(0px) rotate(-1deg); }
+  50%     { transform: translateY(-14px) rotate(1deg); }
 }
-
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(108,58,232,0.4); }
-  50%       { box-shadow: 0 0 40px rgba(108,58,232,0.8); }
+  0%,100% { box-shadow: 0 0 20px rgba(37,99,235,0.4); }
+  50%     { box-shadow: 0 0 40px rgba(37,99,235,0.8); }
 }
-
 @keyframes slide-up {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
 @keyframes bid-flash {
-  0%   { background-color: rgba(108,58,232,0.0); }
-  30%  { background-color: rgba(108,58,232,0.2); }
-  100% { background-color: rgba(108,58,232,0.0); }
+  0%   { background-color: rgba(37,99,235,0.0); }
+  30%  { background-color: rgba(37,99,235,0.2); }
+  100% { background-color: rgba(37,99,235,0.0); }
+}
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
-.float      { animation: float 5s ease-in-out infinite; }
-.pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
-.slide-up   { animation: slide-up 0.3s ease-out both; }
-.bid-flash  { animation: bid-flash 0.6s ease-out; }
+.float       { animation: float 5s ease-in-out infinite; }
+.pulse-glow  { animation: pulse-glow 2s ease-in-out infinite; }
+.slide-up    { animation: slide-up 0.35s ease-out both; }
+.slide-in    { animation: slide-in 0.3s ease-out both; }
+.bid-flash   { animation: bid-flash 0.6s ease-out; }
+.spin-slow   { animation: spin-slow 8s linear infinite; }
+
+/* ── Shimmer loading ── */
+.shimmer {
+  background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-input) 50%, var(--bg-elevated) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
 
 /* ── Gradient text ── */
 .gradient-text {
-  background: linear-gradient(135deg, #ffffff 0%, #a78bfa 60%, #6C3AE8 100%);
+  background: linear-gradient(135deg, var(--brand-light) 0%, var(--brand) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+[data-theme="light"] .gradient-text {
+  background: linear-gradient(135deg, #1D4ED8 0%, #2563EB 60%, #F5B700 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* ── Glass card ── */
+.glass {
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+[data-theme="light"] .glass {
+  background: rgba(255,255,255,0.7);
 }
 
 /* ── Tab overflow fade on mobile ── */
@@ -104,10 +169,8 @@ body {
 
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
-  .float, .pulse-glow, .slide-up, .bid-flash {
+  .float, .pulse-glow, .slide-up, .slide-in, .bid-flash, .spin-slow {
     animation: none;
   }
-  * {
-    transition-duration: 0.01ms !important;
-  }
+  * { transition-duration: 0.01ms !important; }
 }
