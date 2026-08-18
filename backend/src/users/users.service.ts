@@ -15,14 +15,24 @@ export class UsersService {
     private readonly usersRepo: Repository<User>,
   ) {}
 
-  async create(email: string, username: string, password: string): Promise<User> {
+  async create(
+    email: string,
+    username: string,
+    password: string,
+    ageConfirmed = false,
+  ): Promise<User> {
     const exists = await this.usersRepo.findOne({
       where: [{ email }, { username }],
     });
     if (exists) throw new ConflictException('Email or username already taken');
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = this.usersRepo.create({ email, username, passwordHash });
+    const user = this.usersRepo.create({
+      email,
+      username,
+      passwordHash,
+      ageConfirmedAt: ageConfirmed ? new Date() : null,
+    });
     return this.usersRepo.save(user);
   }
 

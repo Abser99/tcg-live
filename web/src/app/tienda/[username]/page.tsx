@@ -344,8 +344,10 @@ export default function StorefrontPage() {
                 {listings.filter(l => l.status === "active").map(l => {
                   const gradient = hashColor(l.id, GRADIENTS);
                   return (
-                    <Link key={l.id} href={`/shop`}>
-                      <div className="rounded-2xl p-4 flex items-center gap-4 hover:border-[#2563EB]/30 transition-all cursor-pointer" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+                    // Not a link: there's no per-listing page, and the old href sent every
+                    // card to the generic marketplace, which no longer exists.
+                    <div key={l.id}>
+                      <div className="rounded-2xl p-4 flex items-center gap-4" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
                         {l.imageUrls?.[0] ? (
                           <img src={l.imageUrls[0]} alt={`Carta: ${l.title}`} className="w-14 h-20 rounded-xl object-cover shrink-0" />
                         ) : (
@@ -367,7 +369,7 @@ export default function StorefrontPage() {
                           )}
                         </div>
                       </div>
-                    </Link>
+                    </div>
                   );
                 })}
               </div>

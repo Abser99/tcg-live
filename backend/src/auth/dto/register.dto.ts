@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, MaxLength, Matches } from 'class-validator';
+import { IsEmail, IsString, MinLength, MaxLength, Matches, IsBoolean, Equals } from 'class-validator';
 
 export class RegisterDto {
   @IsEmail()
@@ -13,4 +13,9 @@ export class RegisterDto {
   @IsString()
   @MinLength(8)
   password: string;
+
+  /** Age gate: the user must confirm they are 18 or older to register. */
+  @IsBoolean()
+  @Equals(true, { message: 'You must confirm that you are 18 years or older.' })
+  over18: boolean;
 }

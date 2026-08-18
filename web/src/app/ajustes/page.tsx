@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
-import { usersApi, sellerApplicationsApi, sellerDocumentsApi, geoApi, type ApiUser, type SellerApplication, type SellerDocumentRecord } from "@/lib/api";
+import { usersApi, sellerApplicationsApi, sellerDocumentsApi, geoApi, paymentMethodsApi, type ApiUser, type SellerApplication, type SellerDocumentRecord, type ApiPaymentMethod } from "@/lib/api";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useAnalytics } from "@/hooks/useAnalytics";
 
@@ -185,6 +185,21 @@ export default function AjustesPage() {
   const router = useRouter();
   const { capture } = useAnalytics();
   const [activeSection, setActiveSection] = useState<Section>("cuenta");
+
+  // Deep-link to a section via ?section=pago (e.g. from the live wallet shortcut)
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get("section");
+    if (s && SECTIONS.some(x => x.key === s)) setActiveSection(s as Section);
+  }, []);
+
+  // Saved cards — the main wallet, synced with the live wallet popup
+  const [savedCards, setSavedCards] = useState<ApiPaymentMethod[]>([]);
+  const loadCards = () => { paymentMethodsApi.my().then(r => setSavedCards(r.data)).catch(() => {}); };
+  useEffect(() => { loadCards(); }, []);
+  async function removeCard(id: string) {
+    setSavedCards(prev => prev.filter(c => c.id !== id));
+    try { await paymentMethodsApi.remove(id); } catch { loadCards(); }
+  }
 
   const [fullUser, setFullUser]   = useState<ApiUser | null>(null);
   const [application, setApplication] = useState<SellerApplication | null | undefined>(undefined);
@@ -1195,6 +1210,24 @@ export default function AjustesPage() {
             {/* ── FORMA DE PAGO ── */}
             {activeSection === "pago" && (
               <SectionCard title="Forma de pago" icon="💳">
+                {/* Saved cards (main wallet) — synced with the live wallet popup */}
+                {savedCards.length > 0 && (
+                  <div className="mb-5">
+                    <p className="text-[11px] font-semibold uppercase mb-2" style={{ letterSpacing: "0.12em", color: "var(--text-muted)" }}>Tus tarjetas</p>
+                    <div className="space-y-2">
+                      {savedCards.map(c => (
+                        <div key={c.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5" style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth={1.5} aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20" strokeLinecap="round"/></svg>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{(c.brand || "Tarjeta")} •••• {c.last4}</p>
+                            <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>{c.expiry}{c.isDefault ? " · Predeterminada" : ""}</p>
+                          </div>
+                          <button onClick={() => removeCard(c.id)} className="text-xs" style={{ color: "var(--text-muted)" }} aria-label="Eliminar tarjeta">Eliminar</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <p className="text-xs mb-5" style={{ color: "var(--text-muted)" }}>
                   Los pagos en TCG Live se procesan con Mercado Pago — no necesitas guardar una tarjeta aquí.
                   Al ganar una subasta o comprar una carta, recibirás un enlace de pago donde puedes usar

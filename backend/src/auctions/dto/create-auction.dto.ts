@@ -63,13 +63,19 @@ export class CreateAuctionItemDto {
 }
 
 export class CreateAuctionDto {
-  @IsString({ message: 'El título de la subasta debe ser texto' })
-  @IsNotEmpty({ message: 'El título de la subasta es requerido' })
-  title: string;
+  /** Ignored — the server assigns the daily number (`puja #0001-08-2026`). */
+  @IsString()
+  @IsOptional()
+  title?: string;
 
   @IsString({ message: 'El juego debe ser texto' })
   @IsOptional()
   game?: AuctionGame;
+
+  @IsArray({ message: 'Las categorías deben ser una lista' })
+  @IsString({ each: true })
+  @IsOptional()
+  categories?: string[];
 
   @IsString({ message: 'La descripción debe ser texto' })
   @IsOptional()
@@ -82,6 +88,11 @@ export class CreateAuctionDto {
   @IsBoolean({ message: 'El campo isStream debe ser verdadero o falso' })
   @IsOptional()
   isStream?: boolean;
+
+  @IsArray({ message: 'Los emojis de reacción deben ser una lista' })
+  @IsString({ each: true })
+  @IsOptional()
+  reactionEmojis?: string[];
 
   @IsArray({ message: 'Los artículos deben ser una lista' })
   @ValidateNested({ each: true })

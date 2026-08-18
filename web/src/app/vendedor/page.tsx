@@ -97,7 +97,8 @@ export default function VendedorPage() {
   const [launchingStream, setLaunchingStream] = useState(false);
   const [showStreamForm, setShowStreamForm] = useState(false);
   const [streamTitle, setStreamTitle] = useState("");
-  const [streamGame, setStreamGame] = useState("pokemon");
+  const [streamCategories, setStreamCategories] = useState<string[]>(["pokemon"]);
+  const [streamEmojis, setStreamEmojis] = useState<string[]>(["🔥", "❤️", "💎", "🎯", "😂"]);
   const [form, setForm] = useState<AuctionForm>(EMPTY_FORM);
   const [shippingError, setShippingError] = useState<string | null>(null);
   const [saleFilter, setSaleFilter] = useState<AuctionStatus | "all">("all");
@@ -298,16 +299,16 @@ export default function VendedorPage() {
   }
 
   async function launchLivestream() {
-    if (!streamTitle.trim()) return;
     setShowStreamForm(false);
     setLaunchingStream(true);
     try {
-      const res = await auctionsApi.create({ title: streamTitle.trim(), game: streamGame as any, isStream: true });
+      const res = await auctionsApi.create({ game: (streamCategories[0] ?? "other") as any, categories: streamCategories, isStream: true, reactionEmojis: streamEmojis });
       const auctionId = (res.data as any).id;
       await auctionsApi.start(auctionId);
       router.push(`/auctions/${auctionId}?stream=1`);
-    } catch {
+    } catch (err: any) {
       setLaunchingStream(false);
+      alert(err?.response?.data?.message ?? "No se pudo iniciar el stream.");
     }
   }
 
@@ -334,38 +335,66 @@ export default function VendedorPage() {
               </span>
               <h2 id="stream-modal-heading" className="text-lg font-black" style={{ color: "var(--text-primary)" }}>Configura tu directo</h2>
             </div>
-            <p className="text-xs mb-5" style={{ color: "var(--text-muted)" }}>Este nombre aparecerá en la lista de subastas en vivo.</p>
+            <p className="text-xs mb-5" style={{ color: "var(--text-muted)" }}>El nombre del live se asigna solo; cada puja dentro tendrá su propio número.</p>
 
             <div className="flex flex-col gap-4">
               <div>
-                <label htmlFor="stream-title" className="text-xs font-semibold mb-1.5 block" style={{ color: "var(--text-secondary)" }}>Título del stream</label>
-                <input
-                  id="stream-title"
-                  autoFocus
-                  type="text"
-                  value={streamTitle}
-                  onChange={e => setStreamTitle(e.target.value)}
-                  placeholder="Ej: Subastas Pokémon SV Stellar Crown"
-                  maxLength={80}
-                  className={inputCls}
-                  style={inputStyle}
-                  onKeyDown={e => e.key === "Enter" && streamTitle.trim() && launchLivestream()}
-                />
+                <label className="text-xs font-semibold mb-1.5 block" style={{ color: "var(--text-secondary)" }}>Nombre del live</label>
+                <div className="w-full rounded-xl px-3.5 py-3 text-sm font-semibold flex items-center justify-between"
+                  style={{ background: "var(--bg-elevated)", border: "1px dashed var(--border)", color: "var(--text-secondary)" }}>
+                  <span>{`puja #____-${String(new Date().getMonth() + 1).padStart(2, "0")}-${new Date().getFullYear()}`}</span>
+                  <span className="text-[10px] font-normal" style={{ color: "var(--text-muted)" }}>automático</span>
+                </div>
               </div>
 
               <div>
-                <label htmlFor="stream-category" className="text-xs font-semibold mb-1.5 block" style={{ color: "var(--text-secondary)" }}>Categoría</label>
-                <select
-                  id="stream-category"
-                  value={streamGame}
-                  onChange={e => setStreamGame(e.target.value)}
-                  className={inputCls}
-                  style={inputStyle}
-                >
-                  {GAMES.map(g => (
-                    <option key={g.value} value={g.value}>{g.label}</option>
-                  ))}
-                </select>
+                <label className="text-xs font-semibold mb-1.5 flex items-center justify-between" style={{ color: "var(--text-secondary)" }}>
+                  <span>Categorías</span>
+                  <span style={{ color: "var(--text-muted)" }}>{streamCategories.length} seleccionada{streamCategories.length === 1 ? "" : "s"}</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {GAMES.map(g => {
+                    const on = streamCategories.includes(g.value);
+                    return (
+                      <button key={g.value} type="button"
+                        onClick={() => setStreamCategories(prev => prev.includes(g.value) ? prev.filter(x => x !== g.value) : [...prev, g.value])}
+                        className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+                        style={on
+                          ? { background: "color-mix(in srgb, var(--brand) 15%, transparent)", border: "1px solid var(--border-brand)", color: "var(--text-primary)" }
+                          : { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                        {g.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] mt-1.5" style={{ color: "var(--text-muted)" }}>Elige una o varias — se usan para filtrar en “Todas las subastas”.</p>
+              </div>
+
+              {/* Reaction emojis — the seller picks up to 6 for the live view */}
+              <div>
+                <label className="text-xs font-semibold mb-1.5 flex items-center justify-between" style={{ color: "var(--text-secondary)" }}>
+                  <span>Emojis de reacción</span>
+                  <span style={{ color: "var(--text-muted)" }}>{streamEmojis.length}/6</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {["🔥","❤️","💎","🎯","😂","😮","👏","🙌","💯","⭐","🎉","🃏","⚡","😱","🤩","💰"].map(em => {
+                    const on = streamEmojis.includes(em);
+                    return (
+                      <button
+                        key={em}
+                        type="button"
+                        onClick={() => setStreamEmojis(prev => prev.includes(em) ? prev.filter(x => x !== em) : (prev.length >= 6 ? prev : [...prev, em]))}
+                        className="w-9 h-9 rounded-lg flex items-center justify-center text-lg transition-all"
+                        style={on
+                          ? { background: "color-mix(in srgb, var(--brand) 15%, transparent)", border: "1px solid var(--border-brand)" }
+                          : { background: "var(--bg-input)", border: "1px solid var(--border)", opacity: streamEmojis.length >= 6 ? 0.4 : 1 }}
+                      >
+                        {em}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] mt-1.5" style={{ color: "var(--text-muted)" }}>Estos aparecerán como reacciones flotantes en tu directo.</p>
               </div>
 
               <div className="flex gap-3 pt-1">
@@ -378,7 +407,7 @@ export default function VendedorPage() {
                 </button>
                 <button
                   onClick={launchLivestream}
-                  disabled={!streamTitle.trim()}
+                  disabled={launchingStream}
                   className="flex-1 py-3 rounded-xl text-sm font-black text-white transition-all disabled:opacity-40"
                   style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", boxShadow: "0 4px 16px rgba(220,38,38,0.4)" }}
                 >
@@ -569,7 +598,7 @@ export default function VendedorPage() {
             {/* Stats grid */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { label: "Ingresos totales",    value: `$${(totalRevenue / 100).toLocaleString("es-MX")}`, sub: "MXN", icon: "💰", iconBg: "rgba(255,203,5,0.15)", valueColor: "var(--accent-text)" },
+                { label: "Ingresos totales",    value: `$${(totalRevenue / 100).toLocaleString("es-MX")}`, sub: "MXN", icon: "💰", iconBg: "color-mix(in srgb, var(--brand) 15%, transparent)", valueColor: "var(--accent-text)" },
                 { label: "Subastas activas",     value: sellerStats?.activeAuctions ?? myAuctions.filter(a => a.status === "live" || a.status === "ending").length, sub: "en curso", icon: "⚡", iconBg: "rgba(239,68,68,0.12)", valueColor: "var(--error-text)" },
                 { label: "Pendientes de envío",  value: sellerStats?.pendingOrders ?? (sellerOrders?.filter(o => o.status === "pending" || o.status === "confirmed").length ?? 0), sub: "por enviar", icon: "📦", iconBg: "rgba(245,158,11,0.12)", valueColor: "#fbbf24" },
                 { label: "Mis subastas",         value: myAuctions.length, sub: "historial total", icon: "🏷", iconBg: "rgba(96,165,250,0.12)", valueColor: "#60a5fa" },

@@ -88,6 +88,10 @@ export class AuctionItem {
   @Column({ type: 'timestamp', nullable: true })
   closesAt: Date | null;
 
+  /** Seconds this lot runs once opened. Null → the platform default (ITEM_TIMER_MS). */
+  @Column({ type: 'int', nullable: true })
+  durationSec: number | null;
+
   @Column({ type: 'int', nullable: true })
   binPrice: number | null; // Buy It Now price in MXN cents
 
@@ -102,6 +106,10 @@ export class AuctionItem {
 
   @Column({ default: false })
   autoRelist: boolean;
+
+  /** Dutch mode: when the descending clock started for this item. */
+  @Column({ type: 'timestamptz', nullable: true })
+  dutchStartedAt: Date | null;
 
   @CreateDateColumn()
   createdAt: Date;

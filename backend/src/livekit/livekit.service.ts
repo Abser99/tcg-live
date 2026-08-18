@@ -28,7 +28,8 @@ export class LivekitService {
     at.addGrant({
       roomJoin: true,
       room: `auction-${auctionId}`,
-      canPublish,
+      canPublish,          // media (camera/mic) — sellers only
+      canPublishData: true, // chat + reactions — everyone, so all users see each other's emojis
       canSubscribe: true,
     });
     return at.toJwt();

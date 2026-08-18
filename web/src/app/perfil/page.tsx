@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { useAuth } from "@/contexts/auth";
@@ -95,10 +95,10 @@ const DISPUTE_STATUS_STYLE: Record<string, { label: string; color: string; bg: s
 const BID_STATUS: Record<string, { label: string; color: string; bg: string }> = {
   ganando:   { label: "Ganando",   color: "#4ade80", bg: "rgba(74,222,128,0.1)"  },
   perdiendo: { label: "Perdiendo", color: "var(--error-text)", bg: "rgba(248,113,113,0.1)" },
-  ganada:    { label: "Ganada",    color: "var(--accent-text)", bg: "rgba(255,203,5,0.1)" },
+  ganada:    { label: "Ganada",    color: "var(--accent-text)", bg: "color-mix(in srgb, var(--brand) 10%, transparent)" },
   perdida:   { label: "Perdida",   color: "#71717a", bg: "rgba(113,113,122,0.1)" },
   active:    { label: "Activa",    color: "#4ade80", bg: "rgba(74,222,128,0.1)"  },
-  won:       { label: "Ganada",    color: "var(--accent-text)", bg: "rgba(255,203,5,0.1)" },
+  won:       { label: "Ganada",    color: "var(--accent-text)", bg: "color-mix(in srgb, var(--brand) 10%, transparent)" },
   lost:      { label: "Perdida",   color: "#71717a", bg: "rgba(113,113,122,0.1)" },
 };
 
@@ -139,8 +139,14 @@ async function initiateCheckout(orderId: string) {
 export default function PerfilPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { capture } = useAnalytics();
+  // Section is chosen from the ?sec= query (driven by the profile dropdown menu) — no tabs.
   const [tab, setTab] = useState<Tab>("ordenes");
+  useEffect(() => {
+    const s = searchParams.get("sec");
+    if (s && ["ordenes", "watchlist", "mensajes", "disputas"].includes(s)) setTab(s as Tab);
+  }, [searchParams]);
 
   // Real data
   const [realOrders,    setRealOrders]    = useState<ApiOrder[]      | null>(null);
@@ -430,7 +436,7 @@ export default function PerfilPage() {
               <div
                 className="w-[88px] h-[88px] rounded-[22px] p-[2.5px]"
                 style={{
-                  background: "linear-gradient(135deg, var(--brand), #FFCB05, #3B82F6)",
+                  background: "linear-gradient(135deg, var(--brand), var(--accent-text), #3B82F6)",
                   boxShadow: "0 0 32px rgba(37,99,235,0.45)",
                 }}
               >
@@ -513,48 +519,17 @@ export default function PerfilPage() {
             )}
           </div>
 
-          {/* ── PILL TABS ── */}
-          <div
-            className="flex items-center gap-1 mt-8 overflow-x-auto p-1 rounded-2xl"
-            style={{ background: "var(--bg-elevated)" }}
-          >
-            {TABS.map((t) => {
-              const active = tab === t.key;
-              const count  = tabCounts[t.key];
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => setTab(t.key)}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all"
-                  style={
-                    active
-                      ? {
-                          color: "#ffffff",
-                          background: "linear-gradient(135deg, var(--brand), #3B82F6)",
-                          boxShadow: "0 2px 14px rgba(37,99,235,0.45)",
-                        }
-                      : {
-                          color: "var(--text-muted)",
-                          background: "transparent",
-                        }
-                  }
-                >
-                  {t.label}
-                  {count !== undefined && count > 0 && (
-                    <span
-                      className="text-xs font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
-                      style={
-                        active
-                          ? { background: "rgba(255,255,255,0.25)", color: "#ffffff" }
-                          : { background: "var(--border)", color: "var(--text-muted)" }
-                      }
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          {/* Section heading — navigation now lives in the profile ▾ menu (no tabs). */}
+          <div className="flex items-center justify-between gap-3 mt-8">
+            <h2 className="text-xl font-black" style={{ color: "var(--text-primary)" }}>
+              {TABS.find((t) => t.key === tab)?.label ?? "Mi actividad"}
+              {tabCounts[tab] !== undefined && tabCounts[tab]! > 0 && (
+                <span className="ml-2 text-xs font-black px-2 py-0.5 rounded-full align-middle" style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}>{tabCounts[tab]}</span>
+              )}
+            </h2>
+            <Link href="/compras" className="shrink-0 text-sm font-semibold px-3.5 py-2 rounded-full" style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+              Mis compras →
+            </Link>
           </div>
         </div>
       </div>

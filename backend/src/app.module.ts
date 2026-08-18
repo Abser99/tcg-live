@@ -1,5 +1,5 @@
 import { join } from 'path';
-import { Module } from '@nestjs/common';
+import { Module, Logger } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CacheModule } from '@nestjs/cache-manager';
@@ -44,10 +44,12 @@ import { AuctionItem } from './auctions/entities/auction-item.entity';
 import { Bid } from './auctions/entities/bid.entity';
 import { SellerApplication } from './seller-applications/seller-application.entity';
 import { MaxBid } from './auctions/entities/max-bid.entity';
+import { LiveSanction } from './auctions/entities/live-sanction.entity';
 import { Order } from './orders/entities/order.entity';
 import { OrderItem } from './orders/entities/order-item.entity';
 import { PaymentMethod } from './payment-methods/entities/payment-method.entity';
 import { PushToken } from './notifications/entities/push-token.entity';
+import { Notification } from './notifications/entities/notification.entity';
 
 @Module({
   imports: [
@@ -60,6 +62,16 @@ import { PushToken } from './notifications/entities/push-token.entity';
       inject: [ConfigService],
       useFactory: (config: ConfigService): any => {
         const dbUrl = config.get<string>('database.url');
+        const autoSchema = process.env.NODE_ENV !== 'production';
+        if (autoSchema) {
+          const target = dbUrl
+            ? dbUrl.replace(/\/\/[^@]*@/, '//***@') // keep credentials out of the log
+            : `${config.get('database.host')}:${config.get('database.port')}/${config.get('database.name')}`;
+          new Logger('TypeORM').warn(
+            `synchronize=true (NODE_ENV=${process.env.NODE_ENV ?? 'unset'}) — TypeORM may ALTER the ` +
+            `schema of ${target}. Set NODE_ENV=production to use migrations instead.`,
+          );
+        }
         return {
           type: 'postgres',
           ...(dbUrl
@@ -71,8 +83,11 @@ import { PushToken } from './notifications/entities/push-token.entity';
                 username: config.get<string>('database.user'),
                 password: config.get<string>('database.password'),
               }),
-          entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, Order, OrderItem, PaymentMethod, PushToken, Dispute, WatchlistItem, Message, FollowedSeller, AuctionTemplate, Listing, ListingOffer, SellerDocument],
-          synchronize: process.env.NODE_ENV !== 'production',
+          entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, LiveSanction, Order, OrderItem, PaymentMethod, PushToken, Notification, Dispute, WatchlistItem, Message, FollowedSeller, AuctionTemplate, Listing, ListingOffer, SellerDocument],
+          // Schema is auto-applied everywhere except production, where migrations own it.
+          // Announce it loudly: pointing a non-production build at a real database would
+          // let TypeORM alter that schema, and the damage is silent otherwise.
+          synchronize: autoSchema,
           migrations: [join(__dirname, '..', 'migrations', '*.js')],
           migrationsRun: process.env.NODE_ENV === 'production',
           ssl: dbUrl ? { rejectUnauthorized: false } : false,

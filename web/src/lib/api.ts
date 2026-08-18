@@ -19,6 +19,37 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Normalize backend field names → frontend aliases.
+// The API returns `currentPrice`/`startingPrice` (cents), but the UI reads
+// `currentBid`/`startingBid`. Walk the response and add the aliases so every
+// screen (home, list, detail, seller, shop, profile) shows the real amounts.
+function normalizeBidFields(node: unknown, depth = 0): unknown {
+  if (depth > 6 || node == null || typeof node !== "object") return node;
+  if (Array.isArray(node)) {
+    node.forEach((n) => normalizeBidFields(n, depth + 1));
+    return node;
+  }
+  const obj = node as Record<string, unknown>;
+  // Item-level alias
+  if (typeof obj.currentPrice === "number" && obj.currentBid == null) obj.currentBid = obj.currentPrice;
+  if (typeof obj.startingPrice === "number" && obj.startingBid == null) obj.startingBid = obj.startingPrice;
+  // Recurse first so nested items are aliased before we derive auction-level values
+  for (const key of Object.keys(obj)) normalizeBidFields(obj[key], depth + 1);
+  // Auction-level: derive from the active item (fallback to the first item)
+  if (Array.isArray(obj.items) && obj.items.length > 0) {
+    const items = obj.items as Array<Record<string, unknown>>;
+    const active = items.find((i) => i.status === "active") ?? items[0];
+    if (obj.currentBid == null && typeof active?.currentBid === "number") obj.currentBid = active.currentBid;
+    if (obj.startingBid == null && typeof items[0]?.startingBid === "number") obj.startingBid = items[0].startingBid;
+  }
+  return node;
+}
+
+api.interceptors.response.use((res) => {
+  if (res?.data) normalizeBidFields(res.data);
+  return res;
+});
+
 // Auto-logout on 401
 api.interceptors.response.use(
   (res) => res,
@@ -40,11 +71,11 @@ api.interceptors.response.use(
 
 // ─── Auth ──────────────────────────────────────────────────────
 export const authApi = {
-  login: (email: string, password: string) =>
-    api.post<{ token: string; user: ApiUser }>("/auth/login", { email, password }),
+  login: (email: string, password: string, rememberMe?: boolean) =>
+    api.post<{ token: string; user: ApiUser }>("/auth/login", { email, password, rememberMe }),
 
-  register: (username: string, email: string, password: string) =>
-    api.post<{ token: string; user: ApiUser }>("/auth/register", { username, email, password }),
+  register: (username: string, email: string, password: string, over18: boolean) =>
+    api.post<{ token: string; user: ApiUser }>("/auth/register", { username, email, password, over18 }),
 
   me: () => api.get<ApiUser>("/auth/me"),
 
@@ -76,7 +107,7 @@ export const auctionsApi = {
 
   start:   (id: string, durationMs?: number) => api.patch(`/auctions/${id}/start`, durationMs ? { durationMs } : {}),
   end:     (id: string) => api.patch(`/auctions/${id}/end`),
-  addItem: (id: string, dto: { cardName: string; startingPrice: number; imageUrls?: string[]; durationSeconds?: number; category?: string }) =>
+  addItem: (id: string, dto: { cardName?: string; startingPrice: number; imageUrls?: string[]; durationSeconds?: number; category?: string }) =>
     api.post<ApiAuction>(`/auctions/${id}/items`, dto),
   maxBid: (itemId: string, maxAmount: number) =>
     api.post(`/auctions/items/${itemId}/max-bid`, { maxAmount }),
@@ -84,8 +115,26 @@ export const auctionsApi = {
     api.delete(`/auctions/items/${itemId}/max-bid`),
   closeItem: (itemId: string) =>
     api.patch(`/auctions/items/${itemId}/close`),
-  update: (id: string, dto: { title?: string; game?: string }) =>
-    api.patch<ApiAuction>(`/auctions/${id}`, dto),
+  update: (id: string, dto: {
+    title?: string;
+    game?: string;
+    reactionEmojis?: string[];
+    bidMode?: BidMode;
+    dutchFloorCents?: number;
+  }) => api.patch<ApiAuction>(`/auctions/${id}`, dto),
+  setModerator: (id: string, userId: string, action: "add" | "remove") =>
+    api.patch<ApiAuction>(`/auctions/${id}/moderators`, { userId, action }),
+  createSanction: (id: string, dto: { targetUserId: string; targetUsername: string; kind: "mute" | "ban"; hours?: number }) =>
+    api.post<ApiSanction>(`/auctions/${id}/sanctions`, dto),
+  approveSanction: (id: string, sid: string) => api.patch<ApiSanction>(`/auctions/${id}/sanctions/${sid}/approve`),
+  liftSanction: (id: string, sid: string) => api.delete(`/auctions/${id}/sanctions/${sid}`),
+  pauseLive:  (id: string) => api.patch<ApiAuction>(`/auctions/${id}/pause`),
+  resumeLive: (id: string) => api.patch<ApiAuction>(`/auctions/${id}/resume`),
+  setItemTimer: (itemId: string, seconds: number) =>
+    api.patch<ApiAuctionItem>(`/auctions/items/${itemId}/timer`, { seconds }),
+  openItem:    (itemId: string) => api.post<ApiAuctionItem>(`/auctions/items/${itemId}/open`),
+  dutchStart:  (itemId: string) => api.post<ApiAuctionItem>(`/auctions/items/${itemId}/dutch-start`),
+  dutchAccept: (itemId: string) => api.post<{ item: ApiAuctionItem; price: number }>(`/auctions/items/${itemId}/dutch-accept`),
   cancel:  (id: string) => api.patch<ApiAuction>(`/auctions/${id}/cancel`),
   archive: (id: string) => api.patch<ApiAuction>(`/auctions/${id}/archive`),
 };
@@ -110,6 +159,22 @@ export const ordersApi = {
   markReceived: (id: string) => api.patch(`/orders/${id}/received`),
   rateOrder: (id: string, rating: number, note?: string) =>
     api.post<ApiOrder>(`/orders/${id}/rate`, { rating, note }),
+};
+
+// ─── Payment methods (wallet / saved cards) ────────────────────
+export const paymentMethodsApi = {
+  my: () => api.get<ApiPaymentMethod[]>("/payment-methods/my"),
+  create: (dto: { type: "card" | "oxxo" | "spei"; cardNumber?: string; expiry?: string; cardholderName?: string }) =>
+    api.post<ApiPaymentMethod>("/payment-methods", dto),
+  setDefault: (id: string) => api.patch(`/payment-methods/${id}/default`),
+  remove: (id: string) => api.delete(`/payment-methods/${id}`),
+};
+
+// ─── Notifications (in-app feed / bell) ────────────────────────
+export const notificationsApi = {
+  list: () => api.get<{ items: ApiNotification[]; unread: number }>("/notifications"),
+  markRead: (id: string) => api.patch(`/notifications/${id}/read`),
+  markAllRead: () => api.patch("/notifications/read-all"),
 };
 
 // ─── Payments ──────────────────────────────────────────────────
@@ -172,7 +237,19 @@ export const listingsApi = {
     condition?: string;
     description?: string;
     imageUrls?: string[];
+    discountPercent?: number;
+    promoted?: boolean;
   }) => api.post<ApiListing>("/listings", dto),
+  update: (id: string, dto: Partial<{
+    title: string;
+    price: number;
+    description: string;
+    discountPercent: number;
+    promoted: boolean;
+    game: string;
+    condition: string;
+    imageUrls: string[];
+  }>) => api.patch<ApiListing>(`/listings/${id}`, dto),
   markSold: (id: string) => api.patch(`/listings/${id}/sold`),
   cancel:   (id: string) => api.delete(`/listings/${id}`),
   buy:      (id: string) => api.post<ApiOrder>(`/listings/${id}/buy`),
@@ -296,10 +373,12 @@ export interface ApiAuction {
   sellerId?: string;
   status: "live" | "ending" | "upcoming" | "scheduled" | "cancelled" | "ended";
   isStream?: boolean;
+  reactionEmojis?: string[] | null;
   title?: string;
   name?: string;
   set?: string;
   game?: string;
+  categories?: string[] | null;
   condition?: string;
   startingBid?: number;
   currentBid?: number;
@@ -311,7 +390,30 @@ export interface ApiAuction {
   description?: string;
   totalBids?: number;
   endTime?: string;
+  /** When a scheduled stream is set to go live (ISO). Present on status "scheduled". */
+  scheduledAt?: string | null;
   items?: ApiAuctionItem[];
+  /** Set while the seller is away from the live (bidding frozen). */
+  pausedAt?: string | null;
+  moderatorIds?: string[] | null;
+  sanctions?: ApiSanction[];      // active mutes/bans
+  pendingBans?: ApiSanction[];    // permanent bans awaiting seller approval
+  /** Bidding format the seller can switch live. */
+  bidMode?: BidMode;
+  dutchFloorCents?: number;
+}
+
+/** normal = clock extends on late bids · sudden_death = fixed clock · dutch = descending price */
+export type BidMode = "normal" | "sudden_death" | "dutch";
+
+export interface ApiSanction {
+  id: string;
+  targetUserId: string;
+  targetUsername: string;
+  kind: "mute" | "ban";
+  expiresAt: string | null; // null = permanent
+  approved: boolean;
+  createdByUsername: string;
 }
 
 export interface ApiAuctionItem {
@@ -324,9 +426,25 @@ export interface ApiAuctionItem {
   imageUrls?: string[];
   category?: string;
   status?: string;
+  position?: number;
   closesAt?: string;
   winnerId?: string;
+  binPrice?: number; // "buy it now" price, MXN cents
+  dutchStartedAt?: string | null; // when the descending clock started (dutch mode)
+  updatedAt?: string;             // last change — used to time the winner splash
+  winner?: { id: string; username: string; avatarUrl?: string | null }; // who is currently winning
+  winnerHasMaxBid?: boolean;                 // the lead is being held by an auto-bid
+  challenger?: { username: string; avatarUrl?: string | null }; // most recent bidder who isn't the winner (pushing the leader)
+  lastBidder?: { username: string; avatarUrl?: string | null }; // who placed the most recent HUMAN bid (ignores proxy auto-bids)
   bids?: ApiBid[];
+}
+
+/** Bid step scales with the price — mirrors the server so the UI never disagrees. */
+export function bidIncrement(currentCents: number): number {
+  if (currentCents >= 500_000) return 20_000; // $5,000+  → $200
+  if (currentCents >= 100_000) return 10_000; // $1,000+  → $100
+  if (currentCents >= 40_000)  return 5_000;  // $400+    → $50
+  return 2_000;                               // under $400 → $20
 }
 
 export interface ApiBid {
@@ -406,6 +524,26 @@ export interface ApiDispute {
   seller?: { username: string; email: string } | null;
 }
 
+export interface ApiPaymentMethod {
+  id: string;
+  type: "card" | "oxxo" | "spei";
+  nickname?: string;
+  last4?: string;
+  brand?: string;
+  expiry?: string;
+  isDefault?: boolean;
+}
+
+export interface ApiNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  link: string | null;
+  read: boolean;
+  createdAt: string;
+}
+
 export interface MessageThread {
   id: string;
   orderId: string;
@@ -449,6 +587,8 @@ export interface ApiListing {
   createdAt: string;
   seller?: { id: string; username: string; isVerified?: boolean };
   acceptsOffers?: boolean;
+  discountPercent?: number;
+  promoted?: boolean;
 }
 
 export interface SellerApplication {
@@ -475,11 +615,22 @@ export interface SellerDocumentRecord {
   user?: { id: string; username: string; email: string };
 }
 
+/** Following a seller (server-side): powers the ♥ and the "seller is live" push. */
+export const followsApi = {
+  mine:     () => api.get<{ sellerId: string; username: string }[]>("/follows/mine"),
+  follow:   (sellerId: string) => api.post<{ following: boolean }>(`/follows/${sellerId}`),
+  unfollow: (sellerId: string) => api.delete<{ following: boolean }>(`/follows/${sellerId}`),
+  status:   (sellerId: string) => api.get<{ following: boolean }>(`/follows/${sellerId}/status`),
+};
+
 export interface CreateAuctionPayload {
-  title: string;
+  /** Ignored by the server — it assigns `puja #0001-MM-YYYY`. */
+  title?: string;
   game?: string;
+  categories?: string[];
   description?: string;
   isStream?: boolean;
+  reactionEmojis?: string[];
   items?: { cardName: string; cardSet?: string; condition?: string; startingPrice: number; binPrice?: number; imageUrls?: string[] }[];
   scheduledAt?: string;
 }

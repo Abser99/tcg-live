@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
-import { IsArray, IsEnum, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
+import { IsArray, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
 import { AuctionsService } from './auctions.service';
 import { CreateAuctionDto } from './dto/create-auction.dto';
 import { PlaceBidDto } from './dto/place-bid.dto';
@@ -11,17 +11,39 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { User, UserRole } from '../users/user.entity';
 import { LivekitService } from '../livekit/livekit.service';
-import { AuctionGame } from './entities/auction.entity';
+import { AuctionGame, BidMode } from './entities/auction.entity';
+import { SanctionKind } from './entities/live-sanction.entity';
+
+class ModeratorDto {
+  @IsString() userId: string;
+  @IsIn(['add', 'remove']) action: 'add' | 'remove';
+}
+
+class SanctionDto {
+  @IsString() targetUserId: string;
+  @IsString() targetUsername: string;
+  @IsEnum(SanctionKind) kind: SanctionKind;
+  @IsInt() @Min(1) @Max(24) @IsOptional() hours?: number; // omit for a permanent ban
+}
 
 class UpdateAuctionDto {
   @IsString() @IsOptional() @MaxLength(120) title?: string;
   @IsEnum(AuctionGame) @IsOptional() game?: AuctionGame;
+  @IsArray() @IsString({ each: true }) @IsOptional() reactionEmojis?: string[];
+  @IsEnum(BidMode) @IsOptional() bidMode?: BidMode;
+  @IsInt() @Min(0) @Max(100_000_000) @IsOptional() dutchFloorCents?: number;
+}
+
+class SetTimerDto {
+  @IsInt() @Min(10) @Max(600) seconds: number; // 10s – 10 min
 }
 
 class AddItemDto {
+  /** Ignored — the server assigns the lot number (`Puja0001-08-2026`). */
   @IsString()
   @MaxLength(120)
-  cardName: string;
+  @IsOptional()
+  cardName?: string;
 
   @IsInt()
   @Min(1)
@@ -35,9 +57,9 @@ class AddItemDto {
 
   @IsInt()
   @Min(10)
-  @Max(3600)
+  @Max(600)
   @IsOptional()
-  durationSeconds?: number;
+  durationSeconds?: number; // 10s – 10 min (matches the seller's picker)
 
   @IsString()
   @MaxLength(40)
@@ -124,6 +146,10 @@ export class AuctionsController {
   @UseGuards(AuthGuard('jwt'))
   async getLivekitToken(@Param('id') id: string, @CurrentUser() user: User) {
     const auction = await this.auctionsService.findOne(id);
+    // Banned viewers can't join the room at all
+    if (await this.auctionsService.hasActiveBan(id, user.id)) {
+      throw new ForbiddenException('Fuiste expulsado de este live');
+    }
     const canPublish = auction.sellerId === user.id;
     const token = await this.livekitService.generateToken(user.id, user.username, id, canPublish);
     return { token, wsUrl: this.livekitService.wsUrl };
@@ -190,6 +216,84 @@ export class AuctionsController {
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   closeItem(@Param('itemId') itemId: string, @CurrentUser() user: User) {
     return this.auctionsService.closeItem(itemId, user.id);
+  }
+
+  // ── Moderation ──
+
+  /** Seller designates or removes a moderator. */
+  @Patch(':id/moderators')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  setModerator(@Param('id') id: string, @CurrentUser() user: User, @Body() dto: ModeratorDto) {
+    return this.auctionsService.setModerator(id, user.id, dto.userId, dto.action === 'add');
+  }
+
+  /** A moderator (or the seller) mutes/bans a viewer. */
+  @Post(':id/sanctions')
+  @UseGuards(AuthGuard('jwt'))
+  createSanction(@Param('id') id: string, @CurrentUser() user: User, @Body() dto: SanctionDto) {
+    return this.auctionsService.createSanction(id, { id: user.id, username: user.username }, dto);
+  }
+
+  /** Seller approves a pending permanent ban. */
+  @Patch(':id/sanctions/:sid/approve')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  approveSanction(@Param('id') id: string, @Param('sid') sid: string, @CurrentUser() user: User) {
+    return this.auctionsService.approveSanction(id, user.id, sid);
+  }
+
+  /** Seller/mod lifts (or rejects) a sanction. */
+  @Delete(':id/sanctions/:sid')
+  @UseGuards(AuthGuard('jwt'))
+  liftSanction(@Param('id') id: string, @Param('sid') sid: string, @CurrentUser() user: User) {
+    return this.auctionsService.liftSanction(id, user.id, sid);
+  }
+
+  /** Seller left the live — freeze it and start the 10-minute grace period. */
+  @Patch(':id/pause')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  pauseLive(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.auctionsService.pauseLive(id, user.id);
+  }
+
+  /** Seller came back — resume the live. */
+  @Patch(':id/resume')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  resumeLive(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.auctionsService.resumeLive(id, user.id);
+  }
+
+  /** Seller sets the countdown (seconds) for the active card. */
+  @Patch('items/:itemId/timer')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  setItemTimer(
+    @Param('itemId') itemId: string,
+    @Body() dto: SetTimerDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.auctionsService.setItemTimer(itemId, user.id, dto.seconds);
+  }
+
+  /** Seller opens a queued lot for bidding (PENDING → ACTIVE with a fresh clock). */
+  @Post('items/:itemId/open')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  openItem(@Param('itemId') itemId: string, @CurrentUser() user: User) {
+    return this.auctionsService.activateItem(itemId, user.id);
+  }
+
+  /** Dutch mode: seller starts (or restarts) the descending clock for this item. */
+  @Post('items/:itemId/dutch-start')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  startDutch(@Param('itemId') itemId: string, @CurrentUser() user: User) {
+    return this.auctionsService.startDutch(itemId, user.id);
+  }
+
+  /** Dutch mode: buyer accepts the current descending price — first one wins. */
+  @Post('items/:itemId/dutch-accept')
+  @UseGuards(AuthGuard('jwt'))
+  @Throttle({ default: { limit: 10, ttl: 10000 } })
+  acceptDutch(@Param('itemId') itemId: string, @CurrentUser() user: User) {
+    return this.auctionsService.acceptDutch(itemId, user.id);
   }
 
   @Post('items/:itemId/max-bid')

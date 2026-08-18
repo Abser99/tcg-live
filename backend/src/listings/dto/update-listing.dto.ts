@@ -1,9 +1,9 @@
-import { IsArray, IsBoolean, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
-export class CreateListingDto {
-  @IsString() @IsNotEmpty() title: string;
+export class UpdateListingDto {
+  @IsString() @IsOptional() title?: string;
   @IsString() @IsOptional() description?: string;
-  @IsNumber() @Min(100) price: number; // MXN cents, min $1
+  @IsNumber() @Min(100) @IsOptional() price?: number;
   @IsInt() @Min(0) @Max(95) @IsOptional() discountPercent?: number;
   @IsBoolean() @IsOptional() promoted?: boolean;
   @IsString() @IsOptional() game?: string;

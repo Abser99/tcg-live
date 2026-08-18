@@ -15,8 +15,8 @@ import posthog from "posthog-js";
 interface AuthState {
   user: ApiUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (username: string, email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  register: (username: string, email: string, password: string, over18: boolean) => Promise<void>;
   logout: () => void;
 }
 
@@ -36,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const normalized = normalize(u);
     localStorage.setItem("tcg_token", t);
     localStorage.setItem("tcg_user", JSON.stringify(normalized));
+    localStorage.setItem("tcg_returning", "1"); // remembers that a session existed (survives logout)
     setUser(normalized);
     try {
       posthog.identify(normalized.id, {
@@ -92,14 +93,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [logout]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const { data } = await authApi.login(email, password);
+  const login = useCallback(async (email: string, password: string, rememberMe?: boolean) => {
+    const { data } = await authApi.login(email, password, rememberMe);
     persist(data.token, data.user);
   }, []);
 
   const register = useCallback(
-    async (username: string, email: string, password: string) => {
-      const { data } = await authApi.register(username, email, password);
+    async (username: string, email: string, password: string, over18: boolean) => {
+      const { data } = await authApi.register(username, email, password, over18);
       persist(data.token, data.user);
     },
     []

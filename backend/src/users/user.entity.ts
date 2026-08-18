@@ -53,6 +53,10 @@ export class User {
   @Column({ default: false })
   isVerified: boolean; // set to true when seller documents are approved
 
+  /** When the user attested at sign-up that they are 18 or older (age gate). */
+  @Column({ type: 'timestamptz', nullable: true })
+  ageConfirmedAt: Date | null;
+
   @Column({ default: false })
   isSuspended: boolean;
 

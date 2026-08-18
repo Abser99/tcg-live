@@ -8,6 +8,13 @@ import { FollowsService } from './follows.service';
 export class FollowsController {
   constructor(private readonly followsService: FollowsService) {}
 
+  /** Sellers the current user follows. Declared before the :sellerId routes so
+      "mine" isn't captured as a seller id. */
+  @Get('mine')
+  async mine(@CurrentUser('id') userId: string) {
+    return this.followsService.myFollows(userId);
+  }
+
   @Post(':sellerId')
   async follow(@Param('sellerId') sellerId: string, @CurrentUser('id') userId: string) {
     await this.followsService.follow(userId, sellerId);

@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { CreateListingDto } from './dto/create-listing.dto';
+import { UpdateListingDto } from './dto/update-listing.dto';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { ListingsService } from './listings.service';
 
@@ -40,6 +41,12 @@ export class ListingsController {
   @UseGuards(AuthGuard('jwt'))
   markSold(@Param('id') id: string, @Request() req: any) {
     return this.service.markSold(id, req.user.id);
+  }
+
+  @Patch(':id')
+  @UseGuards(AuthGuard('jwt'))
+  update(@Param('id') id: string, @Body() dto: UpdateListingDto, @Request() req: any) {
+    return this.service.update(id, req.user.id, dto);
   }
 
   @Post(':id/buy')

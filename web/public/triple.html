@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Simulación · Vendedor + 2 usuarios</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #0b0b0f; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  }
+  header { padding: 7px 14px; border-bottom: 1px solid rgba(255,255,255,.12); }
+  header h1 { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+  header p  { margin: 2px 0 0; font-size: 10px; color: rgba(255,255,255,.5); }
+  .stage { flex: 1; display: flex; gap: 12px; justify-content: center; padding: 10px; min-height: 0; }
+  .phone { display: flex; flex-direction: column; min-height: 0; }
+  .label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    padding: 4px 9px; border-radius: 999px; margin: 0 auto 6px; width: fit-content; white-space: nowrap;
+  }
+  .seller { background: rgba(255,203,5,.16); border: 1px solid #FFCB05; color: #FFCB05; }
+  .u1     { background: rgba(96,165,250,.16); border: 1px solid #60a5fa; color: #93c5fd; }
+  .u2     { background: rgba(52,211,153,.16); border: 1px solid #34d399; color: #6ee7b7; }
+  .frame {
+    width: 390px; flex: 1; min-height: 0;   /* real mobile width (iPhone-ish) */
+    border-radius: 24px; overflow: hidden; background: #000;
+    border: 3px solid rgba(255,255,255,.16);
+    box-shadow: 0 14px 44px rgba(0,0,0,.6);
+  }
+  iframe { width: 100%; height: 100%; border: 0; display: block; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>SIMULACIÓN DE SUBASTA · 3 SESIONES</h1>
+    <p>Orígenes distintos (3000 / 3100 / 3101) → cada ventana mantiene su propia sesión</p>
+  </header>
+  <div class="stage">
+    <div class="phone">
+      <div class="label seller">🧑‍💼 Vendedor · tcg_master_mx</div>
+      <div class="frame"><iframe id="sellerFrame" title="Vendedor"></iframe></div>
+    </div>
+    <div class="phone">
+      <div class="label u1">🛒 Cliente 1 · ana_collector</div>
+      <div class="frame"><iframe id="u1Frame" title="Cliente 1"></iframe></div>
+    </div>
+    <div class="phone">
+      <div class="label u2">🛒 Cliente 2 · luis_pkmn</div>
+      <div class="frame"><iframe id="u2Frame" title="Cliente 2"></iframe></div>
+    </div>
+  </div>
+<script>
+  const params = new URLSearchParams(location.search);
+  const auctionId = params.get('a') || 'fe5bf0e3-1de1-414a-8ba1-f24e8420e95d';
+  const path = '/auctions/' + auctionId;
+  document.getElementById('sellerFrame').src = 'http://localhost:3000' + path; // seller session (this origin)
+  document.getElementById('u1Frame').src     = 'http://localhost:3100' + path; // ana (proxy)
+  document.getElementById('u2Frame').src     = 'http://localhost:3101' + path; // luis (proxy)
+</script>
+</body>
+</html>

@@ -1,55 +1,76 @@
 @import "tailwindcss";
 
 /* ── Design tokens — dark mode default ── */
-/* Palette: electric Pokémon blue + Pikachu gold, deep blue-black base (no more purple/black) */
+/* Palette adopted from SugarCo TCG: deep purple-black base with a violet accent.
+   White is reserved for contrast, never as a surface. */
 :root {
-  --bg-base:     #0A0E1A;
-  --bg-surface:  #111827;
-  --bg-elevated: #1B2438;
-  --bg-input:    #151D30;
-  --bg-hover:    rgba(255,255,255,0.04);
+  --bg-base:     #0E0812;
+  --bg-surface:  #1A1023;
+  --bg-elevated: #241634;
+  --bg-input:    #150E1D;
+  --bg-hover:    rgba(168,85,247,0.10);
 
-  --text-primary:   #ffffff;
-  --text-secondary: #a3adc2;
-  --text-muted:     #7B87A3;
+  --text-primary:   #F5F1FA;
+  --text-secondary: #B3A2CC;
+  --text-muted:     #8E7BA8;
 
-  --border:        rgba(255,255,255,0.08);
-  --border-subtle: rgba(255,255,255,0.04);
-  --border-brand:  rgba(37,99,235,0.4);
+  --border:        #33264A;
+  --border-subtle: rgba(51,38,74,0.55);
+  --border-brand:  rgba(168,85,247,0.45);
 
-  --nav-bg: rgba(10,14,26,0.90);
-  --card-shadow: 0 4px 24px rgba(0,0,0,0.45);
+  --nav-bg: rgba(14,8,18,0.90);
+  --card-shadow: 0 4px 24px rgba(0,0,0,0.50);
 
-  --brand:       #2563EB;
-  --brand-light: #FFCB05;
-  --brand-dark:  #1D4ED8;
-  /* Gold as TEXT needs a darker variant in light mode to pass WCAG AA (4.5:1) —
-     --brand-light stays as-is for decorative/icon/glow use on dark surfaces. */
-  --accent-text: #FFCB05;
-  --error-text:  #f87171;
+  /* --brand is the accent: tints, borders, dots, glows. */
+  --brand:       #A855F7;
+  /* --brand-light is the primary CTA fill, i.e. what --brand-ink sits on. One step
+     darker than the accent so white text clears WCAG AA (5.4:1 vs 4.0:1 on #A855F7). */
+  --brand-light: #9333EA;
+  --brand-dark:  #7E22CE;
+  /* Text that sits ON a --brand-light fill. Replaces the old dark-on-gold ink. */
+  --brand-ink:   #FFFFFF;
+
+  --accent-text: #D8B4FE;
+  --error-text:  #F87171;
+  --error-soft:  #3A1620;
+  --success:     #34D399;
+  --success-soft:#12302A;
+  --warn:        #FBBF24;
+  --warn-soft:   #3A2E10;
 }
 
 /* ── Light mode overrides ── */
+/* SugarCo light: clean commerce — near-white surfaces, grey borders, blue accent. */
 [data-theme="light"] {
-  --bg-base:     #F0F5FF;
+  --bg-base:     #F7F8FA;
   --bg-surface:  #FFFFFF;
-  --bg-elevated: #E3EDFF;
-  --bg-input:    #EAF1FF;
+  --bg-elevated: #F1F3F7;
+  --bg-input:    #F7F8FA;
   --bg-hover:    rgba(37,99,235,0.06);
 
-  --text-primary:   #0F1E42;
-  --text-secondary: #4B5A80;
-  --text-muted:     #5A6684;
+  --text-primary:   #111827;
+  --text-secondary: #4B5563;
+  --text-muted:     #6B7280;
 
-  --border:        rgba(37,99,235,0.16);
-  --border-subtle: rgba(37,99,235,0.08);
+  --border:        #E5E7EB;
+  --border-subtle: #EFF1F4;
   --border-brand:  rgba(37,99,235,0.35);
 
-  --nav-bg: rgba(240,245,255,0.92);
-  --card-shadow: 0 4px 24px rgba(37,99,235,0.10);
+  --nav-bg: rgba(255,255,255,0.92);
+  --card-shadow: 0 1px 3px rgba(17,24,39,0.08), 0 8px 24px rgba(17,24,39,0.06);
 
-  --accent-text: #8A6200;
-  --error-text:  #C4302B;
+  --brand:       #2563EB;
+  --brand-light: #2563EB;
+  --brand-dark:  #1D4ED8;
+  --brand-ink:   #FFFFFF;
+
+  --accent-text: #1D4ED8;
+  --error-text:  #DC2626;
+  --error-soft:  #FEF2F2;
+  --success:     #059669;
+  --success-soft:#ECFDF5;
+  --warn:        #B45309;
+  --warn-soft:   #FFFBEB;
 }
 
 /* ── Tailwind custom tokens ── */
@@ -72,7 +93,7 @@ body {
 
 /* ── Focus ring system — WCAG 2.1 AA ── */
 :focus-visible {
-  outline: 2px solid #2563EB;
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -81,12 +102,12 @@ body {
 /* ── Branded scrollbar ── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(37,99,235,0.25) transparent;
+  scrollbar-color: color-mix(in srgb, var(--brand) 35%, transparent) transparent;
 }
 *::-webkit-scrollbar       { width: 4px; height: 4px; }
 *::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: rgba(37,99,235,0.25); border-radius: 99px; }
-*::-webkit-scrollbar-thumb:hover { background: rgba(37,99,235,0.45); }
+*::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--brand) 35%, transparent); border-radius: 99px; }
+*::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--brand) 55%, transparent); }
 
 /* ── Animations ── */
 @keyframes float {
@@ -94,11 +115,15 @@ body {
   50%     { transform: translateY(-14px) rotate(1deg); }
 }
 @keyframes pulse-glow {
-  0%,100% { box-shadow: 0 0 20px rgba(37,99,235,0.4); }
-  50%     { box-shadow: 0 0 40px rgba(37,99,235,0.8); }
+  0%,100% { box-shadow: 0 0 20px color-mix(in srgb, var(--brand) 45%, transparent); }
+  50%     { box-shadow: 0 0 40px color-mix(in srgb, var(--brand) 80%, transparent); }
 }
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes reveal-in {
+  from { opacity: 0; transform: translateY(20px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes slide-in {
@@ -106,9 +131,9 @@ body {
   to   { opacity: 1; transform: translateX(0); }
 }
 @keyframes bid-flash {
-  0%   { background-color: rgba(37,99,235,0.0); }
-  30%  { background-color: rgba(37,99,235,0.2); }
-  100% { background-color: rgba(37,99,235,0.0); }
+  0%   { background-color: transparent; }
+  30%  { background-color: color-mix(in srgb, var(--brand) 22%, transparent); }
+  100% { background-color: transparent; }
 }
 @keyframes shimmer {
   0%   { background-position: -400px 0; }
@@ -119,9 +144,29 @@ body {
   to   { transform: rotate(360deg); }
 }
 
+/* ── Live "red spotlight" ring (seller avatar + peek icons) ── */
+@keyframes live-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244,63,94,0.55), 0 0 8px 1px rgba(244,63,94,0.5); }
+  50%      { box-shadow: 0 0 0 4px rgba(244,63,94,0), 0 0 12px 3px rgba(244,63,94,0.75); }
+}
+.live-ring { animation: live-glow 1.8s ease-out infinite; }
+
+/* ── Winner splash: bounce in, hold, fade + drift out (total 4s) ── */
+@keyframes winner-splash {
+  0%   { opacity: 0; transform: scale(0.6)   translateY(6px); }
+  12%  { opacity: 1; transform: scale(1.12)  translateY(0); }   /* overshoot */
+  20%  { transform: scale(0.97); }
+  28%  { transform: scale(1.03); }
+  36%  { transform: scale(1); }
+  82%  { opacity: 1; transform: scale(1)     translateY(0); }
+  100% { opacity: 0; transform: scale(0.96)  translateY(-10px); }
+}
+.winner-splash { animation: winner-splash 4s cubic-bezier(0.22,1,0.36,1) forwards; }
+
 .float       { animation: float 5s ease-in-out infinite; }
 .pulse-glow  { animation: pulse-glow 2s ease-in-out infinite; }
 .slide-up    { animation: slide-up 0.35s ease-out both; }
+.reveal      { animation: reveal-in 0.65s cubic-bezier(0.22,1,0.36,1) both; }
 .slide-in    { animation: slide-in 0.3s ease-out both; }
 .bid-flash   { animation: bid-flash 0.6s ease-out; }
 .spin-slow   { animation: spin-slow 8s linear infinite; }
@@ -133,17 +178,75 @@ body {
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
+/* ── Floating emoji reactions (rise + fade + blur, to the side) ── */
+@keyframes reaction-rise {
+  0%   { transform: translateY(0) scale(0.5); opacity: 0; filter: blur(0); }
+  12%  { transform: translateY(-12px) scale(1.05); opacity: 1; }
+  60%  { opacity: 0.9; filter: blur(0.5px); }
+  100% { transform: translateY(-190px) scale(1.15); opacity: 0; filter: blur(4px); }
+}
+.reaction-rise { animation: reaction-rise 2.3s cubic-bezier(0.22,0.61,0.36,1) forwards; }
+
+/* ── Live timer bar (decorative, premium) ── */
+@keyframes timerbar { from { transform: scaleX(1); } to { transform: scaleX(0.04); } }
+.timerbar { transform-origin: left; animation: timerbar 9s linear infinite; }
+
+/* ── Subtle bid tick ── */
+@keyframes bidtick {
+  0%, 72% { opacity: 0; transform: translateY(4px); }
+  80%     { opacity: 1; transform: translateY(0); }
+  100%    { opacity: 0; transform: translateY(-4px); }
+}
+.bidtick { animation: bidtick 9s ease-in-out infinite; }
+
 /* ── Gradient text ── */
+/* Brand → soft accent. Both ends come from tokens, so it re-tints with the theme
+   (violet on dark, blue on light) and needs no per-theme override. */
 .gradient-text {
-  background: linear-gradient(135deg, var(--brand-light) 0%, var(--brand) 100%);
+  background: linear-gradient(135deg, var(--brand) 0%, var(--accent-text) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
-[data-theme="light"] .gradient-text {
-  background: linear-gradient(135deg, #1D4ED8 0%, #2563EB 60%, #F5B700 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
+
+/* ── Ambient background (adopted from SugarCo TCG) ──
+   A slow brush-stroke wave with drifting silhouettes and colour-cycling TCG
+   energy glyphs. Purely decorative; all of it stops under reduced-motion. */
+@keyframes brush-wave {
+  0%, 100% { transform: translateX(0) translateY(0) scaleY(1); }
+  25% { transform: translateX(-18px) translateY(6px) scaleY(1.02); }
+  50% { transform: translateX(10px) translateY(-8px) scaleY(0.98); }
+  75% { transform: translateX(-8px) translateY(4px) scaleY(1.01); }
+}
+.brush-wave { animation: brush-wave 16s ease-in-out infinite; }
+
+@keyframes shadow-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+.shadow-blob {
+  animation-name: shadow-float;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes energy-color-cycle {
+  0%   { fill: #F87171; }
+  16%  { fill: #FBBF24; }
+  33%  { fill: #4ADE80; }
+  50%  { fill: #60A5FA; }
+  66%  { fill: #C084FC; }
+  83%  { fill: #38BDF8; }
+  100% { fill: #F87171; }
+}
+.energy-glyph {
+  animation-name: energy-color-cycle;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brush-wave, .shadow-blob, .energy-glyph { animation: none; }
 }
 
 /* ── Glass card ── */
@@ -169,8 +272,12 @@ body {
 
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
-  .float, .pulse-glow, .slide-up, .slide-in, .bid-flash, .spin-slow {
+  .float, .pulse-glow, .slide-up, .slide-in, .bid-flash, .spin-slow, .timerbar, .bidtick, .reveal, .reaction-rise {
     animation: none;
   }
+  /* When motion is reduced we drop the animation, but these start hidden — so pin
+     them to their visible end-state or they'd vanish entirely. */
+  .reveal, .slide-in, .slide-up { opacity: 1 !important; transform: none !important; }
+  .winner-splash { animation: none; opacity: 1 !important; }
   * { transition-duration: 0.01ms !important; }
 }

@@ -35,7 +35,7 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
-    const user = await this.usersService.create(dto.email, dto.username, dto.password);
+    const user = await this.usersService.create(dto.email, dto.username, dto.password, dto.over18);
 
     // auto-promote to admin if email matches ADMIN_EMAIL env var
     const adminEmail = this.configService.get<string>('ADMIN_EMAIL');
@@ -59,7 +59,10 @@ export class AuthService {
       throw new UnauthorizedException('Tu cuenta ha sido suspendida. Contacta a soporte en tcgsubastas@gmail.com');
     }
 
-    const token = this.jwtService.sign({ sub: user.id });
+    const token = this.jwtService.sign(
+      { sub: user.id },
+      dto.rememberMe ? { expiresIn: '30d' } : {},
+    );
     return { token, user: this.sanitize(user) };
   }
 
