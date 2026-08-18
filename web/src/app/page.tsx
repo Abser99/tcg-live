@@ -93,13 +93,14 @@ function IconArrow({ className = "" }: { className?: string }) {
 const features = [
   { Icon: IconBolt,   title: "Tiempo real, sin lag",   desc: "Streaming de menos de 500 ms. Cada puja y cada carta aparecen al instante, sin recargar." },
   { Icon: IconScan,   title: "Identificación con IA",  desc: "Apunta la cámara y la IA reconoce la carta y estima su valor de mercado automáticamente." },
-  { Icon: IconShield, title: "Pagos protegidos",       desc: "Cobros con Mercado Pago. El dinero se libera al vendedor solo cuando confirmas tu carta." },
+  { Icon: IconShield, title: "Pagos protegidos",       desc: "Cobras y pagas dentro de la app. El dinero se libera al vendedor solo cuando confirmas que recibiste tu carta." },
 ];
 
 const steps = [
-  { n: "01", title: "Explora en vivo",   desc: "Entra a una subasta transmitiendo y mira al vendedor mostrar cada carta en tiempo real." },
-  { n: "02", title: "Puja al instante",  desc: "Oferta con un toque. El precio sube en vivo y el anti-sniping evita robos de último segundo." },
-  { n: "03", title: "Recibe tu carta",   desc: "Pagas protegido con Mercado Pago y confirmas al recibir. El dinero se libera solo entonces." },
+  { n: "01", title: "Explora en vivo",     desc: "Entra a una subasta transmitiendo y mira al vendedor mostrar cada carta en tiempo real." },
+  { n: "02", title: "Puja al instante",    desc: "Oferta con un toque. El precio sube en vivo y el anti-sniping evita robos de último segundo." },
+  { n: "03", title: "Compra protegido",    desc: "Si ganas el lote, pagas dentro de la app y tu compra queda registrada con el vendedor." },
+  { n: "04", title: "Coordina el envío",   desc: "Acuerdas el envío directo con el streamer desde el chat de tu compra, y confirmas al recibir." },
 ];
 
 export default function Home() {
@@ -285,14 +286,19 @@ function HeroSampleCard() {
           style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)", border: "1px solid rgba(255,255,255,0.18)", color: "#fff" }}>Inicia en 2 h</div>
 
         <div className="absolute inset-x-0 bottom-0 p-5">
-          <p className="text-white font-medium tracking-tight">Charizard VMAX — Sellado</p>
-          <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.65)" }}>Champions Path · Sellado de fábrica</p>
+          <p className="text-white font-medium tracking-tight">Charizard VMAX</p>
+          <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.65)" }}>Pokémon · Carta individual</p>
           <div className="mt-3 flex items-end justify-between gap-2">
             <div>
               <p className="text-[10px] uppercase font-medium" style={{ letterSpacing: "0.12em", color: "rgba(255,255,255,0.55)" }}>Precio inicial</p>
-              <p className="text-2xl font-semibold text-white tabular-nums">$850 <span className="text-sm font-normal" style={{ color: "rgba(255,255,255,0.6)" }}>MXN</span></p>
+              <p className="text-2xl font-semibold text-white tabular-nums">$20 <span className="text-sm font-normal" style={{ color: "rgba(255,255,255,0.6)" }}>MXN</span></p>
             </div>
-            <span className="text-sm font-semibold px-4 py-2 rounded-full" style={{ background: "var(--brand-light)", color: INK }}>Recordarme</span>
+            <span className="text-sm font-semibold px-4 py-2 rounded-full flex items-center gap-1.5" style={{ background: "var(--brand-light)", color: INK }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8Z" />
+              </svg>
+              Seguir
+            </span>
           </div>
         </div>
       </div>
@@ -314,7 +320,7 @@ function HowItWorks() {
         {/* Horizontal stepper — connecting line leads the eye left → right */}
         <div className="relative">
           <div className="hidden md:block absolute top-[7px] left-0 right-0 h-px" style={{ background: "var(--border)" }} />
-          <div className="grid md:grid-cols-3 gap-x-10 gap-y-12">
+          <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-x-10 gap-y-12">
             {steps.map((s, i) => (
               <Reveal key={s.n} delay={i * 110}>
                 <div className="relative">

@@ -25,7 +25,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "TCG Live — Subastas en vivo de cartas TCG en México",
   description:
-    "Compra y vende cartas de Pokémon en streaming de baja latencia. IA que identifica tus cartas automáticamente y pagos protegidos con Mercado Pago.",
+    "Compra y vende cartas de Pokémon en streaming de baja latencia. IA que identifica tus cartas automáticamente y pagos protegidos dentro de la app.",
   manifest: "/manifest.json",
 };
 
