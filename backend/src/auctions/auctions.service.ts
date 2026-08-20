@@ -1134,6 +1134,26 @@ export class AuctionsService implements OnModuleInit {
     return item;
   }
 
+  /** Point a live at the recording its seller uploaded. */
+  async attachRecording(
+    auctionId: string, sellerId: string, url: string, startedAt?: string,
+  ): Promise<Auction> {
+    const auction = await this.findOne(auctionId);
+    this.assertOwner(auction.sellerId, sellerId);
+    auction.recordingUrl = url;
+    // Clock zero must be when the *recording* began, not when the live did: a seller can
+    // start a live from their panel and open the camera minutes later, and anchoring to
+    // the wrong instant slides every marker away from the moment it points at.
+    const clientStart = startedAt ? new Date(startedAt) : null;
+    auction.recordingStartedAt =
+      clientStart && !isNaN(clientStart.getTime())
+        ? clientStart
+        : (auction.recordingStartedAt ?? auction.startedAt ?? new Date());
+    await this.auctionsRepo.save(auction);
+    this.logger.log(`Recording attached to auction ${auctionId}: ${url}`);
+    return this.findOne(auctionId);
+  }
+
   /**
    * Replay timeline for a live: one segment per lot, with every bid placed on it as an
    * offset (in seconds) into the recording. Offsets are measured from recordingStartedAt,

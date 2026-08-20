@@ -1,5 +1,8 @@
-import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 import { Throttle } from '@nestjs/throttler';
 import { IsArray, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
 import { AuctionsService } from './auctions.service';
@@ -100,6 +103,41 @@ export class AuctionsController {
   @Get('seller/:sellerId')
   findBySeller(@Param('sellerId') sellerId: string) {
     return this.auctionsService.findBySeller(sellerId);
+  }
+
+  /**
+   * Store a recording the seller's browser captured for this live.
+   *
+   * LiveKit Cloud egress renders in LiveKit's cloud, so it can only write to a cloud
+   * bucket — never to this machine. Recording in the browser and posting the file here
+   * is what makes a purely local setup (no bucket, no Docker) able to keep video.
+   */
+  @Post(':id/recording')
+  @UseGuards(AuthGuard('jwt'))
+  @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: './uploads/recordings',
+      filename: (_req, file, cb) => {
+        const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+        cb(null, `${unique}${extname(file.originalname) || '.webm'}`);
+      },
+    }),
+    fileFilter: (_req, file, cb) =>
+      file.mimetype.startsWith('video/')
+        ? cb(null, true)
+        : cb(new BadRequestException('Solo se aceptan archivos de video'), false),
+    limits: { fileSize: 512 * 1024 * 1024 }, // a long session is still just one file
+  }))
+  uploadRecording(
+    @Param('id') id: string,
+    @UploadedFile() file: { filename: string } | undefined,
+    @Body('startedAt') startedAt: string | undefined,
+    @CurrentUser() user: User,
+  ) {
+    if (!file) throw new BadRequestException('No se recibió el archivo');
+    return this.auctionsService.attachRecording(
+      id, user.id, `/uploads/recordings/${file.filename}`, startedAt,
+    );
   }
 
   /** Replay timeline: where each lot (and each bid on it) sits in the recording. */

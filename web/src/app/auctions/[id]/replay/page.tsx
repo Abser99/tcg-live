@@ -9,7 +9,7 @@
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import { auctionsApi, type ApiSegments, type ApiSegment } from "@/lib/api";
+import { auctionsApi, fileUrl, type ApiSegments, type ApiSegment } from "@/lib/api";
 
 const money = (cents: number) => `$${(cents / 100).toLocaleString("es-MX")}`;
 
@@ -145,7 +145,7 @@ export default function ReplayPage({ params }: { params: Promise<{ id: string }>
         ) : (
           <>
             {data?.recordingUrl ? (
-              <video src={data.recordingUrl} controls className="w-full rounded-2xl mb-6"
+              <video src={fileUrl(data.recordingUrl)} controls preload="metadata" className="w-full rounded-2xl mb-6"
                 style={{ background: "#000", border: "1px solid var(--border)" }} />
             ) : (
               <div className="rounded-2xl px-4 py-3 mb-6 text-xs" style={{ background: "var(--bg-elevated)", border: "1px dashed var(--border)", color: "var(--text-muted)" }}>

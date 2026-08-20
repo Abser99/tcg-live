@@ -7,6 +7,15 @@ export const api = axios.create({
   timeout: 30_000,
 });
 
+/** Absolute URL for a file the API stores (recordings, documents, …).
+    Those paths are relative to the API host; left as-is the browser would resolve
+    them against the web app's own origin and 404. */
+export function fileUrl(path?: string | null): string | undefined {
+  if (!path) return undefined;
+  if (/^https?:\/\//.test(path)) return path; // already absolute (e.g. cloud storage)
+  return `${BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 let _redirectToLogin: (() => void) | null = null;
 export function setRedirectHandler(fn: () => void) { _redirectToLogin = fn; }
 
@@ -138,6 +147,12 @@ export const auctionsApi = {
   cancel:  (id: string) => api.patch<ApiAuction>(`/auctions/${id}/cancel`),
   archive: (id: string) => api.patch<ApiAuction>(`/auctions/${id}/archive`),
   segments: (id: string) => api.get<ApiSegments>(`/auctions/${id}/segments`),
+  /** Multipart: the browser-captured recording for this live. */
+  uploadRecording: (id: string, form: FormData) =>
+    api.post<ApiAuction>(`/auctions/${id}/recording`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 300_000, // a long session is a big upload
+    }),
 };
 
 // ─── Orders ────────────────────────────────────────────────────
@@ -393,6 +408,10 @@ export interface ApiAuction {
   endTime?: string;
   /** When a scheduled stream is set to go live (ISO). Present on status "scheduled". */
   scheduledAt?: string | null;
+  /** Where this live's recording is stored, once one exists. */
+  recordingUrl?: string | null;
+  /** Clock zero the replay offsets are measured from. */
+  recordingStartedAt?: string | null;
   items?: ApiAuctionItem[];
   /** Set while the seller is away from the live (bidding frozen). */
   pausedAt?: string | null;

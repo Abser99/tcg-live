@@ -8,6 +8,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import PokemonCardSearch from "@/components/PokemonCardSearch";
 import { Room, RoomEvent, Track } from "livekit-client";
 import { auctionsApi, watchlistApi, usersApi, paymentMethodsApi, listingsApi, bidIncrement, type ApiAuction, type ApiAuctionItem, type ApiPaymentMethod, type ApiListing, type BidMode } from "@/lib/api";
+import { createLiveRecorder } from "@/lib/live-recorder";
 import { getAuctionsCache } from "@/lib/live-back-cache";
 import { useFavoriteSeller } from "@/lib/seller-favorites";
 import { uploadToCloudinary } from "@/lib/cloudinary";
@@ -816,6 +817,8 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   const roomRef        = useRef<Room | null>(null);
   const videoRef       = useRef<HTMLVideoElement>(null);
+  // Captures the seller's own outgoing stream so the session can be replayed later.
+  const recorderRef    = useRef<ReturnType<typeof createLiveRecorder> | null>(null);
   const startingRef    = useRef(false);
   const [streaming,      setStreaming]      = useState(false);
   const [connecting,     setConnecting]     = useState(false);
@@ -1062,6 +1065,13 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   async function endLive() {
     setEndingLive(true);
     try {
+      // Upload first: ending the live tears this view down, taking the recorder with it.
+      if (recorderRef.current?.recording) {
+        flashToast("Guardando la grabación…");
+        try { await recorderRef.current.stopAndUpload(a.id); }
+        catch { flashToast("No se pudo guardar la grabación, pero el live sí terminó."); }
+        recorderRef.current = null;
+      }
       const { data } = await auctionsApi.end(a.id);
       onAuctionUpdate?.(data as any);
       setConfirmEndLive(false);
@@ -1819,6 +1829,19 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       if (camOk) {
         const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
         if (camPub?.track && videoRef.current) camPub.track.attach(videoRef.current);
+
+        // Record what we're broadcasting so the session can be replayed later.
+        // Best-effort: a browser that can't record still streams normally, it just
+        // leaves no video behind.
+        try {
+          const micPub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
+          const tracks = [camPub?.track?.mediaStreamTrack, micPub?.track?.mediaStreamTrack]
+            .filter(Boolean) as MediaStreamTrack[];
+          if (tracks.length) {
+            recorderRef.current = createLiveRecorder();
+            recorderRef.current.start(new MediaStream(tracks));
+          }
+        } catch { /* recording is optional; the live matters more */ }
       }
 
       setStreaming(true);
