@@ -119,20 +119,47 @@ export class OrdersService {
     return this.ordersRepo.findOne({ where: { id: order.id }, relations: ['items'] }) as Promise<Order>;
   }
 
+  /**
+   * Attach the counterparty (who bought / who sold) to a list of orders.
+   *
+   * Done here rather than with a TypeORM relation: orders.buyerId/sellerId are varchar
+   * while users.id is uuid, so declaring a relation makes schema sync rewrite the orders
+   * table. One extra lookup keyed by id avoids touching the schema at all.
+   */
+  private async attachCounterparties(orders: Order[], side: 'buyer' | 'seller'): Promise<Order[]> {
+    const ids = [...new Set(orders.map(o => (side === 'buyer' ? o.buyerId : o.sellerId)).filter(Boolean))];
+    if (!ids.length) return orders;
+    const users = await Promise.all(
+      ids.map(id => this.usersService.findById(id).catch(() => null)), // a deleted user just stays blank
+    );
+    const byId = new Map(
+      users.filter((u): u is NonNullable<typeof u> => !!u).map(u => [u.id, { id: u.id, username: u.username }]),
+    );
+    for (const o of orders) {
+      const who = byId.get(side === 'buyer' ? o.buyerId : o.sellerId);
+      if (who) o[side] = who;
+    }
+    return orders;
+  }
+
   async getMyOrders(buyerId: string): Promise<Order[]> {
-    return this.ordersRepo.find({
+    const orders = await this.ordersRepo.find({
       where: { buyerId },
       relations: ['items'],
       order: { createdAt: 'DESC' },
     });
+    // The buyer's list shows who they bought from.
+    return this.attachCounterparties(orders, 'seller');
   }
 
   async getSellerOrders(sellerId: string): Promise<Order[]> {
-    return this.ordersRepo.find({
+    const orders = await this.ordersRepo.find({
       where: { sellerId },
       relations: ['items'],
       order: { createdAt: 'DESC' },
     });
+    // The seller's list shows who bought.
+    return this.attachCounterparties(orders, 'buyer');
   }
 
   async getAuctionOrders(auctionId: string, sellerId: string): Promise<Order[]> {

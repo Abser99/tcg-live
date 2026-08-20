@@ -22,6 +22,7 @@ import { OrdersService } from '../orders/orders.service';
 import { WatchlistService } from '../watchlist/watchlist.service';
 import { FollowsService } from '../follows/follows.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { LivekitService } from '../livekit/livekit.service';
 import { bidIncrement, itemDurationMs, ITEM_TIMER_MS, dutchPriceAt } from './auction-pricing';
 
 const MIN_BID_INCREMENT = 100; // 1 MXN in cents (floor for validation)
@@ -54,6 +55,7 @@ export class AuctionsService implements OnModuleInit {
     private readonly watchlistService: WatchlistService,
     private readonly followsService: FollowsService,
     private readonly notificationsService: NotificationsService,
+    private readonly livekitService: LivekitService,
   ) {}
 
   onModuleInit() {
@@ -589,6 +591,10 @@ export class AuctionsService implements OnModuleInit {
 
     auction.status = AuctionStatus.LIVE;
     auction.startedAt = new Date();
+    // Clock zero for replay offsets. Stamped even when there's no storage to record
+    // into, so the bid timeline is still anchored and markers line up later.
+    auction.recordingStartedAt = auction.startedAt;
+    auction.recordingEgressId = await this.livekitService.startRecording(auction.id);
 
     // Going live does NOT auto-open a lot. Bidding starts only when the seller opens
     // a lot (activateItem / "Abrir puja") — the auction sits live with no clock until then.
@@ -612,6 +618,10 @@ export class AuctionsService implements OnModuleInit {
       throw new BadRequestException('La subasta no está en vivo');
     }
 
+    if (auction.recordingEgressId) {
+      auction.recordingUrl = await this.livekitService.stopRecording(auction.recordingEgressId);
+      auction.recordingEgressId = null;
+    }
     auction.status = AuctionStatus.ENDED;
     auction.endedAt = new Date();
     const saved = await this.auctionsRepo.save(auction);
@@ -1110,6 +1120,7 @@ export class AuctionsService implements OnModuleInit {
       throw new BadRequestException('Ya hay una puja en curso — ciérrala antes de abrir otra');
     }
     item.status = AuctionItemStatus.ACTIVE;
+    item.openedAt = new Date(); // start of this lot's replay segment
     item.closesAt = new Date(Date.now() + itemDurationMs(item));
     item.dutchStartedAt = new Date(); // used only while bidMode === dutch
     await this.itemsRepo.save(item);
@@ -1121,6 +1132,80 @@ export class AuctionsService implements OnModuleInit {
       closesAt:      item.closesAt.toISOString(),
     });
     return item;
+  }
+
+  /**
+   * Replay timeline for a live: one segment per lot, with every bid placed on it as an
+   * offset (in seconds) into the recording. Offsets are measured from recordingStartedAt,
+   * so they line up with the video whether or not the file exists yet.
+   *
+   * A buyer gets only the lots they won; the seller and admins get the whole session.
+   */
+  async getSegments(auctionId: string, viewerId: string, isAdmin = false) {
+    const auction = await this.auctionsRepo.findOne({
+      where: { id: auctionId },
+      relations: ['items', 'items.winner', 'seller'],
+    });
+    if (!auction) throw new NotFoundException('Subasta no encontrada');
+
+    const isSeller = auction.sellerId === viewerId;
+    // Clock zero: the recording if we have one, else when the live went on air.
+    const zero = (auction.recordingStartedAt ?? auction.startedAt)?.getTime() ?? null;
+    const offset = (d: Date | null | undefined): number | null =>
+      d && zero !== null ? Math.max(0, Math.round((d.getTime() - zero) / 1000)) : null;
+
+    const items = (auction.items ?? [])
+      .filter(i => i.openedAt) // a lot that never opened has no segment
+      .sort((a, b) => (a.openedAt!.getTime()) - (b.openedAt!.getTime()));
+
+    const visible = isSeller || isAdmin ? items : items.filter(i => i.winnerId === viewerId);
+    if (!visible.length) {
+      // Not the seller, not an admin, and nothing won here.
+      if (!isSeller && !isAdmin) throw new ForbiddenException('No tienes compras en esta subasta');
+    }
+
+    const segments = await Promise.all(visible.map(async item => {
+      const bids = await this.bidsRepo.find({
+        where: { auctionItemId: item.id },
+        relations: ['bidder'],
+        order: { createdAt: 'ASC' },
+      });
+      return {
+        itemId: item.id,
+        cardName: item.cardName,
+        imageUrls: item.imageUrls ?? [],
+        status: item.status,
+        startOffsetSec: offset(item.openedAt),
+        endOffsetSec: offset(item.closesAt),
+        openedAt: item.openedAt,
+        closedAt: item.closesAt,
+        startingPrice: item.startingPrice,
+        finalPrice: item.currentPrice,
+        winner: item.winner ? { id: item.winner.id, username: item.winner.username } : null,
+        wonByViewer: item.winnerId === viewerId,
+        bids: bids.map(b => ({
+          id: b.id,
+          offsetSec: offset(b.createdAt),
+          at: b.createdAt,
+          amount: b.amount,
+          username: b.bidder?.username ?? '—',
+          isViewer: b.bidderId === viewerId,
+          auto: b.auto,
+        })),
+      };
+    }));
+
+    return {
+      auctionId: auction.id,
+      title: auction.title,
+      seller: auction.seller ? { id: auction.seller.id, username: auction.seller.username } : null,
+      recordingUrl: auction.recordingUrl,
+      recordingStartedAt: auction.recordingStartedAt ?? auction.startedAt ?? null,
+      endedAt: auction.endedAt ?? null,
+      durationSec: offset(auction.endedAt),
+      viewerRole: isSeller ? 'seller' : isAdmin ? 'admin' : 'buyer',
+      segments,
+    };
   }
 
   async getItemBids(itemId: string): Promise<Bid[]> {

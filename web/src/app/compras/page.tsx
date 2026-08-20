@@ -197,6 +197,11 @@ export default function ComprasPage() {
                       Total <span className="font-medium" style={{ color: "var(--text-primary)" }}>{money(total)} MXN</span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {o.auctionId && (
+                        <Link href={`/auctions/${o.auctionId}/replay`} className="text-xs font-medium px-3 py-1.5 rounded-full"
+                          style={{ border: "1px solid var(--border)", color: "var(--text-primary)" }}
+                          title="Ver el momento exacto de tus pujas en la grabación">▶ Ver mi puja</Link>
+                      )}
                       <Link href="/mensajes" className="text-xs font-medium px-3 py-1.5 rounded-full"
                         style={{ border: "1px solid var(--border)", color: "var(--text-primary)" }}>Mensajes</Link>
                       {canConfirm && (

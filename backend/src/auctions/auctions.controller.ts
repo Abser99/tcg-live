@@ -102,6 +102,13 @@ export class AuctionsController {
     return this.auctionsService.findBySeller(sellerId);
   }
 
+  /** Replay timeline: where each lot (and each bid on it) sits in the recording. */
+  @Get(':id/segments')
+  @UseGuards(AuthGuard('jwt'))
+  segments(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.auctionsService.getSegments(id, user.id, user.role === 'admin');
+  }
+
   @Get('items/:itemId/bids')
   @UseGuards(AuthGuard('jwt'))
   getItemBids(@Param('itemId') itemId: string) {

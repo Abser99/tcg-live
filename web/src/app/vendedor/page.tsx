@@ -834,6 +834,14 @@ export default function VendedorPage() {
                             >
                               Ver
                             </Link>
+                            <Link
+                              href={`/auctions/${a.id}/replay`}
+                              title="Grabación con la marca de cada puja, lote por lote"
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg text-center transition-all"
+                              style={{ background: "var(--bg-elevated)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
+                            >
+                              ▶ Grabación
+                            </Link>
                             <button
                               onClick={async () => {
                                 if (!confirm("¿Archivar esta subasta? Desaparecerá de tu panel.")) return;

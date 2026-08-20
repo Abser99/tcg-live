@@ -34,11 +34,18 @@ export class Order {
   @Column({ type: 'varchar', nullable: true })
   listingId: string | null;
 
+  // buyerId/sellerId are varchar while users.id is uuid, so these deliberately are NOT
+  // TypeORM relations: declaring one makes synchronize rewrite this table's columns,
+  // which fails on existing orders. The counterparty is attached in the service instead.
   @Column()
   buyerId: string;
 
   @Column()
   sellerId: string;
+
+  /** Filled in by the service for list views; not a database column. */
+  buyer?: { id: string; username: string };
+  seller?: { id: string; username: string };
 
   @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.PENDING })
   status: OrderStatus;

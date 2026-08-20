@@ -92,6 +92,11 @@ export class AuctionItem {
   @Column({ type: 'int', nullable: true })
   durationSec: number | null;
 
+  /** When the lot opened for bidding — the start of its replay segment.
+      Stored rather than derived from closesAt, which the seller can adjust mid-lot. */
+  @Column({ type: 'timestamptz', nullable: true })
+  openedAt: Date | null;
+
   @Column({ type: 'int', nullable: true })
   binPrice: number | null; // Buy It Now price in MXN cents
 

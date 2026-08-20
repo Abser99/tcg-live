@@ -137,6 +137,7 @@ export const auctionsApi = {
   dutchAccept: (itemId: string) => api.post<{ item: ApiAuctionItem; price: number }>(`/auctions/items/${itemId}/dutch-accept`),
   cancel:  (id: string) => api.patch<ApiAuction>(`/auctions/${id}/cancel`),
   archive: (id: string) => api.patch<ApiAuction>(`/auctions/${id}/archive`),
+  segments: (id: string) => api.get<ApiSegments>(`/auctions/${id}/segments`),
 };
 
 // ─── Orders ────────────────────────────────────────────────────
@@ -473,6 +474,8 @@ export interface ApiOrder {
   seller?: { username: string; clabe?: string | null; mpPayoutEmail?: string | null };
   buyer?: { username: string };
   items?: { cardName: string; finalPrice: number; imageUrls?: string[] }[];
+  /** The live this order came from, when it came from one — used to open the replay. */
+  auctionId?: string | null;
   payoutStatus?: 'pending' | 'released' | 'failed';
   payoutAmount?: number | null;
   payoutReleasedAt?: string | null;
@@ -613,6 +616,43 @@ export interface SellerDocumentRecord {
   isExpired?: boolean;
   userId?: string;
   user?: { id: string; username: string; email: string };
+}
+
+/** Where each lot — and each bid on it — sits inside a live's recording. */
+export interface ApiBidMarker {
+  id: string;
+  offsetSec: number | null;
+  at: string;
+  amount: number;
+  username: string;
+  isViewer: boolean;
+  auto: boolean;
+}
+export interface ApiSegment {
+  itemId: string;
+  cardName: string;
+  imageUrls: string[];
+  status: string;
+  startOffsetSec: number | null;
+  endOffsetSec: number | null;
+  openedAt: string | null;
+  closedAt: string | null;
+  startingPrice: number;
+  finalPrice: number;
+  winner: { id: string; username: string } | null;
+  wonByViewer: boolean;
+  bids: ApiBidMarker[];
+}
+export interface ApiSegments {
+  auctionId: string;
+  title: string;
+  seller: { id: string; username: string } | null;
+  recordingUrl: string | null;
+  recordingStartedAt: string | null;
+  endedAt: string | null;
+  durationSec: number | null;
+  viewerRole: "seller" | "admin" | "buyer";
+  segments: ApiSegment[];
 }
 
 /** Following a seller (server-side): powers the ♥ and the "seller is live" push. */

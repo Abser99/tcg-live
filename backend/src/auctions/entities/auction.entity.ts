@@ -81,6 +81,18 @@ export class Auction {
   @Column({ nullable: true })
   startedAt: Date;
 
+  /** Clock zero for replay offsets: when recording began (falls back to startedAt). */
+  @Column({ type: 'timestamptz', nullable: true })
+  recordingStartedAt: Date | null;
+
+  /** LiveKit egress id, kept so the recording can be stopped when the live ends. */
+  @Column({ type: 'varchar', nullable: true })
+  recordingEgressId: string | null;
+
+  /** Where the finished recording lives. Null until egress reports a file. */
+  @Column({ type: 'varchar', nullable: true })
+  recordingUrl: string | null;
+
   @Column({ nullable: true })
   endedAt: Date;
 
