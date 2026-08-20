@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense, useCallback } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import PokemonCardSearch from "@/components/PokemonCardSearch";
-import { Room, RoomEvent, Track } from "livekit-client";
+import { Room, RoomEvent, Track, createLocalVideoTrack } from "livekit-client";
 import { auctionsApi, watchlistApi, usersApi, paymentMethodsApi, listingsApi, bidIncrement, type ApiAuction, type ApiAuctionItem, type ApiPaymentMethod, type ApiListing, type BidMode } from "@/lib/api";
 import { createLiveRecorder } from "@/lib/live-recorder";
 import { getAuctionsCache } from "@/lib/live-back-cache";
@@ -796,6 +796,11 @@ function LiveBackdrop() {
 
 /* Reaction emojis — 5 examples for now. Will be configurable by the seller
    in the auction settings before going live. */
+/** How the seller's face feed sits over the main one. */
+type SelfieLayout = "round" | "corner";
+/** Track name that marks the second camera; viewers key off it to place the feed. */
+const SELFIE_TRACK = "selfie";
+
 const REACTION_EMOJIS = ["🔥", "❤️", "💎", "🎯", "😂"];
 
 function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuctionUpdate, fullScreen = false }: {
@@ -819,6 +824,18 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const videoRef       = useRef<HTMLVideoElement>(null);
   // Captures the seller's own outgoing stream so the session can be replayed later.
   const recorderRef    = useRef<ReturnType<typeof createLiveRecorder> | null>(null);
+
+  // ── Second camera ("selfie") ──
+  // The main camera points at the cards; this one shows the seller's face, published as
+  // its own track so viewers can place it independently instead of cropping one feed.
+  const selfieRef      = useRef<HTMLVideoElement>(null);
+  const selfieTrackRef = useRef<any>(null);
+  const [selfieOn, setSelfieOn] = useState(false);
+  const [selfieBusy, setSelfieBusy] = useState(false);
+  const [selfieLayout, setSelfieLayout] = useState<SelfieLayout>("round");
+  const [hasSelfieVideo, setHasSelfieVideo] = useState(false);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selfieDeviceId, setSelfieDeviceId] = useState<string>("");
   const startingRef    = useRef(false);
   const [streaming,      setStreaming]      = useState(false);
   const [connecting,     setConnecting]     = useState(false);
@@ -1065,6 +1082,13 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   async function endLive() {
     setEndingLive(true);
     try {
+      // Release the second camera before anything else — otherwise its indicator can
+      // stay lit after the live is over.
+      if (selfieTrackRef.current) {
+        try { await roomRef.current?.localParticipant.unpublishTrack(selfieTrackRef.current, true); } catch { /* already gone */ }
+        selfieTrackRef.current = null;
+        setSelfieOn(false);
+      }
       // Upload first: ending the live tears this view down, taking the recorder with it.
       if (recorderRef.current?.recording) {
         flashToast("Guardando la grabación…");
@@ -1505,20 +1529,31 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     roomRef.current = room;
 
     if (!isSeller) {
-      room.on(RoomEvent.TrackSubscribed, (track: any) => {
-        if (!alive) return;
-        if (track.kind === Track.Kind.Video && videoRef.current) {
+      room.on(RoomEvent.TrackSubscribed, (track: any, pub: any) => {
+        if (!alive || track.kind !== Track.Kind.Video) return;
+        // The seller may publish two cameras; the named one is their face and gets
+        // its own element so it can sit over the main feed.
+        if (pub?.trackName === SELFIE_TRACK) {
+          if (selfieRef.current) track.attach(selfieRef.current);
+          setHasSelfieVideo(true);
+        } else if (videoRef.current) {
           track.attach(videoRef.current);
           setHasRemoteVideo(true);
         }
       });
-      room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
-        if (track.kind === Track.Kind.Video) {
-          track.detach();
-          if (alive) setHasRemoteVideo(false);
-        }
+      room.on(RoomEvent.TrackUnsubscribed, (track: any, pub: any) => {
+        if (track.kind !== Track.Kind.Video) return;
+        track.detach();
+        if (!alive) return;
+        if (pub?.trackName === SELFIE_TRACK) setHasSelfieVideo(false);
+        else setHasRemoteVideo(false);
       });
     }
+
+    // A viewer who arrives later missed the original announcement, so repeat it.
+    room.on(RoomEvent.ParticipantConnected, () => {
+      if (isSeller && selfieTrackRef.current) broadcastSelfieLayout(selfieLayout, true);
+    });
 
     room.on(RoomEvent.Reconnecting, () => { if (alive) setRoomConnected(false); });
     room.on(RoomEvent.Reconnected,  () => { if (alive) setRoomConnected(true); });
@@ -1590,6 +1625,10 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           setPriceRevealed(true);
         } else if (msg.type === "reaction" && typeof msg.emoji === "string") {
           spawnReaction(msg.emoji);
+        } else if (msg.type === "selfie_layout") {
+          // The seller decides where their face feed sits; viewers can't infer it.
+          if (msg.mode === "round" || msg.mode === "corner") setSelfieLayout(msg.mode);
+          if (typeof msg.on === "boolean" && !msg.on) setHasSelfieVideo(false);
         } else if (msg.type === "roulette_spin") {
           // Viewers see the same spinning wheel, landing on the same winner
           const pool: string[] = Array.isArray(msg.pool) ? msg.pool : [];
@@ -1888,6 +1927,82 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     }
   }
 
+  // ── Second camera: publish the seller's face as its own track ──
+
+  /** Which cameras this device has, so the seller can pick the face-facing one. */
+  const loadCameras = useCallback(async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(d => d.kind === "videoinput");
+      setCameras(cams);
+      // Default to a camera that isn't the one already streaming the cards.
+      if (!selfieDeviceId && cams.length > 1) {
+        const inUse = roomRef.current?.localParticipant
+          ?.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack
+          ?.getSettings()?.deviceId;
+        setSelfieDeviceId((cams.find(c => c.deviceId !== inUse) ?? cams[0]).deviceId);
+      }
+    } catch { /* the browser may withhold the list until permission is granted */ }
+  }, [selfieDeviceId]);
+
+  /** Tell viewers how to place the face feed (they can't infer it from the track). */
+  const broadcastSelfieLayout = useCallback((mode: SelfieLayout, on: boolean) => {
+    const room = roomRef.current;
+    if (!room || room.state !== "connected") return;
+    try {
+      room.localParticipant.publishData(
+        new TextEncoder().encode(JSON.stringify({ type: "selfie_layout", mode, on })),
+        { reliable: true },
+      );
+    } catch { /* best effort — the layout is cosmetic */ }
+  }, []);
+
+  async function toggleSelfie() {
+    const room = roomRef.current;
+    if (!room || selfieBusy) return;
+    setSelfieBusy(true);
+    try {
+      if (selfieOn) {
+        if (selfieTrackRef.current) {
+          await room.localParticipant.unpublishTrack(selfieTrackRef.current, true);
+          selfieTrackRef.current = null;
+        }
+        setSelfieOn(false);
+        broadcastSelfieLayout(selfieLayout, false);
+      } else {
+        // A distinct deviceId is what makes this a second feed rather than a copy of
+        // the first; without one some browsers hand back the same camera.
+        const track = await createLocalVideoTrack({
+          ...(selfieDeviceId ? { deviceId: { exact: selfieDeviceId } } : { facingMode: "user" }),
+          resolution: { width: 640, height: 640 },
+        });
+        await room.localParticipant.publishTrack(track, {
+          name: SELFIE_TRACK,
+          source: Track.Source.Unknown, // Camera is taken by the main feed
+          simulcast: false,
+        });
+        selfieTrackRef.current = track;
+        if (selfieRef.current) track.attach(selfieRef.current);
+        setSelfieOn(true);
+        setHasSelfieVideo(true);
+        broadcastSelfieLayout(selfieLayout, true);
+      }
+    } catch (e: any) {
+      flashToast(
+        e?.name === "NotReadableError"
+          ? "Esa cámara ya está en uso por el video principal. Elige otra."
+          : "No se pudo abrir la segunda cámara.",
+      );
+    } finally {
+      setSelfieBusy(false);
+    }
+  }
+
+  function changeSelfieLayout(mode: SelfieLayout) {
+    setSelfieLayout(mode);
+    broadcastSelfieLayout(mode, selfieOn);
+  }
+
   async function toggleMic() {
     if (!roomRef.current) return;
     const next = micMuted;
@@ -1981,6 +2096,28 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           className="absolute inset-0 w-full h-full object-cover"
           style={{ display: showVideo ? "block" : "none" }}
         />
+
+        {/* Second camera: the seller's face over the card feed.
+            "round" is a small circle framing the face; "corner" is a quarter-width
+            rectangle. Kept mounted whenever a face track exists so switching layout
+            never detaches the element and drops the stream. */}
+        <div
+          className="absolute z-[8] overflow-hidden pointer-events-none"
+          style={{
+            display: hasSelfieVideo && !chromeHidden ? "block" : "none",
+            bottom: selfieLayout === "round" ? 96 : 92,
+            right: 12,
+            width: selfieLayout === "round" ? 96 : "25%",
+            aspectRatio: selfieLayout === "round" ? "1 / 1" : "3 / 4",
+            borderRadius: selfieLayout === "round" ? "9999px" : 14,
+            border: "2px solid rgba(255,255,255,0.35)",
+            boxShadow: "0 8px 28px rgba(0,0,0,0.55)",
+            background: "#000",
+            transition: "width 0.25s ease, border-radius 0.25s ease",
+          }}
+        >
+          <video ref={selfieRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+        </div>
 
         {/* Placeholder when no video */}
         {!showVideo && (
@@ -2301,7 +2438,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
           {/* Seller-only: bidding format + live games (roulette) */}
           {isSeller && (
-            <button type="button" onClick={() => setShowControls(true)} aria-label="Formato y juegos"
+            <button type="button" onClick={() => { setShowControls(true); void loadCameras(); }} aria-label="Formato y juegos"
               className="flex items-center justify-center w-9 h-9 rounded-full"
               style={{ background: bidMode === "normal" ? "rgba(0,0,0,0.5)" : "var(--brand-light)", backdropFilter: "blur(6px)", border: "1px solid rgba(255,255,255,0.2)", color: bidMode === "normal" ? "#fff" : "var(--brand-ink)" }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2498,6 +2635,52 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                         </div>
                       </div>
                     )}
+                    {/* ── Segunda cámara: la cara del vendedor sobre el video de las cartas ── */}
+                    <div className="pt-3 mt-1 space-y-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Segunda cámara</p>
+                      <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                        La cámara principal enfoca las cartas; ésta muestra tu cara encima.
+                      </p>
+
+                      {cameras.length > 1 && (
+                        <select
+                          value={selfieDeviceId}
+                          onChange={e => setSelfieDeviceId(e.target.value)}
+                          disabled={selfieOn}
+                          className="w-full rounded-lg px-3 py-2 text-sm disabled:opacity-60"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }}
+                        >
+                          {cameras.map((c, i) => (
+                            <option key={c.deviceId || i} value={c.deviceId}>
+                              {c.label || `Cámara ${i + 1}`}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      <button type="button" onClick={toggleSelfie} disabled={selfieBusy}
+                        className="w-full py-2.5 rounded-xl text-sm font-black disabled:opacity-60"
+                        style={selfieOn
+                          ? { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }
+                          : { background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+                        {selfieBusy ? "…" : selfieOn ? "Apagar segunda cámara" : "Encender segunda cámara"}
+                      </button>
+
+                      {/* Where it sits. Disabled until there's something to place. */}
+                      <div className="flex gap-2">
+                        {([["round", "⬤ Círculo (cara)"], ["corner", "▭ Esquina 25%"]] as const).map(([mode, label]) => (
+                          <button key={mode} type="button" disabled={!selfieOn}
+                            onClick={() => changeSelfieLayout(mode)}
+                            className="flex-1 py-2 rounded-lg text-xs font-semibold disabled:opacity-40"
+                            style={selfieLayout === mode
+                              ? { background: "rgba(168,85,247,0.14)", border: "1.5px solid var(--brand-light)", color: "var(--accent-text)" }
+                              : { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* ── Formato de la subasta (fusionado; antes era una pestaña aparte) ── */}
                     <div className="pt-3 mt-1 space-y-2.5" style={{ borderTop: "1px solid var(--border-subtle)" }}>
                     <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Formato de la subasta</p>
