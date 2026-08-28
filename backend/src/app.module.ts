@@ -45,6 +45,8 @@ import { Bid } from './auctions/entities/bid.entity';
 import { SellerApplication } from './seller-applications/seller-application.entity';
 import { MaxBid } from './auctions/entities/max-bid.entity';
 import { LiveSanction } from './auctions/entities/live-sanction.entity';
+import { LiveAttendance } from './auctions/entities/live-attendance.entity';
+import { Raffle } from './auctions/entities/raffle.entity';
 import { Order } from './orders/entities/order.entity';
 import { OrderItem } from './orders/entities/order-item.entity';
 import { PaymentMethod } from './payment-methods/entities/payment-method.entity';
@@ -83,7 +85,7 @@ import { Notification } from './notifications/entities/notification.entity';
                 username: config.get<string>('database.user'),
                 password: config.get<string>('database.password'),
               }),
-          entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, LiveSanction, Order, OrderItem, PaymentMethod, PushToken, Notification, Dispute, WatchlistItem, Message, FollowedSeller, AuctionTemplate, Listing, ListingOffer, SellerDocument],
+          entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, LiveSanction, LiveAttendance, Raffle, Order, OrderItem, PaymentMethod, PushToken, Notification, Dispute, WatchlistItem, Message, FollowedSeller, AuctionTemplate, Listing, ListingOffer, SellerDocument],
           // Schema is auto-applied everywhere except production, where migrations own it.
           // Announce it loudly: pointing a non-production build at a real database would
           // let TypeORM alter that schema, and the damage is silent otherwise.

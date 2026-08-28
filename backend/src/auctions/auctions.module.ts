@@ -7,6 +7,8 @@ import { AuctionItem } from './entities/auction-item.entity';
 import { Bid } from './entities/bid.entity';
 import { MaxBid } from './entities/max-bid.entity';
 import { LiveSanction } from './entities/live-sanction.entity';
+import { LiveAttendance } from './entities/live-attendance.entity';
+import { Raffle } from './entities/raffle.entity';
 import { AuctionsService } from './auctions.service';
 import { AuctionsController } from './auctions.controller';
 import { AuctionsGateway } from './auctions.gateway';
@@ -21,7 +23,7 @@ import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Auction, AuctionItem, Bid, MaxBid, LiveSanction]),
+    TypeOrmModule.forFeature([Auction, AuctionItem, Bid, MaxBid, LiveSanction, LiveAttendance, Raffle]),
     UsersModule,
     LivekitModule,
     forwardRef(() => ListingsModule),

@@ -7,7 +7,7 @@ import Navbar from "@/components/Navbar";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import PokemonCardSearch from "@/components/PokemonCardSearch";
 import { Room, RoomEvent, Track, createLocalVideoTrack } from "livekit-client";
-import { auctionsApi, watchlistApi, usersApi, paymentMethodsApi, listingsApi, bidIncrement, type ApiAuction, type ApiAuctionItem, type ApiPaymentMethod, type ApiListing, type BidMode } from "@/lib/api";
+import { auctionsApi, watchlistApi, usersApi, paymentMethodsApi, listingsApi, bidIncrement, type ApiAuction, type ApiAuctionItem, type ApiPaymentMethod, type ApiListing, type BidMode, type ApiRaffle } from "@/lib/api";
 import { createLiveRecorder } from "@/lib/live-recorder";
 import { getAuctionsCache } from "@/lib/live-back-cache";
 import { useFavoriteSeller } from "@/lib/seller-favorites";
@@ -837,6 +837,14 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selfieDeviceId, setSelfieDeviceId] = useState<string>("");
 
+  // ── Raffles: entries come from watch time, so the page reports it while open ──
+  const [myMinutes, setMyMinutes] = useState(0);
+  const [raffles, setRaffles] = useState<ApiRaffle[]>([]);
+  const [rafflePrize, setRafflePrize] = useState("");
+  const [raffleListing, setRaffleListing] = useState("");
+  const [raffleMin, setRaffleMin] = useState("5");
+  const [raffleBusy, setRaffleBusy] = useState(false);
+
   // Renaming the show. The lot numbers stay automatic — only this name is the seller's.
   const [nameDraft, setNameDraft] = useState(a.displayName ?? "");
   const [savingName, setSavingName] = useState(false);
@@ -1646,6 +1654,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           setPriceRevealed(true);
         } else if (msg.type === "reaction" && typeof msg.emoji === "string") {
           spawnReaction(msg.emoji);
+        } else if (msg.type === "raffle_drawn") {
+          flashToast(`🎉 Sorteo: ganó @${msg.winner}`);
+          loadRaffles();
         } else if (msg.type === "selfie_layout") {
           // The seller decides where their face feed sits; viewers can't infer it.
           if (msg.mode === "round" || msg.mode === "corner") setSelfieLayout(msg.mode);
@@ -1977,6 +1988,58 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       );
     } catch { /* best effort — the layout is cosmetic */ }
   }, []);
+
+  // Tell the server we're here. The credit is capped server-side, so a sleeping tab
+  // stops earning rather than banking hours it didn't watch.
+  useEffect(() => {
+    if (!user || !isLive) return;
+    let alive = true;
+    const beat = () => {
+      auctionsApi.heartbeat(a.id)
+        .then(r => { if (alive) setMyMinutes(r.data.minutes); })
+        .catch(() => {});
+    };
+    beat();
+    const id = setInterval(() => { if (!document.hidden) beat(); }, 30_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [user, isLive, a.id]);
+
+  const loadRaffles = useCallback(() => {
+    auctionsApi.raffles(a.id).then(r => setRaffles(r.data)).catch(() => {});
+  }, [a.id]);
+
+  useEffect(() => { loadRaffles(); }, [loadRaffles]);
+
+  async function createRaffle() {
+    if (!rafflePrize.trim() || raffleBusy) return;
+    setRaffleBusy(true);
+    try {
+      await auctionsApi.createRaffle(a.id, {
+        prizeTitle: rafflePrize.trim(),
+        prizeListingId: raffleListing || undefined,
+        minMinutes: Math.max(0, Number(raffleMin) || 0),
+      });
+      setRafflePrize(""); setRaffleListing("");
+      loadRaffles();
+      flashToast("Sorteo creado — se anuncia a quienes están viendo");
+    } catch (e: any) {
+      flashToast(e?.response?.data?.message ?? "No se pudo crear el sorteo.");
+    } finally { setRaffleBusy(false); }
+  }
+
+  async function drawRaffle(raffleId: string) {
+    if (raffleBusy) return;
+    setRaffleBusy(true);
+    try {
+      const { data } = await auctionsApi.drawRaffle(a.id, raffleId);
+      const r = data.raffle;
+      flashToast(`🎉 Ganó @${r.winnerUsername} con ${r.winnerEntries} de ${r.totalEntries} entradas`);
+      loadRaffles();
+      if (data.order) setBuyNowItems(prev => prev.filter(l => l.id !== r.prizeListingId));
+    } catch (e: any) {
+      flashToast(e?.response?.data?.message ?? "No se pudo sortear.");
+    } finally { setRaffleBusy(false); }
+  }
 
   async function saveLiveName() {
     if (savingName) return;
@@ -2693,6 +2756,67 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                       </p>
                     </div>
 
+                    {/* ── Sorteos por minutos vistos ── */}
+                    <div className="pt-3 mt-1 space-y-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Sorteos</p>
+                      <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                        Cada minuto que alguien lleva viendo cuenta como una entrada. Puedes crear
+                        varios por live, antes de abrirlo o en plena transmisión.
+                      </p>
+
+                      <input value={rafflePrize} onChange={e => setRafflePrize(e.target.value)}
+                        placeholder="¿Qué se sortea?" maxLength={120}
+                        className="w-full rounded-lg px-3 py-2 text-sm"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
+
+                      <div className="flex gap-2">
+                        <select value={raffleListing} onChange={e => setRaffleListing(e.target.value)}
+                          className="flex-1 rounded-lg px-2 py-2 text-sm min-w-0"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }}>
+                          <option value="">— Solo anuncio, sin premio —</option>
+                          {buyNowItems.map(l => <option key={l.id} value={l.id}>{l.title}</option>)}
+                        </select>
+                        <div className="w-24 shrink-0">
+                          <input inputMode="numeric" value={raffleMin}
+                            onChange={e => setRaffleMin(e.target.value.replace(/[^\d]/g, ""))}
+                            className="w-full rounded-lg px-2 py-2 text-sm"
+                            style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
+                          <p className="text-[10px] mt-0.5 text-center" style={{ color: "var(--text-muted)" }}>min. mínimos</p>
+                        </div>
+                      </div>
+
+                      <button type="button" onClick={createRaffle} disabled={raffleBusy || !rafflePrize.trim()}
+                        className="w-full py-2.5 rounded-xl text-sm font-black disabled:opacity-50"
+                        style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+                        {raffleBusy ? "…" : "Crear sorteo"}
+                      </button>
+
+                      {raffles.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          {raffles.filter(r => r.status !== "cancelled").map(r => (
+                            <div key={r.id} className="rounded-lg px-2.5 py-2 flex items-center gap-2"
+                              style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{r.prizeTitle}</p>
+                                <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                                  {r.status === "drawn"
+                                    ? `Ganó @${r.winnerUsername} · ${r.winnerEntries}/${r.totalEntries} entradas`
+                                    : `Mínimo ${r.minMinutes} min de vista`}
+                                </p>
+                              </div>
+                              {r.status === "pending" && (
+                                <button type="button" onClick={() => drawRaffle(r.id)} disabled={raffleBusy}
+                                  className="shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-lg disabled:opacity-50"
+                                  style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+                                  Sortear
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     {/* ── Segunda cámara: la cara del vendedor sobre el video de las cartas ── */}
                     <div className="pt-3 mt-1 space-y-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
                       <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Segunda cámara</p>
@@ -3112,6 +3236,25 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           <div className="absolute left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-full text-sm font-semibold text-white pointer-events-none"
             style={{ bottom: "6.5rem", background: "rgba(20,20,26,0.94)", border: "1px solid rgba(255,255,255,0.16)", backdropFilter: "blur(8px)", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
             {toast}
+          </div>
+        )}
+
+        {/* Raffle status for the viewer: what's up for grabs and what they've earned.
+            Only while a raffle is actually open — otherwise it's noise over the video. */}
+        {!isSeller && user && raffles.some(r => r.status === "pending") && !chromeHidden && (
+          <div className="absolute top-14 left-3 z-[36] rounded-xl px-3 py-2 max-w-[62%]"
+            style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.16)" }}>
+            {raffles.filter(r => r.status === "pending").slice(0, 1).map(r => (
+              <div key={r.id}>
+                <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: "var(--accent-text)" }}>🎁 Sorteo</p>
+                <p className="text-[13px] font-semibold text-white leading-tight truncate">{r.prizeTitle}</p>
+                <p className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.75)" }}>
+                  {myMinutes >= r.minMinutes
+                    ? `Llevas ${myMinutes} min · ${myMinutes} ${myMinutes === 1 ? "entrada" : "entradas"}`
+                    : `Necesitas ${r.minMinutes} min viendo · llevas ${myMinutes}`}
+                </p>
+              </div>
+            ))}
           </div>
         )}
 

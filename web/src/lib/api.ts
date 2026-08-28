@@ -153,6 +153,16 @@ export const auctionsApi = {
   cancel:  (id: string) => api.patch<ApiAuction>(`/auctions/${id}/cancel`),
   archive: (id: string) => api.patch<ApiAuction>(`/auctions/${id}/archive`),
   segments: (id: string) => api.get<ApiSegments>(`/auctions/${id}/segments`),
+
+  /** "Still watching" — credits time toward raffle entries. */
+  heartbeat: (id: string) => api.post<{ watchedSec: number; minutes: number }>(`/auctions/${id}/heartbeat`),
+  watchTime: (id: string) => api.get<{ watchedSec: number; minutes: number }>(`/auctions/${id}/watch-time`),
+  raffles:      (id: string) => api.get<ApiRaffle[]>(`/auctions/${id}/raffles`),
+  createRaffle: (id: string, dto: { prizeTitle: string; prizeListingId?: string; minMinutes?: number }) =>
+    api.post<ApiRaffle>(`/auctions/${id}/raffles`, dto),
+  drawRaffle:   (id: string, raffleId: string) =>
+    api.post<{ raffle: ApiRaffle; order: ApiOrder | null; participants: number }>(`/auctions/${id}/raffles/${raffleId}/draw`),
+  cancelRaffle: (id: string, raffleId: string) => api.delete(`/auctions/${id}/raffles/${raffleId}`),
   /** Hand the roulette prize to its winner: records it and creates their order. */
   awardGiveaway: (id: string, dto: { winnerUsername: string; listingId?: string }) =>
     api.post<{ awarded: boolean; winner: string; order: ApiOrder | null }>(`/auctions/${id}/giveaway`, dto),
@@ -648,6 +658,21 @@ export interface SellerDocumentRecord {
   isExpired?: boolean;
   userId?: string;
   user?: { id: string; username: string; email: string };
+}
+
+/** A raffle on a live. Entries come from watch time — one per minute. */
+export interface ApiRaffle {
+  id: string;
+  auctionId: string;
+  prizeTitle: string;
+  prizeListingId: string | null;
+  minMinutes: number;
+  status: "pending" | "drawn" | "cancelled";
+  winnerUsername: string | null;
+  winnerEntries: number | null;
+  totalEntries: number | null;
+  drawnAt: string | null;
+  createdAt: string;
 }
 
 /** Where each lot — and each bid on it — sits inside a live's recording. */

@@ -13,6 +13,8 @@ import { AuctionItem, AuctionItemStatus } from './entities/auction-item.entity';
 import { Bid } from './entities/bid.entity';
 import { MaxBid } from './entities/max-bid.entity';
 import { LiveSanction, SanctionKind } from './entities/live-sanction.entity';
+import { LiveAttendance } from './entities/live-attendance.entity';
+import { Raffle, RaffleStatus } from './entities/raffle.entity';
 import { CreateAuctionDto } from './dto/create-auction.dto';
 import { PlaceBidDto } from './dto/place-bid.dto';
 import { SetMaxBidDto } from './dto/set-max-bid.dto';
@@ -49,6 +51,10 @@ export class AuctionsService implements OnModuleInit {
     private readonly maxBidsRepo: Repository<MaxBid>,
     @InjectRepository(LiveSanction)
     private readonly sanctionsRepo: Repository<LiveSanction>,
+    @InjectRepository(LiveAttendance)
+    private readonly attendanceRepo: Repository<LiveAttendance>,
+    @InjectRepository(Raffle)
+    private readonly rafflesRepo: Repository<Raffle>,
     private readonly dataSource: DataSource,
     private readonly gateway: AuctionsGateway,
     private readonly usersService: UsersService,
@@ -1191,6 +1197,157 @@ export class AuctionsService implements OnModuleInit {
     });
     this.logger.log(`Giveaway "${listing.title}" awarded to ${winner.username} (order ${order.id})`);
     return { awarded: true, winner: winner.username, order };
+  }
+
+  // ─────────────────────── Watch time & raffles ───────────────────────
+
+  /** Heartbeat cadence the client uses; time is credited in windows this size. */
+  private static readonly HEARTBEAT_SEC = 30;
+  /** Never credit more than this from one beat, so a tab asleep for an hour
+      (or a forged call) can't mint entries it didn't earn. */
+  private static readonly MAX_CREDIT_SEC = 75;
+
+  /**
+   * Record that someone is watching right now, and credit the time since their last
+   * beat. Presence is tracked this way rather than from join/leave events because a
+   * closed laptop never sends "leave" — and counting that as presence would hand raffle
+   * entries to people who left hours ago.
+   */
+  async heartbeat(auctionId: string, userId: string): Promise<{ watchedSec: number; minutes: number }> {
+    const now = new Date();
+    let row = await this.attendanceRepo.findOne({ where: { auctionId, userId } });
+    if (!row) {
+      row = this.attendanceRepo.create({ auctionId, userId, watchedSec: 0, lastSeenAt: now });
+    } else {
+      const gapSec = Math.floor((now.getTime() - row.lastSeenAt.getTime()) / 1000);
+      if (gapSec > 0) {
+        row.watchedSec += Math.min(gapSec, AuctionsService.MAX_CREDIT_SEC);
+      }
+      row.lastSeenAt = now;
+    }
+    await this.attendanceRepo.save(row);
+    return { watchedSec: row.watchedSec, minutes: Math.floor(row.watchedSec / 60) };
+  }
+
+  /** Watch time for one viewer of one live. */
+  async myWatchTime(auctionId: string, userId: string) {
+    const row = await this.attendanceRepo.findOne({ where: { auctionId, userId } });
+    const watchedSec = row?.watchedSec ?? 0;
+    return { watchedSec, minutes: Math.floor(watchedSec / 60) };
+  }
+
+  /** Seller sets up a raffle — before going live or in the middle of the show. */
+  async createRaffle(
+    auctionId: string,
+    sellerId: string,
+    dto: { prizeTitle: string; prizeListingId?: string; minMinutes?: number },
+  ): Promise<Raffle> {
+    const auction = await this.findOne(auctionId);
+    this.assertOwner(auction.sellerId, sellerId);
+    if (auction.status === AuctionStatus.ENDED || auction.status === AuctionStatus.CANCELLED) {
+      throw new BadRequestException('Esta subasta ya terminó');
+    }
+    if (dto.prizeListingId) {
+      const listing = await this.listingsService.findOne(dto.prizeListingId);
+      if (listing.sellerId !== sellerId) throw new ForbiddenException('Ese premio no es tuyo');
+    }
+    const raffle = this.rafflesRepo.create({
+      auctionId,
+      sellerId,
+      prizeTitle: dto.prizeTitle.trim().slice(0, 120),
+      prizeListingId: dto.prizeListingId ?? null,
+      minMinutes: Math.max(0, Math.min(600, dto.minMinutes ?? 1)),
+      status: RaffleStatus.PENDING,
+    });
+    const saved = await this.rafflesRepo.save(raffle);
+    this.gateway.server?.to(`auction:${auctionId}`).emit('raffle:created', {
+      auctionId, raffleId: saved.id, prizeTitle: saved.prizeTitle, minMinutes: saved.minMinutes,
+    });
+    return saved;
+  }
+
+  async listRaffles(auctionId: string): Promise<Raffle[]> {
+    return this.rafflesRepo.find({ where: { auctionId }, order: { createdAt: 'ASC' } });
+  }
+
+  async cancelRaffle(raffleId: string, sellerId: string): Promise<Raffle> {
+    const raffle = await this.rafflesRepo.findOne({ where: { id: raffleId } });
+    if (!raffle) throw new NotFoundException('Sorteo no encontrado');
+    this.assertOwner(raffle.sellerId, sellerId);
+    if (raffle.status === RaffleStatus.DRAWN) {
+      throw new BadRequestException('Este sorteo ya se realizó');
+    }
+    raffle.status = RaffleStatus.CANCELLED;
+    return this.rafflesRepo.save(raffle);
+  }
+
+  /**
+   * Draw a winner, weighted by watch time: every full minute is one entry, so someone
+   * who stayed the whole show is likelier to win than someone who just arrived — which
+   * is the point of tying it to minutes rather than to a click.
+   */
+  async drawRaffle(raffleId: string, sellerId: string) {
+    const raffle = await this.rafflesRepo.findOne({ where: { id: raffleId } });
+    if (!raffle) throw new NotFoundException('Sorteo no encontrado');
+    this.assertOwner(raffle.sellerId, sellerId);
+    if (raffle.status !== RaffleStatus.PENDING) {
+      throw new BadRequestException('Este sorteo ya no está abierto');
+    }
+
+    const rows = await this.attendanceRepo.find({ where: { auctionId: raffle.auctionId } });
+    // The seller can't win their own raffle, and short visits don't qualify.
+    const eligible = rows
+      .filter(r => r.userId !== sellerId)
+      .map(r => ({ userId: r.userId, entries: Math.floor(r.watchedSec / 60) }))
+      .filter(r => r.entries >= Math.max(1, raffle.minMinutes));
+
+    if (!eligible.length) {
+      throw new BadRequestException(
+        `Nadie alcanza el mínimo de ${raffle.minMinutes} min de vista todavía`,
+      );
+    }
+
+    const total = eligible.reduce((sum, e) => sum + e.entries, 0);
+    let ticket = Math.floor(Math.random() * total);
+    const winner = eligible.find(e => (ticket -= e.entries) < 0) ?? eligible[0];
+    const winnerUser = await this.usersService.findById(winner.userId);
+
+    raffle.status = RaffleStatus.DRAWN;
+    raffle.winnerId = winner.userId;
+    raffle.winnerUsername = winnerUser.username;
+    raffle.winnerEntries = winner.entries;
+    raffle.totalEntries = total;
+    raffle.drawnAt = new Date();
+    await this.rafflesRepo.save(raffle);
+
+    // Hand the prize over for real, reusing the giveaway path so it lands as an order
+    // the winner can track rather than a name on a screen.
+    let order: unknown = null;
+    if (raffle.prizeListingId) {
+      try {
+        const result = await this.awardGiveaway(
+          raffle.auctionId, sellerId, winnerUser.username, raffle.prizeListingId,
+        );
+        order = result.order;
+      } catch (err) {
+        this.logger.warn(`Raffle ${raffle.id} drawn but prize not delivered: ${err}`);
+      }
+    } else {
+      await this.notificationsService
+        .notifyGiveawayWon(winner.userId, (await this.usersService.findById(sellerId)).username, raffle.prizeTitle)
+        .catch(() => {});
+    }
+
+    this.gateway.server?.to(`auction:${raffle.auctionId}`).emit('raffle:drawn', {
+      auctionId: raffle.auctionId,
+      raffleId: raffle.id,
+      prizeTitle: raffle.prizeTitle,
+      winner: winnerUser.username,
+      winnerEntries: winner.entries,
+      totalEntries: total,
+    });
+    this.logger.log(`Raffle "${raffle.prizeTitle}" → ${winnerUser.username} (${winner.entries}/${total} entradas)`);
+    return { raffle, order, participants: eligible.length };
   }
 
   /** Point a live at the recording its seller uploaded. */

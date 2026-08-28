@@ -73,6 +73,14 @@ class AddItemDto {
   category?: string;
 }
 
+class CreateRaffleDto {
+  @IsString() @MaxLength(120) prizeTitle: string;
+  /** Catalogue item to hand over, so the winner gets a trackable order. */
+  @IsString() @IsOptional() prizeListingId?: string;
+  /** Minutes of watch time required to qualify. */
+  @IsInt() @Min(0) @Max(600) @IsOptional() minMinutes?: number;
+}
+
 class AwardGiveawayDto {
   @IsString() @MaxLength(40) winnerUsername: string;
   /** Prize from the seller's buy-now catalogue. Omitted = announcement only. */
@@ -147,6 +155,45 @@ export class AuctionsController {
     return this.auctionsService.attachRecording(
       id, user.id, `/uploads/recordings/${file.filename}`, startedAt,
     );
+  }
+
+  /** "I'm still watching." Credits time toward raffle entries. */
+  @Post(':id/heartbeat')
+  @UseGuards(AuthGuard('jwt'))
+  heartbeat(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.auctionsService.heartbeat(id, user.id);
+  }
+
+  /** How long the current viewer has watched this live. */
+  @Get(':id/watch-time')
+  @UseGuards(AuthGuard('jwt'))
+  watchTime(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.auctionsService.myWatchTime(id, user.id);
+  }
+
+  /** Raffles on this live — anyone watching can see what's up for grabs. */
+  @Get(':id/raffles')
+  raffles(@Param('id') id: string) {
+    return this.auctionsService.listRaffles(id);
+  }
+
+  @Post(':id/raffles')
+  @UseGuards(AuthGuard('jwt'))
+  createRaffle(@Param('id') id: string, @Body() dto: CreateRaffleDto, @CurrentUser() user: User) {
+    return this.auctionsService.createRaffle(id, user.id, dto);
+  }
+
+  /** Pick a winner, weighted by minutes watched. */
+  @Post(':id/raffles/:raffleId/draw')
+  @UseGuards(AuthGuard('jwt'))
+  drawRaffle(@Param('raffleId') raffleId: string, @CurrentUser() user: User) {
+    return this.auctionsService.drawRaffle(raffleId, user.id);
+  }
+
+  @Delete(':id/raffles/:raffleId')
+  @UseGuards(AuthGuard('jwt'))
+  cancelRaffle(@Param('raffleId') raffleId: string, @CurrentUser() user: User) {
+    return this.auctionsService.cancelRaffle(raffleId, user.id);
   }
 
   /** Award the roulette prize to the winner: records it and creates their order. */
