@@ -37,6 +37,34 @@ export class PaymentMethod {
   @Column({ nullable: true })
   externalId: string; // Mercado Pago card token (when integrated)
 
+  /* ── Billing address ──
+     Kept on the method, not the user: someone can pay with a work card billed to
+     the office and a personal one billed home, and the shipping address is a
+     separate thing again. */
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  billingName: string | null;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  street: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  extNumber: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  intNumber: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  colonia: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  city: string | null;
+
+  @Column({ type: 'varchar', length: 60, nullable: true })
+  state: string | null;
+
+  @Column({ type: 'varchar', length: 5, nullable: true })
+  zip: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

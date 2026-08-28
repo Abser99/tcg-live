@@ -1360,8 +1360,26 @@ export class AuctionsService implements OnModuleInit {
     return saved;
   }
 
-  async listRaffles(auctionId: string): Promise<Raffle[]> {
-    return this.rafflesRepo.find({ where: { auctionId }, order: { createdAt: 'ASC' } });
+  /**
+   * Raffles on a live, each carrying how many people currently qualify for it.
+   * That count is what viewers see — "how many am I up against" is the question a
+   * raffle actually raises, and it's the same number for everyone watching.
+   */
+  async listRaffles(auctionId: string): Promise<(Raffle & { participants: number })[]> {
+    const raffles = await this.rafflesRepo.find({ where: { auctionId }, order: { createdAt: 'ASC' } });
+    if (!raffles.length) return [];
+
+    // One pass over attendance: for each threshold, how many viewers have cleared it.
+    const rows = (await this.attendanceRepo.query(
+      `SELECT "watchedSec" FROM live_attendance WHERE "auctionId" = $1`,
+      [auctionId],
+    )) as { watchedSec: number }[];
+    const watched = rows.map(r => Number(r.watchedSec));
+
+    return raffles.map(r => ({
+      ...r,
+      participants: watched.filter(sec => sec >= r.minMinutes * 60).length,
+    }));
   }
 
   async cancelRaffle(raffleId: string, sellerId: string): Promise<Raffle> {

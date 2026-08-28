@@ -247,7 +247,7 @@ export const ordersApi = {
 // ─── Payment methods (wallet / saved cards) ────────────────────
 export const paymentMethodsApi = {
   my: () => api.get<ApiPaymentMethod[]>("/payment-methods/my"),
-  create: (dto: { type: "card" | "oxxo" | "spei"; cardNumber?: string; expiry?: string; cardholderName?: string }) =>
+  create: (dto: { type: "card" | "oxxo" | "spei"; cardNumber?: string; expiry?: string; cardholderName?: string } & CardAddressInput) =>
     api.post<ApiPaymentMethod>("/payment-methods", dto),
   setDefault: (id: string) => api.patch(`/payment-methods/${id}/default`),
   remove: (id: string) => api.delete(`/payment-methods/${id}`),
@@ -625,6 +625,26 @@ export interface ApiPaymentMethod {
   brand?: string;
   expiry?: string;
   isDefault?: boolean;
+  /** Billing address — lives on the card, since one person can bill two places. */
+  billingName?: string | null;
+  street?: string | null;
+  extNumber?: string | null;
+  intNumber?: string | null;
+  colonia?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+}
+
+export interface CardAddressInput {
+  billingName?: string;
+  street?: string;
+  extNumber?: string;
+  intNumber?: string;
+  colonia?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
 }
 
 export interface ApiNotification {
@@ -755,6 +775,8 @@ export interface ApiRaffle {
   prizeListingId: string | null;
   /** Photo of the prize, under /uploads. Run it through fileUrl() to display it. */
   prizeImageUrl: string | null;
+  /** How many viewers currently clear this raffle's watch-time bar. */
+  participants?: number;
   minMinutes: number;
   status: "pending" | "drawn" | "cancelled";
   winnerUsername: string | null;

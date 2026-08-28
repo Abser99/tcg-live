@@ -5,10 +5,12 @@ import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { WhatsAppIcon, InstagramIcon, NativeShareIcon, LinkIcon, usePlatform } from "@/components/ShareIcons";
+import CardBrandMark from "@/components/CardBrandMark";
+import { cardIssue, detectBrand, expiryPassed, formatCardNumber, formatExpiry, maskedCard } from "@/lib/card";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import PokemonCardSearch from "@/components/PokemonCardSearch";
 import { Room, RoomEvent, Track, createLocalVideoTrack } from "livekit-client";
-import { auctionsApi, watchlistApi, usersApi, paymentMethodsApi, listingsApi, bidIncrement, type ApiAuction, type ApiAuctionItem, type ApiPaymentMethod, type ApiListing, type BidMode, type ApiRaffle, type ApiLiveStats, fileUrl, incidentsApi } from "@/lib/api";
+import { auctionsApi, watchlistApi, usersApi, paymentMethodsApi, listingsApi, bidIncrement, type ApiAuction, type ApiAuctionItem, type ApiPaymentMethod, type ApiListing, type BidMode, type ApiRaffle, type ApiLiveStats, fileUrl, incidentsApi, geoApi } from "@/lib/api";
 import { createLiveRecorder } from "@/lib/live-recorder";
 import { getAuctionsCache } from "@/lib/live-back-cache";
 import { useFavoriteSeller } from "@/lib/seller-favorites";
@@ -843,6 +845,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [myEntries, setMyEntries] = useState(0);
   const [friendBoost, setFriendBoost] = useState({ multiplier: 1, connectedFriends: 0 });
   const [showRaffle, setShowRaffle] = useState(false);
+  const [prizeZoom, setPrizeZoom] = useState<{ url: string; title: string } | null>(null);
   const [showShare, setShowShare] = useState(false);
   // Reporting from inside the live. The moment is marked against the recording, so
   // there's no video buffer to keep — see IncidentsService.
@@ -1037,6 +1040,16 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [savingCard, setSavingCard] = useState(false);
   const [walletError, setWalletError] = useState("");
   const [cardForm, setCardForm] = useState({ number: "", expiry: "", name: "" });
+  const [addingCardOpen, setAddingCardOpen] = useState(false);
+  /* Billing address on the card. Every field optional server-side, so someone can
+     save the card now and fill the address the first time it's actually needed. */
+  const [cardAddr, setCardAddr] = useState({
+    billingName: "", street: "", extNumber: "", intNumber: "",
+    colonia: "", city: "", state: "", zip: "",
+  });
+  const [zipColonias, setZipColonias] = useState<string[]>([]);
+  const [zipBusy, setZipBusy] = useState(false);
+  const [zipMiss, setZipMiss] = useState(false);
 
   const loadCards = () => {
     setWalletLoading(true);
@@ -1044,19 +1057,78 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   };
   function openWallet() { setShowWallet(true); setWalletError(""); loadCards(); }
 
+  /* Postal code fills in colonia, city and state — the same lookup the address form
+     in Ajustes uses, so nobody types their own city twice. */
+  useEffect(() => {
+    let cancelled = false;
+    const lookup = async () => {
+      const cp = cardAddr.zip.replace(/\D/g, "");
+      if (cp.length !== 5) { setZipColonias([]); setZipMiss(false); return; }
+      setZipBusy(true);
+      setZipMiss(false);
+      await new Promise(r => setTimeout(r, 400));   // let them finish typing
+      if (cancelled) return;
+      try {
+        const { data } = await geoApi.lookupZip(cp);
+        if (cancelled) return;
+        if (!data) { setZipMiss(true); setZipColonias([]); return; }
+        setZipColonias(data.colonias ?? []);
+        setCardAddr(f => ({
+          ...f,
+          city: data.municipio || data.ciudad || f.city,
+          state: data.estado || f.state,
+          // One colonia means there's nothing to choose; more and the person picks.
+          colonia: (data.colonias?.length === 1 ? data.colonias[0] : f.colonia),
+        }));
+      } catch {
+        if (!cancelled) setZipMiss(true);
+      } finally {
+        if (!cancelled) setZipBusy(false);
+      }
+    };
+    lookup();
+    return () => { cancelled = true; };
+  }, [cardAddr.zip]);
+
   async function savePaymentCard() {
-    const number = cardForm.number.replace(/\s+/g, "");
-    if (!/^\d{13,19}$/.test(number)) { setWalletError("Número de tarjeta inválido (13–19 dígitos)."); return; }
-    if (!/^\d{2}\/\d{2}$/.test(cardForm.expiry)) { setWalletError("Expiración inválida (MM/YY)."); return; }
+    const issue = cardIssue(cardForm.number);
+    if (issue) { setWalletError(issue.message || "Escribe el número de tu tarjeta."); return; }
+    if (!/^\d{2}\/\d{2}$/.test(cardForm.expiry)) { setWalletError("La vigencia va como MM/AA."); return; }
+    const [mm] = cardForm.expiry.split("/").map(Number);
+    if (mm < 1 || mm > 12) { setWalletError("Ese mes no existe."); return; }
+    if (expiryPassed(cardForm.expiry)) { setWalletError("Esa tarjeta ya venció."); return; }
+    if (cardAddr.zip && !/^\d{5}$/.test(cardAddr.zip)) { setWalletError("El código postal son 5 dígitos."); return; }
     setSavingCard(true);
     setWalletError("");
     try {
-      await paymentMethodsApi.create({ type: "card", cardNumber: number, expiry: cardForm.expiry, cardholderName: cardForm.name || undefined });
+      await paymentMethodsApi.create({
+        type: "card",
+        cardNumber: cardForm.number.replace(/\D/g, ""),
+        expiry: cardForm.expiry,
+        cardholderName: cardForm.name || undefined,
+        ...Object.fromEntries(Object.entries(cardAddr).filter(([, v]) => v.trim())),
+      });
       setCardForm({ number: "", expiry: "", name: "" });
+      setCardAddr({ billingName: "", street: "", extNumber: "", intNumber: "", colonia: "", city: "", state: "", zip: "" });
+      setAddingCardOpen(false);
       loadCards();
-    } catch {
-      setWalletError("No se pudo guardar la tarjeta. Intenta de nuevo.");
+    } catch (e: unknown) {
+      // The server re-checks the number; show what it actually objected to.
+      setWalletError(apiMessage(e, "No se pudo guardar la tarjeta. Intenta de nuevo."));
     } finally { setSavingCard(false); }
+  }
+
+  async function chooseCard(id: string) {
+    setCards(prev => prev.map(c => ({ ...c, isDefault: c.id === id })));  // optimistic
+    try { await paymentMethodsApi.setDefault(id); }
+    catch { loadCards(); }
+  }
+
+  async function deleteCard(id: string) {
+    setCards(prev => prev.filter(c => c.id !== id));
+    try { await paymentMethodsApi.remove(id); }
+    catch { loadCards(); }
+    finally { loadCards(); }
   }
 
   // More menu (⋮): mute + share.  Peek drawer: other live auctions.  Buy-now catalog.
@@ -2960,43 +3032,169 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                 <p className="font-semibold" style={{ color: "var(--text-primary)" }}>Billetera</p>
                 <button onClick={() => setShowWallet(false)} aria-label="Cerrar" className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-base leading-none" style={{ color: "var(--text-muted)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>✕</button>
               </div>
-              <div className="p-5 space-y-4">
+              <div className="p-5 space-y-4 overflow-y-auto">
                 {walletLoading ? (
-                  <div className="h-12 rounded-xl shimmer" />
-                ) : cards.length > 0 && (
+                  <div className="h-16 rounded-xl shimmer" />
+                ) : cards.length > 0 ? (
                   <div className="space-y-2">
-                    {cards.map(c => (
-                      <div key={c.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5" style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth={1.5} aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20" strokeLinecap="round"/></svg>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{(c.brand || "Tarjeta")} •••• {c.last4}</p>
-                          <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>{c.expiry}{c.isDefault ? " · Predeterminada" : ""}</p>
+                    <p className="text-[11px] font-medium uppercase" style={{ letterSpacing: "0.12em", color: "var(--text-muted)" }}>
+                      {cards.length === 1 ? "Tu tarjeta" : "Con cuál pagas"}
+                    </p>
+                    {cards.map(c => {
+                      const chosen = !!c.isDefault;
+                      const dead = expiryPassed(c.expiry);
+                      return (
+                        <div key={c.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+                          style={chosen
+                            ? { background: "color-mix(in srgb, var(--brand) 10%, transparent)", border: "1.5px solid var(--brand-light)" }
+                            : { background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                          {/* The whole row picks the card; the bin is its own target. */}
+                          <button type="button" onClick={() => chooseCard(c.id)} aria-pressed={chosen}
+                            className="flex items-center gap-3 min-w-0 flex-1 text-left">
+                            <CardBrandMark brand={c.brand} />
+                            <span className="min-w-0">
+                              <span className="flex items-center gap-1.5">
+                                <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                                  {maskedCard(c.last4)}
+                                </span>
+                                {chosen && (
+                                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full"
+                                    style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>Elegida</span>
+                                )}
+                              </span>
+                              <span className="block text-[11px]" style={{ color: dead ? "var(--error-text)" : "var(--text-muted)" }}>
+                                {c.expiry ? (dead ? `Venció ${c.expiry}` : `Vence ${c.expiry}`) : "Sin vigencia"}
+                                {c.colonia || c.city ? ` · ${[c.colonia, c.city].filter(Boolean).join(", ")}` : ""}
+                              </span>
+                            </span>
+                          </button>
+                          <button type="button" onClick={() => deleteCard(c.id)} aria-label={`Quitar tarjeta ${maskedCard(c.last4)}`}
+                            className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs"
+                            style={{ color: "var(--text-muted)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>✕</button>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
+                ) : (
+                  <p className="text-xs text-center py-2" style={{ color: "var(--text-muted)" }}>
+                    Todavía no tienes tarjetas guardadas.
+                  </p>
                 )}
 
-                <div className="space-y-2.5">
-                  <p className="text-[11px] font-medium uppercase" style={{ letterSpacing: "0.12em", color: "var(--text-muted)" }}>Agregar tarjeta</p>
-                  <input inputMode="numeric" autoComplete="off" placeholder="Número de tarjeta" value={cardForm.number}
-                    onChange={e => setCardForm(f => ({ ...f, number: e.target.value.replace(/[^\d ]/g, "").slice(0, 23) }))}
-                    className="w-full rounded-xl px-3.5 py-2.5 text-sm" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
-                  <div className="flex gap-2">
-                    <input inputMode="numeric" placeholder="MM/YY" value={cardForm.expiry}
-                      onChange={e => setCardForm(f => ({ ...f, expiry: e.target.value.replace(/[^\d/]/g, "").slice(0, 5) }))}
-                      className="w-24 rounded-xl px-3.5 py-2.5 text-sm" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
-                    <input placeholder="Nombre (opcional)" value={cardForm.name}
-                      onChange={e => setCardForm(f => ({ ...f, name: e.target.value }))}
-                      className="flex-1 rounded-xl px-3.5 py-2.5 text-sm" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
-                  </div>
-                  {walletError && <p className="text-xs" style={{ color: "var(--error-text)" }}>{walletError}</p>}
-                  <button onClick={savePaymentCard} disabled={savingCard}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50" style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
-                    {savingCard ? "Guardando…" : "Guardar tarjeta"}
+                {!addingCardOpen ? (
+                  <button type="button" onClick={() => setAddingCardOpen(true)}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold"
+                    style={{ background: cards.length ? "var(--bg-input)" : "var(--brand-light)", border: cards.length ? "1px solid var(--border)" : "none", color: cards.length ? "var(--text-secondary)" : "var(--brand-ink)" }}>
+                    + Agregar tarjeta
                   </button>
-                  <p className="text-[11px] text-center" style={{ color: "var(--text-muted)" }}>Se guarda en tu billetera y se sincroniza con tus ajustes de pago. Solo se almacenan los últimos 4 dígitos.</p>
-                </div>
+                ) : (() => {
+                  const issue = cardIssue(cardForm.number);
+                  const brand = detectBrand(cardForm.number);
+                  return (
+                  <div className="space-y-2.5 pt-1" style={{ borderTop: cards.length ? "1px solid var(--border-subtle)" : undefined }}>
+                    <p className="text-[11px] font-medium uppercase pt-1" style={{ letterSpacing: "0.12em", color: "var(--text-muted)" }}>Agregar tarjeta</p>
+
+                    <div className="relative">
+                      <input inputMode="numeric" autoComplete="cc-number" placeholder="Número de tarjeta"
+                        value={cardForm.number}
+                        onChange={e => setCardForm(f => ({ ...f, number: formatCardNumber(e.target.value) }))}
+                        className="w-full rounded-xl pl-3.5 pr-14 py-2.5 text-sm tabular-nums"
+                        style={{ background: "var(--bg-input)", color: "var(--text-primary)",
+                          border: `1px solid ${issue?.kind === "invalid" ? "var(--error-text)" : "var(--border)"}` }} />
+                      {cardForm.number && (
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                          <CardBrandMark brand={brand} size={30} />
+                        </span>
+                      )}
+                    </div>
+                    {issue?.message && (
+                      <p className="text-[11px] -mt-1" style={{ color: issue.kind === "invalid" ? "var(--error-text)" : "var(--text-muted)" }}>
+                        {issue.message}
+                      </p>
+                    )}
+
+                    <div className="flex gap-2">
+                      <input inputMode="numeric" autoComplete="cc-exp" placeholder="MM/AA" value={cardForm.expiry}
+                        onChange={e => setCardForm(f => ({ ...f, expiry: formatExpiry(e.target.value) }))}
+                        className="w-24 rounded-xl px-3.5 py-2.5 text-sm tabular-nums"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                      <input autoComplete="cc-name" placeholder="Nombre en la tarjeta (opcional)" value={cardForm.name}
+                        onChange={e => setCardForm(f => ({ ...f, name: e.target.value }))}
+                        className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                    </div>
+
+                    {/* ── Billing address ── */}
+                    <p className="text-[11px] font-medium uppercase pt-1.5" style={{ letterSpacing: "0.12em", color: "var(--text-muted)" }}>Dirección</p>
+
+                    <input autoComplete="name" placeholder="Nombre completo" value={cardAddr.billingName}
+                      onChange={e => setCardAddr(f => ({ ...f, billingName: e.target.value }))}
+                      className="w-full rounded-xl px-3.5 py-2.5 text-sm"
+                      style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+
+                    <div className="flex gap-2">
+                      <input inputMode="numeric" autoComplete="postal-code" placeholder="C.P." value={cardAddr.zip}
+                        onChange={e => setCardAddr(f => ({ ...f, zip: e.target.value.replace(/\D/g, "").slice(0, 5) }))}
+                        className="w-24 rounded-xl px-3.5 py-2.5 text-sm tabular-nums"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                      <div className="flex-1 min-w-0 flex items-center text-[11px]" style={{ color: zipMiss ? "var(--error-text)" : "var(--text-muted)" }}>
+                        {zipBusy ? "Buscando el código postal…"
+                          : zipMiss ? "No encontramos ese C.P. — llénalo a mano."
+                          : cardAddr.city ? `${cardAddr.city}${cardAddr.state ? `, ${cardAddr.state}` : ""}`
+                          : "Escribe tu C.P. y llenamos lo demás"}
+                      </div>
+                    </div>
+
+                    {zipColonias.length > 1 ? (
+                      <select value={cardAddr.colonia} onChange={e => setCardAddr(f => ({ ...f, colonia: e.target.value }))}
+                        className="w-full rounded-xl px-3 py-2.5 text-sm"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+                        <option value="">Elige tu colonia</option>
+                        {zipColonias.map(col => <option key={col} value={col}>{col}</option>)}
+                      </select>
+                    ) : (
+                      <input placeholder="Colonia" value={cardAddr.colonia}
+                        onChange={e => setCardAddr(f => ({ ...f, colonia: e.target.value }))}
+                        className="w-full rounded-xl px-3.5 py-2.5 text-sm"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                    )}
+
+                    <input autoComplete="address-line1" placeholder="Calle" value={cardAddr.street}
+                      onChange={e => setCardAddr(f => ({ ...f, street: e.target.value }))}
+                      className="w-full rounded-xl px-3.5 py-2.5 text-sm"
+                      style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+
+                    <div className="flex gap-2">
+                      <input placeholder="Núm. exterior" value={cardAddr.extNumber}
+                        onChange={e => setCardAddr(f => ({ ...f, extNumber: e.target.value }))}
+                        className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                      <input placeholder="Interior (opc.)" value={cardAddr.intNumber}
+                        onChange={e => setCardAddr(f => ({ ...f, intNumber: e.target.value }))}
+                        className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                    </div>
+
+                    {walletError && <p className="text-xs" style={{ color: "var(--error-text)" }}>{walletError}</p>}
+
+                    <div className="flex gap-2 pt-0.5">
+                      <button onClick={() => { setAddingCardOpen(false); setWalletError(""); }}
+                        className="px-4 py-2.5 rounded-xl text-sm font-semibold"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                        Cancelar
+                      </button>
+                      <button onClick={savePaymentCard} disabled={savingCard || !!issue}
+                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+                        style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+                        {savingCard ? "Guardando…" : "Guardar tarjeta"}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-center" style={{ color: "var(--text-muted)" }}>
+                      Del número solo guardamos los últimos 4 dígitos.
+                    </p>
+                  </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -3996,16 +4194,19 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         )}
 
         {/* The raffle used to sit open across the top-left, over the very video people
-            came to watch. It's a badge now: a tap opens the detail, and the entry count
-            stays visible on the badge so nothing important needs the panel to be read. */}
+            came to watch. It's a badge now: a tap opens the detail — every open raffle,
+            not just the first — and the badge itself carries the headline number. */}
         {!isSeller && user && raffles.some(r => r.status === "pending") && !chromeHidden && (() => {
-          const r = raffles.find(x => x.status === "pending")!;
-          const qualifies = myMinutes >= r.minMinutes;
+          const open = raffles.filter(r => r.status === "pending");
+          // "How many am I up against" is the question a raffle raises, so that's the
+          // number on the badge. Someone who clears the easiest bar is in the draw.
+          const inTheDraw = Math.max(...open.map(r => r.participants ?? 0), 0);
+          const entriesFor = (r: ApiRaffle) => (myMinutes >= r.minMinutes ? myEntries : 0);
           return (
             <>
               <button type="button" onClick={() => setShowRaffle(v => !v)}
                 aria-expanded={showRaffle}
-                aria-label={`Sorteo: ${r.prizeTitle}. ${qualifies ? `${myEntries} entradas` : `necesitas ${r.minMinutes} minutos`}`}
+                aria-label={`Sorteo: ${open.length === 1 ? open[0].prizeTitle : `${open.length} premios`}. ${inTheDraw} participando`}
                 className="absolute right-3 z-[37] flex items-center gap-1.5 h-9 pl-2.5 pr-3 rounded-full active:scale-95 transition-transform"
                 style={{
                   bottom: "10.5rem",
@@ -4015,41 +4216,59 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                   border: `1px solid ${showRaffle ? "transparent" : "rgba(255,255,255,0.22)"}`,
                 }}>
                 <span className="text-base leading-none" aria-hidden="true">🎁</span>
-                <span className="text-[12px] font-bold tabular-nums">
-                  {qualifies ? myEntries : `${myMinutes}/${r.minMinutes}`}
-                </span>
+                <span className="text-[12px] font-bold tabular-nums">{inTheDraw}</span>
               </button>
 
               {showRaffle && (
-                <div className="absolute right-3 z-[37] w-64 max-w-[78vw] rounded-2xl p-3 slide-up"
-                  style={{ bottom: "14rem", background: "rgba(10,10,14,0.92)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: "var(--accent-text)" }}>🎁 Sorteo</p>
+                <div className="absolute right-3 z-[37] w-72 max-w-[84vw] rounded-2xl p-3 slide-up"
+                  style={{ bottom: "14rem", background: "rgba(10,10,14,0.94)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)", maxHeight: "52vh", overflowY: "auto", scrollbarWidth: "none" }}>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: "var(--accent-text)" }}>
+                      🎁 {open.length === 1 ? "Sorteo" : `${open.length} sorteos`}
+                    </p>
                     <button type="button" onClick={() => setShowRaffle(false)} aria-label="Cerrar"
                       className="text-white/60 hover:text-white text-xs leading-none -mt-0.5">✕</button>
                   </div>
-                  <div className="flex items-start gap-2.5">
-                    {r.prizeImageUrl && (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img src={fileUrl(r.prizeImageUrl)} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0"
-                        style={{ border: "1px solid rgba(255,255,255,0.22)" }} />
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-semibold text-white leading-tight">{r.prizeTitle}</p>
-                      <p className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.75)" }}>
-                        {qualifies
-                          ? `Llevas ${myMinutes} min · ${myEntries} ${myEntries === 1 ? "entrada" : "entradas"}`
-                          : `Necesitas ${r.minMinutes} min viendo · llevas ${myMinutes}`}
-                      </p>
-                      {friendBoost.multiplier > 1 && (
-                        <p className="text-[11px] font-semibold" style={{ color: "var(--accent-text)" }}>
-                          ×{friendBoost.multiplier} por {friendBoost.connectedFriends} {friendBoost.connectedFriends === 1 ? "amigo" : "amigos"} en el live
-                        </p>
-                      )}
-                    </div>
+
+                  <div className="space-y-2.5">
+                    {open.map(r => {
+                      const mine = entriesFor(r);
+                      return (
+                        <div key={r.id} className="flex items-center gap-3">
+                          {r.prizeImageUrl ? (
+                            <button type="button" onClick={() => setPrizeZoom({ url: r.prizeImageUrl!, title: r.prizeTitle })}
+                              aria-label={`Ver ${r.prizeTitle} en grande`}
+                              className="shrink-0 active:scale-95 transition-transform">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={fileUrl(r.prizeImageUrl)} alt={r.prizeTitle}
+                                className="w-20 h-20 rounded-xl object-cover"
+                                style={{ border: "1px solid rgba(255,255,255,0.22)" }} />
+                            </button>
+                          ) : (
+                            <div className="w-20 h-20 rounded-xl shrink-0 flex items-center justify-center text-2xl"
+                              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)" }} aria-hidden="true">🎁</div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-semibold text-white leading-tight">{r.prizeTitle}</p>
+                            <p className="text-[12px] font-bold mt-0.5" style={{ color: mine > 0 ? "var(--accent-text)" : "rgba(255,255,255,0.5)" }}>
+                              {mine > 0 ? `${mine} ${mine === 1 ? "entrada" : "entradas"}` : "Aún no participas"}
+                            </p>
+                            <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.6)" }}>
+                              {r.participants ?? 0} {(r.participants ?? 0) === 1 ? "persona" : "personas"} participando
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
+
+                  {friendBoost.multiplier > 1 && (
+                    <p className="text-[11px] font-semibold mt-2" style={{ color: "var(--accent-text)" }}>
+                      ×{friendBoost.multiplier} por {friendBoost.connectedFriends} {friendBoost.connectedFriends === 1 ? "amigo" : "amigos"} en el live
+                    </p>
+                  )}
                   <button type="button" onClick={() => { setShowRaffle(false); setShowShare(true); }}
-                    className="mt-2.5 w-full py-1.5 rounded-full text-[11px] font-bold"
+                    className="mt-3 w-full py-2 rounded-full text-[12px] font-bold"
                     style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
                     Invitar amigos
                   </button>
@@ -4058,6 +4277,25 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
             </>
           );
         })()}
+
+        {/* Prize photo, full size. A thumbnail can't show whether the card is centred
+            or the pack is sealed, which is exactly what someone wants to check. */}
+        {prizeZoom && (
+          <div className="absolute inset-0 z-[72] flex flex-col items-center justify-center p-6 game-in"
+            style={{ background: "rgba(0,0,0,0.88)" }} onClick={() => setPrizeZoom(null)}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={fileUrl(prizeZoom.url)} alt={prizeZoom.title}
+              className="max-w-full max-h-[72%] rounded-2xl object-contain"
+              style={{ border: "1px solid rgba(255,255,255,0.2)", boxShadow: "0 20px 60px rgba(0,0,0,0.7)" }}
+              onClick={e => e.stopPropagation()} />
+            <p className="text-white font-semibold text-sm mt-3 text-center">{prizeZoom.title}</p>
+            <button type="button" onClick={() => setPrizeZoom(null)}
+              className="mt-3 px-5 py-2 rounded-full text-sm font-bold"
+              style={{ background: "rgba(255,255,255,0.14)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)" }}>
+              Cerrar
+            </button>
+          </div>
+        )}
 
         {/* ── Live chat overlay (bottom, blurred gradient for legibility) ── */}
         <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col justify-end pointer-events-none"
