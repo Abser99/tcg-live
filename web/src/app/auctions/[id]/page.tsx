@@ -1993,10 +1993,12 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
            service and a dead wifi both arrive as "ServerUnreachable". So the reason
            comes from the server, which asked directly. */
         setConnectError(
+          /* Chat and reactions ride the room's data channel, so they go down with the
+             video. Bidding is plain HTTP and keeps working — say only that. */
           videoIssue === "quota"
-            ? "El video no está disponible ahora (el servicio alcanzó su límite de minutos). El chat y las pujas siguen funcionando."
+            ? "El video y el chat no están disponibles ahora (el servicio alcanzó su límite de minutos). Puedes seguir pujando."
             : videoIssue
-              ? "El servicio de video no está disponible ahora. El chat y las pujas siguen funcionando."
+              ? "El servicio de video no está disponible ahora. Puedes seguir pujando."
               : "No se pudo conectar al stream. Revisa tu conexión.",
         );
       });
@@ -4535,8 +4537,14 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
             <input value={chatInput} onChange={e => setChatInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) sendChat(); }}
               enterKeyHint="send"
-              placeholder={!user ? "Inicia sesión para chatear" : myMute ? "🔇 Estás silenciado" : !roomRef.current ? "Conéctate para chatear" : "Di algo…"}
-              disabled={!user || !roomRef.current || !!myMute}
+              placeholder={
+                !user ? "Inicia sesión para chatear"
+                : myMute ? "🔇 Estás silenciado"
+                : connState === "failed" ? "Chat no disponible"
+                : !roomConnected ? "Conectando…"
+                : "Di algo…"
+              }
+              disabled={!user || !roomConnected || !!myMute}
               maxLength={200}
               className="flex-1 rounded-full px-4 py-2.5 text-sm text-white disabled:opacity-50 placeholder:text-white/50"
               style={{ background: "rgba(255,255,255,0.13)", border: "1px solid rgba(255,255,255,0.22)", backdropFilter: "blur(10px)" }} />
