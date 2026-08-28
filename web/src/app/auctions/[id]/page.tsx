@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense, useCallback } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { WhatsAppIcon, InstagramIcon, NativeShareIcon, LinkIcon, usePlatform } from "@/components/ShareIcons";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import PokemonCardSearch from "@/components/PokemonCardSearch";
 import { Room, RoomEvent, Track, createLocalVideoTrack } from "livekit-client";
@@ -842,6 +843,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [myEntries, setMyEntries] = useState(0);
   const [friendBoost, setFriendBoost] = useState({ multiplier: 1, connectedFriends: 0 });
   const [showShare, setShowShare] = useState(false);
+  const sharePlatform = usePlatform();
   const [raffles, setRaffles] = useState<ApiRaffle[]>([]);
   const [rafflePrize, setRafflePrize] = useState("");
   const [raffleListing, setRaffleListing] = useState("");
@@ -1038,7 +1040,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   const shareText = () => `Estoy en el live de @${sellerName} en TCG Live 🔥`;
 
-  function shareTo(where: "whatsapp" | "instagram" | "copy") {
+  function shareTo(where: "whatsapp" | "instagram" | "copy" | "native") {
     const url = myShareUrl();
     setShowShare(false);
     if (where === "whatsapp") {
@@ -1058,8 +1060,12 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       );
       return;
     }
+    if (where === "native" && typeof navigator !== "undefined" && navigator.share) {
+      navigator.share({ title: `Live de ${sellerName}`, text: shareText(), url }).catch(() => {});
+      return;
+    }
     navigator.clipboard?.writeText(url).then(
-      () => flashToast("Enlace copiado 🔗 — si tus amigos entran, suben tus entradas"),
+      () => flashToast("Enlace copiado — si tus amigos entran, suben tus entradas"),
       () => flashToast(url),
     );
   }
@@ -3297,18 +3303,32 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                   style={{ color: "var(--text-muted)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>✕</button>
               </div>
               <div className="p-4 grid grid-cols-3 gap-2">
-                {([
-                  ["whatsapp",  "WhatsApp",  "💬", "#25D366"],
-                  ["instagram", "Instagram", "📸", "#E1306C"],
-                  ["copy",      "Copiar",    "🔗", "var(--brand)"],
-                ] as const).map(([key, label, icon, color]) => (
-                  <button key={key} type="button" onClick={() => shareTo(key)}
-                    className="flex flex-col items-center gap-2 py-4 rounded-xl transition-transform active:scale-95"
-                    style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
-                    <span className="text-2xl leading-none" aria-hidden="true">{icon}</span>
-                    <span className="text-xs font-semibold" style={{ color }}>{label}</span>
-                  </button>
-                ))}
+                <button type="button" onClick={() => shareTo("whatsapp")}
+                  className="flex flex-col items-center gap-2 py-4 rounded-xl transition-transform active:scale-95"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                  <span style={{ color: "#25D366" }}><WhatsAppIcon /></span>
+                  <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>WhatsApp</span>
+                </button>
+
+                <button type="button" onClick={() => shareTo("instagram")}
+                  className="flex flex-col items-center gap-2 py-4 rounded-xl transition-transform active:scale-95"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                  <InstagramIcon />
+                  <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>Instagram</span>
+                </button>
+
+                {/* The system's own share glyph on a phone, a link icon on desktop —
+                    each labelled for what it actually does there. */}
+                <button type="button" onClick={() => shareTo(sharePlatform === "other" ? "copy" : "native")}
+                  className="flex flex-col items-center gap-2 py-4 rounded-xl transition-transform active:scale-95"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                  <span style={{ color: "var(--brand)" }}>
+                    {sharePlatform === "other" ? <LinkIcon /> : <NativeShareIcon />}
+                  </span>
+                  <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+                    {sharePlatform === "other" ? "Copiar" : "Compartir"}
+                  </span>
+                </button>
               </div>
               {friendBoost.connectedFriends > 0 && (
                 <p className="px-5 pb-4 text-xs" style={{ color: "var(--accent-text)" }}>
