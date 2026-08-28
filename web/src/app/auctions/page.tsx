@@ -268,7 +268,7 @@ export default function AuctionsPage() {
       <main id="main" className="relative z-[1]">
 
         {/* ── Header ── */}
-        <div className="pt-32 pb-10" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+        <div className="pt-32 pb-6" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
           <div className="mx-auto max-w-6xl px-6">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
               <div>
@@ -354,7 +354,11 @@ export default function AuctionsPage() {
             </div>
 
             {/* Filter pills — always one row (scrolls horizontally if it overflows) */}
-            <div className="flex items-center gap-1.5 overflow-x-auto mt-8 pb-1" style={{ scrollbarWidth: "none" }}>
+            <div className="flex items-center gap-1.5 overflow-x-auto mt-7 pb-1 pr-6" style={{
+              scrollbarWidth: "none",
+              WebkitMaskImage: "linear-gradient(to right, black calc(100% - 28px), transparent 100%)",
+              maskImage: "linear-gradient(to right, black calc(100% - 28px), transparent 100%)",
+            }}>
               {FILTERS.map((f) => {
                 const count = f.key === "all" ? auctions.length : f.key === "favorites" ? auctions.filter(isFav).length : auctions.filter((a) => dispStatus(a) === f.key).length;
                 const active = filter === f.key;
@@ -384,7 +388,11 @@ export default function AuctionsPage() {
               const cats = CATEGORIES.filter((c) => catFilter.includes(c.value) || auctions.some((a) => auctionCats(a).includes(c.value)));
               if (cats.length === 0) return null;
               return (
-                <div className="flex items-center gap-1.5 overflow-x-auto mt-2 pb-1" style={{ scrollbarWidth: "none" }}>
+                <div className="flex items-center gap-1.5 overflow-x-auto mt-3 pb-1 pr-6" style={{
+                  scrollbarWidth: "none",
+                  WebkitMaskImage: "linear-gradient(to right, black calc(100% - 28px), transparent 100%)",
+                  maskImage: "linear-gradient(to right, black calc(100% - 28px), transparent 100%)",
+                }}>
                   <span className="text-[11px] uppercase tracking-wide shrink-0 mr-0.5" style={{ color: "var(--text-muted)" }}>Categoría</span>
                   {catFilter.length > 0 && (
                     <button onClick={() => setCatFilter([])}
@@ -414,7 +422,7 @@ export default function AuctionsPage() {
         </div>
 
         {/* ── Grid ── */}
-        <div className="mx-auto max-w-6xl px-6 py-16">
+        <div className="mx-auto max-w-6xl px-6 pt-7 pb-16">
           {loading ? (
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-8">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -450,7 +458,6 @@ export default function AuctionsPage() {
                 const disp = dispStatus(a);
                 const status = STATUS[disp] ?? STATUS.upcoming;
                 const sellerName = a.seller?.username ?? a.sellerName ?? "—";
-                const verified = a.seller?.verified;
                 const currentBid = a.currentBid ?? a.startingBid ?? 0;
                 const title = liveName(a);
                 const timer = formatTimer(a.endTime);
@@ -464,7 +471,7 @@ export default function AuctionsPage() {
 
                     {/* Vertical "phone video" preview */}
                     <Link href={`/auctions/${a.id}`} aria-label={cardAriaLabel}
-                      className="relative block overflow-hidden" style={{ aspectRatio: "3 / 4" }}>
+                      className="relative block overflow-hidden" style={{ aspectRatio: "4 / 5" }}>
                       {/* blurred backdrop fills the frame like a live video */}
                       {img
                         ? <div className="absolute inset-0" style={{ backgroundImage: `url(${img})`, backgroundSize: "cover", backgroundPosition: "center", filter: "blur(26px) brightness(0.42) saturate(1.2)", transform: "scale(1.2)" }} />
@@ -496,36 +503,20 @@ export default function AuctionsPage() {
                       {/* Overlaid title only. The running price is two taps of text over the
                           card art; whoever cares about it is going in anyway, where it
                           updates live instead of being a stale number on a grid. */}
-                      <div className="absolute inset-x-0 bottom-0 p-4">
-                        <p className="font-medium text-sm leading-tight tracking-tight text-white line-clamp-1">{title}</p>
+                      <div className="absolute inset-x-0 bottom-0 p-3.5 flex items-end justify-between gap-2">
+                        <p className="font-medium text-sm leading-tight tracking-tight text-white line-clamp-2 min-w-0">{title}</p>
+                        {/* On a phone card there is no room for both: the pill was breaking
+                            the title into scraps. The whole card is the link anyway, and the
+                            "En vivo" chip already marks it. */}
+                        {disp === "live" && (
+                          <span className="btn-brand shrink-0 hidden sm:inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-full"
+                            style={{ background: "var(--brand-light)", color: INK }}>
+                            Entrar <span aria-hidden>→</span>
+                          </span>
+                        )}
                       </div>
                     </Link>
 
-                    {/* Footer: clickable seller + (live only) CTA. The follow heart used to
-                        sit here, but on a narrow card it landed on top of the avatar — and
-                        following already lives inside the live itself. */}
-                    <div className="p-3 flex items-center justify-between gap-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        {a.seller?.username ? (
-                          /* No initials avatar: two columns on a phone leave the footer about
-                             150px, and between the circle and the "Entrar" button the seller's
-                             name was the part that got squeezed to nothing. */
-                          <Link href={`/tienda/${encodeURIComponent(a.seller.username)}`}
-                            className="u-link min-w-0 text-xs font-medium truncate" style={{ color: "var(--text-secondary)" }}>
-                            {sellerName} {verified && <span style={{ color: "var(--accent-text)" }}>✓</span>}
-                          </Link>
-                        ) : (
-                          <span className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{sellerName}</span>
-                        )}
-                      </div>
-                      {disp === "live" && (
-                        <Link href={`/auctions/${a.id}`}
-                          className="btn-brand shrink-0 inline-flex items-center gap-1 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-1.5 sm:py-2 rounded-full"
-                          style={{ background: "var(--brand-light)", color: INK }}>
-                          Entrar <span aria-hidden>→</span>
-                        </Link>
-                      )}
-                    </div>
                   </div>
                 );
               })}
