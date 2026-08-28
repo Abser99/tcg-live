@@ -2634,12 +2634,14 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           </>
         )}
 
-        {/* Stream connection error */}
+        {/* Stream connection error. It used to sit at bottom-4 on the same layer as the
+            chat and the bid bar, so the three of them printed on top of each other. It
+            belongs up here, where nothing else is. */}
         {connectError && (
           <div
             role="alert"
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs"
-            style={{ background: "rgba(0,0,0,0.75)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5" }}
+            className="absolute left-1/2 -translate-x-1/2 z-[38] flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs max-w-[86%]"
+            style={{ top: "calc(3.5rem + env(safe-area-inset-top, 0px))", background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5" }}
           >
             <span>{connectError}</span>
             <button
@@ -2866,7 +2868,21 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                 <div className="min-w-0">
                   <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "var(--brand-light)" }}>🏆 Ganador</p>
                   <p className="text-base font-black text-white truncate leading-tight">{w.username}</p>
-                  <p className="text-sm font-bold leading-tight" style={{ color: "var(--brand-light)" }}>
+                  {/* How the night is going for them — counted from the lots already
+                      closed in this live, so it includes the one being announced. */}
+                  {(() => {
+                    const won = (a.items ?? []).filter(i => i.status === "sold" && i.winner?.id === w.id).length;
+                    return won > 1 ? (
+                      <p className="text-[11px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.72)" }}>
+                        {won} pujas ganadas en este live
+                      </p>
+                    ) : (
+                      <p className="text-[11px] font-semibold leading-tight" style={{ color: "rgba(255,255,255,0.55)" }}>
+                        Su primera de este live
+                      </p>
+                    );
+                  })()}
+                  <p className="text-sm font-bold leading-tight mt-0.5" style={{ color: "var(--brand-light)" }}>
                     ${((lastWon.currentBid ?? 0) / 100).toLocaleString("es-MX")}
                     <span className="text-[11px] font-normal ml-1.5" style={{ color: "rgba(255,255,255,0.6)" }}>{lastWon.cardName}</span>
                   </p>
@@ -2877,8 +2893,10 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         })()}
 
         {/* Seller info — top left (raised; live shown by the red ring, not a badge) */}
-        <div className="absolute top-4 left-3 flex items-center gap-1.5 z-20"
-          style={{ opacity: chromeHidden ? 0 : 1, visibility: chromeHidden ? "hidden" : "visible", transition: "opacity 0.45s ease, visibility 0.45s ease" }}>
+        {/* top offsets clear the notch / Dynamic Island: on an iPhone the seller row sat
+            under the camera cutout and the name was unreadable. */}
+        <div className="absolute left-3 flex items-center gap-1.5 z-20"
+          style={{ top: "calc(1rem + env(safe-area-inset-top, 0px))", opacity: chromeHidden ? 0 : 1, visibility: chromeHidden ? "hidden" : "visible", transition: "opacity 0.45s ease, visibility 0.45s ease" }}>
           <Link href={`/tienda/${sellerName}`}
             className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${isLive ? "live-ring" : ""}`}
             style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)", border: isLive ? "1.5px solid #f43f5e" : "1px solid rgba(255,255,255,0.18)" }}>🧑</Link>
@@ -2949,8 +2967,8 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         })()}
 
         {/* ── Right-side icon stack (compact): buy-now, wallet, more (⋮), peek-arrow ── */}
-        <div className="absolute top-4 right-3 z-30 flex flex-col items-end gap-1.5"
-          style={{ opacity: chromeHidden ? 0 : 1, visibility: chromeHidden ? "hidden" : "visible", transition: "opacity 0.45s ease, visibility 0.45s ease" }}>
+        <div className="absolute right-3 z-30 flex flex-col items-end gap-1.5"
+          style={{ top: "calc(1rem + env(safe-area-inset-top, 0px))", opacity: chromeHidden ? 0 : 1, visibility: chromeHidden ? "hidden" : "visible", transition: "opacity 0.45s ease, visibility 0.45s ease" }}>
 
           {/* Row 1: peek arrow sits to the LEFT of the cart */}
           <div className="flex items-center gap-1.5">
@@ -3184,7 +3202,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                             <input inputMode="numeric" autoComplete="cc-number" placeholder="Número de tarjeta"
                               value={cardForm.number}
                               onChange={e => setCardForm(f => ({ ...f, number: formatCardNumber(e.target.value) }))}
-                              className="w-full rounded-xl pl-3.5 pr-14 py-2.5 text-sm tabular-nums"
+                              className="w-full rounded-xl pl-3.5 pr-14 py-2.5 tabular-nums"
                               style={{ background: "var(--bg-input)", color: "var(--text-primary)",
                                 border: `1px solid ${issue?.kind === "invalid" ? "var(--error-text)" : "var(--border)"}` }} />
                             {cardForm.number && (
@@ -3204,12 +3222,12 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                       <div className="flex gap-2">
                         <input inputMode="numeric" autoComplete="cc-exp" placeholder="MM/AA" value={cardForm.expiry}
                           onChange={e => setCardForm(f => ({ ...f, expiry: formatExpiry(e.target.value) }))}
-                          className="w-24 rounded-xl px-3.5 py-2.5 text-sm tabular-nums"
-                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                          className="w-24 rounded-xl px-3.5 py-2.5 tabular-nums"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
                         <input autoComplete="cc-name" placeholder="Nombre en la tarjeta (opcional)" value={cardForm.name}
                           onChange={e => setCardForm(f => ({ ...f, name: e.target.value }))}
-                          className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
-                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                          className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
                       </div>
 
                       {/* ── Billing address ── */}
@@ -3217,14 +3235,14 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
                       <input autoComplete="name" placeholder="Nombre completo" value={cardAddr.billingName}
                         onChange={e => setCardAddr(f => ({ ...f, billingName: e.target.value }))}
-                        className="w-full rounded-xl px-3.5 py-2.5 text-sm"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                        className="w-full rounded-xl px-3.5 py-2.5"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
 
                       <div className="flex gap-2">
                         <input inputMode="numeric" autoComplete="postal-code" placeholder="C.P." value={cardAddr.zip}
                           onChange={e => setCardAddr(f => ({ ...f, zip: e.target.value.replace(/\D/g, "").slice(0, 5) }))}
-                          className="w-24 rounded-xl px-3.5 py-2.5 text-sm tabular-nums"
-                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                          className="w-24 rounded-xl px-3.5 py-2.5 tabular-nums"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
                         <div className="flex-1 min-w-0 flex items-center text-[11px]" style={{ color: zipMiss ? "var(--error-text)" : "var(--text-muted)" }}>
                           {zipBusy ? "Buscando el código postal…"
                             : zipMiss ? "No encontramos ese C.P. — llénalo a mano."
@@ -3234,9 +3252,17 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                       </div>
 
                       {zipColonias.length > 1 ? (
+                        /* A native select renders its own inner text, which came out small
+                           and sitting oddly against the other fields. Matching their height,
+                           padding and 16px type puts it back in line — and 16px is also what
+                           stops iOS zooming the page when it takes focus. */
                         <select value={cardAddr.colonia} onChange={e => setCardAddr(f => ({ ...f, colonia: e.target.value }))}
-                          className="w-full rounded-xl px-3 py-2.5 text-sm"
-                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+                          aria-label="Colonia"
+                          className="w-full rounded-xl pl-3.5 pr-9 py-2.5 appearance-none"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: cardAddr.colonia ? "var(--text-primary)" : "var(--text-muted)",
+                            fontSize: "16px", lineHeight: "1.35",
+                            backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>\")",
+                            backgroundRepeat: "no-repeat", backgroundPosition: "right 0.75rem center" }}>
                           <option value="">Elige tu colonia</option>
                           {/* A colonia already saved but missing from the lookup stays on the list —
                               otherwise editing anything else would quietly wipe it. */}
@@ -3248,23 +3274,23 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                         <input placeholder="Colonia" value={cardAddr.colonia}
                           onChange={e => setCardAddr(f => ({ ...f, colonia: e.target.value }))}
                           className="w-full rounded-xl px-3.5 py-2.5 text-sm"
-                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
                       )}
 
                       <input autoComplete="address-line1" placeholder="Calle" value={cardAddr.street}
                         onChange={e => setCardAddr(f => ({ ...f, street: e.target.value }))}
-                        className="w-full rounded-xl px-3.5 py-2.5 text-sm"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                        className="w-full rounded-xl px-3.5 py-2.5"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
 
                       <div className="flex gap-2">
                         <input placeholder="Núm. exterior" value={cardAddr.extNumber}
                           onChange={e => setCardAddr(f => ({ ...f, extNumber: e.target.value }))}
-                          className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
-                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                          className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
                         <input placeholder="Interior (opc.)" value={cardAddr.intNumber}
                           onChange={e => setCardAddr(f => ({ ...f, intNumber: e.target.value }))}
-                          className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
-                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                          className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
                       </div>
 
                       {walletError && <p className="text-xs" style={{ color: "var(--error-text)" }}>{walletError}</p>}
