@@ -28,6 +28,7 @@ export class NotificationsService {
       case 'seller_live_soon':
       case 'stream_due':
         return auctionId ? `/auctions/${auctionId}` : '/auctions';
+      case 'giveaway_won':
       case 'auction_win':
       case 'order_confirmed':
       case 'order_shipped':
@@ -214,6 +215,15 @@ export class NotificationsService {
       title: '📅 Es hora de tu stream',
       body: `"${auctionTitle}" estaba programado para ahora. Ábrelo para iniciarlo.`,
       data: { type: 'stream_due', auctionId },
+    });
+  }
+
+  /** The winner of a live giveaway — the prize ships like any other order. */
+  async notifyGiveawayWon(userId: string, sellerUsername: string, prize: string): Promise<void> {
+    await this.sendToUser(userId, {
+      title: '🎉 ¡Ganaste el sorteo!',
+      body: `@${sellerUsername} te dio "${prize}". Confirma tu dirección para recibirlo.`,
+      data: { type: 'giveaway_won' },
     });
   }
 

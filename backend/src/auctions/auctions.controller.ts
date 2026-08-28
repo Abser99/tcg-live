@@ -70,6 +70,12 @@ class AddItemDto {
   category?: string;
 }
 
+class AwardGiveawayDto {
+  @IsString() @MaxLength(40) winnerUsername: string;
+  /** Prize from the seller's buy-now catalogue. Omitted = announcement only. */
+  @IsString() @IsOptional() listingId?: string;
+}
+
 @Controller('auctions')
 export class AuctionsController {
   constructor(
@@ -138,6 +144,17 @@ export class AuctionsController {
     return this.auctionsService.attachRecording(
       id, user.id, `/uploads/recordings/${file.filename}`, startedAt,
     );
+  }
+
+  /** Award the roulette prize to the winner: records it and creates their order. */
+  @Post(':id/giveaway')
+  @UseGuards(AuthGuard('jwt'))
+  awardGiveaway(
+    @Param('id') id: string,
+    @Body() dto: AwardGiveawayDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.auctionsService.awardGiveaway(id, user.id, dto.winnerUsername, dto.listingId);
   }
 
   /** Replay timeline: where each lot (and each bid on it) sits in the recording. */

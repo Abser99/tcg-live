@@ -171,6 +171,10 @@ export default function ComprasPage() {
                     <div className="flex items-center justify-between gap-3 mb-4">
                       <div className="inline-flex items-center gap-2 text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
                         <span className="w-1.5 h-1.5 rounded-full" style={{ background: st.dot }} /> {st.label}
+                        {o.isGiveaway && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                            style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>🎁 SORTEO</span>
+                        )}
                       </div>
                       <span className="text-xs" style={{ color: "var(--text-muted)" }}>{dateFmt(o.createdAt)}</span>
                     </div>
@@ -194,10 +198,13 @@ export default function ComprasPage() {
                   <div className="px-5 py-3 flex items-center justify-between gap-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
                     <div className="text-xs" style={{ color: "var(--text-muted)" }}>
                       {counter && <>{mode === "selling" ? "Comprador" : "Vendedor"}: <span style={{ color: "var(--text-secondary)" }}>@{counter}</span> · </>}
-                      Total <span className="font-medium" style={{ color: "var(--text-primary)" }}>{money(total)} MXN</span>
+                      {o.isGiveaway
+                        ? <span className="font-medium" style={{ color: "var(--text-primary)" }}>Ganado en sorteo · sin costo</span>
+                        : <>Total <span className="font-medium" style={{ color: "var(--text-primary)" }}>{money(total)} MXN</span></>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {o.auctionId && (
+                      {/* A giveaway has no bid to point at, so the replay link would lie. */}
+                      {o.auctionId && !o.isGiveaway && (
                         <Link href={`/auctions/${o.auctionId}/replay`} className="text-xs font-medium px-3 py-1.5 rounded-full"
                           style={{ border: "1px solid var(--border)", color: "var(--text-primary)" }}
                           title="Ver el momento exacto de tus pujas en la grabación">▶ Ver mi puja</Link>

@@ -23,6 +23,7 @@ import { WatchlistService } from '../watchlist/watchlist.service';
 import { FollowsService } from '../follows/follows.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LivekitService } from '../livekit/livekit.service';
+import { ListingsService } from '../listings/listings.service';
 import { bidIncrement, itemDurationMs, ITEM_TIMER_MS, dutchPriceAt } from './auction-pricing';
 
 const MIN_BID_INCREMENT = 100; // 1 MXN in cents (floor for validation)
@@ -56,6 +57,7 @@ export class AuctionsService implements OnModuleInit {
     private readonly followsService: FollowsService,
     private readonly notificationsService: NotificationsService,
     private readonly livekitService: LivekitService,
+    private readonly listingsService: ListingsService,
   ) {}
 
   onModuleInit() {
@@ -1132,6 +1134,56 @@ export class AuctionsService implements OnModuleInit {
       closesAt:      item.closesAt.toISOString(),
     });
     return item;
+  }
+
+  /**
+   * Hand the roulette prize to the winner for real.
+   *
+   * Spinning the wheel used to be pure theatre: a name appeared and nothing happened, so
+   * the winner had to chase the seller off-platform. This records the result as an order
+   * the winner can see, with an address to fill and a shipment to track.
+   */
+  async awardGiveaway(
+    auctionId: string,
+    sellerId: string,
+    winnerUsername: string,
+    listingId?: string,
+  ) {
+    const auction = await this.findOne(auctionId);
+    this.assertOwner(auction.sellerId, sellerId);
+
+    const winner = await this.usersService.findByUsername(winnerUsername);
+    if (!winner) throw new NotFoundException(`No existe el usuario @${winnerUsername}`);
+    if (winner.id === sellerId) {
+      throw new BadRequestException('No puedes sortearte un premio a ti mismo');
+    }
+
+    // A giveaway without a prize is just an announcement — worth recording nothing.
+    if (!listingId) {
+      this.gateway.server?.to(`auction:${auctionId}`).emit('giveaway:awarded', {
+        auctionId, winner: winner.username, prize: null, orderId: null,
+      });
+      return { awarded: false, winner: winner.username, order: null };
+    }
+
+    // Claim it atomically: this both proves ownership and stops the same prize being
+    // handed to two winners if the wheel is spun twice.
+    const listing = await this.listingsService.claim(listingId, sellerId);
+
+    const order = await this.ordersService.createForGiveaway({
+      listingId,
+      listingTitle: listing.title,
+      sellerId,
+      winnerId: winner.id,
+      auctionId,
+      imageUrls: listing.imageUrls ?? undefined,
+    });
+
+    this.gateway.server?.to(`auction:${auctionId}`).emit('giveaway:awarded', {
+      auctionId, winner: winner.username, prize: listing.title, orderId: order.id,
+    });
+    this.logger.log(`Giveaway "${listing.title}" awarded to ${winner.username} (order ${order.id})`);
+    return { awarded: true, winner: winner.username, order };
   }
 
   /** Point a live at the recording its seller uploaded. */

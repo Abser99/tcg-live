@@ -1310,6 +1310,23 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     setRouletteLanded(false);
     setRouletteShow({ names: pool, winner, prize: prizeTitle });
     broadcast({ type: "roulette_spin", pool, winner, prize: prizeTitle });
+
+    // Hand the prize over for real. Until this existed the wheel was theatre: a name
+    // appeared and the winner had to chase the seller off-platform for their card.
+    auctionsApi.awardGiveaway(a.id, { winnerUsername: winner, listingId: roulettePrize || undefined })
+      .then(({ data }) => {
+        if (data.awarded) {
+          flashToast(`🎁 Premio entregado a @${winner} — ya aparece en sus compras`);
+          // The prize leaves the catalogue, so drop it locally too.
+          setBuyNowItems(prev => prev.filter(l => l.id !== roulettePrize));
+          setRoulettePrize("");
+        }
+      })
+      .catch((e: any) => {
+        // The wheel already span in front of everyone; say plainly that the prize
+        // didn't register rather than letting the seller assume it did.
+        flashToast(e?.response?.data?.message ?? "La ruleta giró, pero no se pudo registrar el premio.");
+      });
   }
 
   // ── Seller catalog management (in-panel) ──

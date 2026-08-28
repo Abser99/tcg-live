@@ -44,6 +44,11 @@ export class UsersService {
       .getOne();
   }
 
+  /** Full user by username. getPublicProfileByUsername strips fields we need internally. */
+  async findByUsername(username: string): Promise<User | null> {
+    return this.usersRepo.findOne({ where: { username } });
+  }
+
   async findById(id: string): Promise<User> {
     const user = await this.usersRepo.findOne({ where: { id } });
     if (!user) throw new NotFoundException('User not found');

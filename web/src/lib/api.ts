@@ -147,6 +147,9 @@ export const auctionsApi = {
   cancel:  (id: string) => api.patch<ApiAuction>(`/auctions/${id}/cancel`),
   archive: (id: string) => api.patch<ApiAuction>(`/auctions/${id}/archive`),
   segments: (id: string) => api.get<ApiSegments>(`/auctions/${id}/segments`),
+  /** Hand the roulette prize to its winner: records it and creates their order. */
+  awardGiveaway: (id: string, dto: { winnerUsername: string; listingId?: string }) =>
+    api.post<{ awarded: boolean; winner: string; order: ApiOrder | null }>(`/auctions/${id}/giveaway`, dto),
   /** Multipart: the browser-captured recording for this live. */
   uploadRecording: (id: string, form: FormData) =>
     api.post<ApiAuction>(`/auctions/${id}/recording`, form, {
@@ -495,6 +498,8 @@ export interface ApiOrder {
   items?: { cardName: string; finalPrice: number; imageUrls?: string[] }[];
   /** The live this order came from, when it came from one — used to open the replay. */
   auctionId?: string | null;
+  /** Won in a live giveaway: nothing was paid, but it still ships. */
+  isGiveaway?: boolean;
   payoutStatus?: 'pending' | 'released' | 'failed';
   payoutAmount?: number | null;
   payoutReleasedAt?: string | null;

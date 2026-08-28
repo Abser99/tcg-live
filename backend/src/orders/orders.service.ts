@@ -120,6 +120,51 @@ export class OrdersService {
   }
 
   /**
+   * Hand a prize to a giveaway winner.
+   *
+   * Same shipping path as a purchase — the winner still gives an address and confirms
+   * receipt — but there is nothing to pay, so it skips straight past checkout instead of
+   * sitting in "pendiente de pago" forever.
+   */
+  async createForGiveaway(params: {
+    listingId: string;
+    listingTitle: string;
+    sellerId: string;
+    winnerId: string;
+    auctionId?: string;
+    imageUrls?: string[];
+  }): Promise<Order> {
+    const { listingId, listingTitle, sellerId, winnerId, auctionId, imageUrls } = params;
+    let order = this.ordersRepo.create({
+      listingId,
+      sellerId,
+      buyerId: winnerId,
+      ...(auctionId && { auctionId }),
+      isGiveaway: true,
+      totalCents: 0,
+      status: OrderStatus.CONFIRMED,      // nothing to pay → straight to preparing
+      paymentStatus: PaymentStatus.PAID,
+      payoutStatus: PayoutStatus.PENDING,
+    });
+    order = await this.ordersRepo.save(order);
+
+    await this.itemsRepo.save(
+      this.itemsRepo.create({ orderId: order.id, cardName: listingTitle, finalPrice: 0, imageUrls }),
+    );
+
+    const [winner, seller] = await Promise.all([
+      this.usersService.findById(winnerId),
+      this.usersService.findById(sellerId),
+    ]);
+    this.notificationsService
+      .notifyGiveawayWon(winnerId, seller.username, listingTitle)
+      .catch(() => {});
+    this.notificationsService.notifyNewOrder(sellerId, winner.username, 1).catch(() => {});
+
+    return this.ordersRepo.findOne({ where: { id: order.id }, relations: ['items'] }) as Promise<Order>;
+  }
+
+  /**
    * Attach the counterparty (who bought / who sold) to a list of orders.
    *
    * Done here rather than with a TypeORM relation: orders.buyerId/sellerId are varchar

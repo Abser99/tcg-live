@@ -50,6 +50,10 @@ export class Order {
   @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.PENDING })
   status: OrderStatus;
 
+  /** Won in a live giveaway: nothing to pay, but it still ships like any order. */
+  @Column({ default: false })
+  isGiveaway: boolean;
+
   @Column({ nullable: true, length: 10 })
   buyerZip: string;
 

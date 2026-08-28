@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -12,6 +12,7 @@ import { AuctionsController } from './auctions.controller';
 import { AuctionsGateway } from './auctions.gateway';
 import { UsersModule } from '../users/users.module';
 import { LivekitModule } from '../livekit/livekit.module';
+import { ListingsModule } from '../listings/listings.module';
 import { OrdersModule } from '../orders/orders.module';
 import { WatchlistModule } from '../watchlist/watchlist.module';
 import { FollowsModule } from '../follows/follows.module';
@@ -23,6 +24,7 @@ import { WsJwtGuard } from '../common/guards/ws-jwt.guard';
     TypeOrmModule.forFeature([Auction, AuctionItem, Bid, MaxBid, LiveSanction]),
     UsersModule,
     LivekitModule,
+    forwardRef(() => ListingsModule),
     OrdersModule,
     WatchlistModule,
     FollowsModule,

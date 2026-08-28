@@ -50,6 +50,26 @@ export class ListingsService {
     return this.repo.save(listing);
   }
 
+  /**
+   * Atomically take a listing out of the catalogue for its owner.
+   *
+   * markSold() just overwrites the status, so calling it twice hands the same card to
+   * two people. This only succeeds while the listing is still ACTIVE, which is the same
+   * guard buy() uses against two buyers racing for one card.
+   */
+  async claim(id: string, sellerId: string) {
+    const listing = await this.findOne(id);
+    if (listing.sellerId !== sellerId) throw new ForbiddenException('Ese artículo no es tuyo');
+    const result = await this.repo.update(
+      { id, status: ListingStatus.ACTIVE },
+      { status: ListingStatus.SOLD },
+    );
+    if (result.affected === 0) {
+      throw new ConflictException('Ese artículo ya se entregó o no está disponible');
+    }
+    return listing;
+  }
+
   async markSold(id: string, sellerId: string) {
     const listing = await this.findOne(id);
     if (listing.sellerId !== sellerId) throw new ForbiddenException();
