@@ -20,6 +20,7 @@ export class UsersService {
     username: string,
     password: string,
     ageConfirmed = false,
+    extra: { birthDate?: string; termsVersion?: string } = {},
   ): Promise<User> {
     const exists = await this.usersRepo.findOne({
       where: [{ email }, { username }],
@@ -32,6 +33,11 @@ export class UsersService {
       username,
       passwordHash,
       ageConfirmedAt: ageConfirmed ? new Date() : null,
+      birthDate: extra.birthDate ?? null,
+      // Only stamped when a version was actually accepted, so a blank column means
+      // "never accepted" rather than "accepted something unknown".
+      termsAcceptedAt: extra.termsVersion ? new Date() : null,
+      termsVersion: extra.termsVersion ?? null,
     });
     return this.usersRepo.save(user);
   }

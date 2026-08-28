@@ -83,8 +83,13 @@ export const authApi = {
   login: (email: string, password: string, rememberMe?: boolean) =>
     api.post<{ token: string; user: ApiUser }>("/auth/login", { email, password, rememberMe }),
 
-  register: (username: string, email: string, password: string, over18: boolean) =>
-    api.post<{ token: string; user: ApiUser }>("/auth/register", { username, email, password, over18 }),
+  register: (
+    username: string, email: string, password: string, over18: boolean,
+    extra?: { birthDate?: string; acceptedTerms?: boolean },
+  ) =>
+    api.post<{ token: string; user: ApiUser }>("/auth/register", {
+      username, email, password, over18, ...extra,
+    }),
 
   me: () => api.get<ApiUser>("/auth/me"),
 
@@ -126,6 +131,7 @@ export const auctionsApi = {
     api.patch(`/auctions/items/${itemId}/close`),
   update: (id: string, dto: {
     title?: string;
+    displayName?: string;
     game?: string;
     reactionEmojis?: string[];
     bidMode?: BidMode;
@@ -394,6 +400,8 @@ export interface ApiAuction {
   isStream?: boolean;
   reactionEmojis?: string[] | null;
   title?: string;
+  /** Seller-chosen name for the show; falls back to `title` when unset. */
+  displayName?: string | null;
   name?: string;
   set?: string;
   game?: string;

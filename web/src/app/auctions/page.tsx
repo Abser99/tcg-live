@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import AmbientBackground from "@/components/AmbientBackground";
 import { auctionsApi, type ApiAuction } from "@/lib/api";
-import { formatTimer, gameLabel } from "@/lib/format";
+import { formatTimer, gameLabel, liveName } from "@/lib/format";
 import { setAuctionsCache } from "@/lib/live-back-cache";
 import { useFavoriteSellers, useFavoriteSeller, requestLiveAlertPermission } from "@/lib/seller-favorites";
 import { useAuth } from "@/contexts/auth";
@@ -471,7 +471,7 @@ export default function AuctionsPage() {
                 const sellerName = a.seller?.username ?? a.sellerName ?? "—";
                 const verified = a.seller?.verified;
                 const currentBid = a.currentBid ?? a.startingBid ?? 0;
-                const title = a.title ?? a.name ?? "Sin título";
+                const title = liveName(a);
                 const timer = formatTimer(a.endTime);
                 const img = a.items?.[0]?.imageUrls?.[0];
                 const cardAriaLabel = `${title} — ${sellerName}, ${a.status === "upcoming" ? "precio inicial" : "puja actual"} $${(currentBid / 100).toLocaleString("es-MX")} MXN`;

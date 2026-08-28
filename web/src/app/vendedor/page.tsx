@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { auctionsApi, ordersApi, listingsApi, shippingApi, type ApiAuction, type ApiOrder, type SellerStats, type ApiListing, type ShippingQuote } from "@/lib/api";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useAnalytics } from "@/hooks/useAnalytics";
-import { gameLabel, usdCentsToMxnCents } from "@/lib/format";
+import { gameLabel, usdCentsToMxnCents, liveName } from "@/lib/format";
 
 type AuctionStatus = "live" | "ending" | "upcoming" | "scheduled" | "cancelled" | "ended";
 type Tab = "dashboard" | "subastas" | "crear" | "ventas" | "ordenes" | "cobros";
@@ -658,7 +658,7 @@ export default function VendedorPage() {
                         🃏
                       </div>
                       <div>
-                        <p className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>{a.title ?? a.name ?? "Sin título"}</p>
+                        <p className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>{liveName(a)}</p>
                         <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{gameLabel(a.game)} · {a.condition ?? ""}</p>
                       </div>
                     </div>
@@ -800,7 +800,7 @@ export default function VendedorPage() {
               <div className="space-y-3">
                 {filteredAuctions.map((a) => {
                   const s = AUCTION_STATUS_STYLE[a.status ?? "upcoming"];
-                  const title = a.title ?? a.name ?? "Sin título";
+                  const title = liveName(a);
                   const currentBid = a.currentBid ?? a.startingBid ?? 0;
 
                   if (a.status === "ended") {

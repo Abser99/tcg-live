@@ -13,7 +13,7 @@ import { getAuctionsCache } from "@/lib/live-back-cache";
 import { useFavoriteSeller } from "@/lib/seller-favorites";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { censorText } from "@/lib/profanity";
-import { formatTimer, gameLabel } from "@/lib/format";
+import { formatTimer, gameLabel, liveName } from "@/lib/format";
 import { useAuth } from "@/contexts/auth";
 import { useAnalytics } from "@/hooks/useAnalytics";
 
@@ -393,7 +393,7 @@ function ProductPanel({ auction: a, gradient, glow, activeItem, isSeller, onAuct
   const { capture } = useAnalytics();
   const [endingAuction, setEndingAuction] = useState(false);
   const [confirmEnd,    setConfirmEnd]    = useState(false);
-  const title      = a.title ?? a.name ?? "Sin título";
+  const title      = liveName(a);
   const sellerName = a.seller?.username ?? a.sellerName ?? "—";
   const verified   = a.seller?.verified;
   const imageUrl   = activeItem?.imageUrls?.[0] ?? (a.items ?? [])[0]?.imageUrls?.[0];
@@ -836,6 +836,10 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [hasSelfieVideo, setHasSelfieVideo] = useState(false);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selfieDeviceId, setSelfieDeviceId] = useState<string>("");
+
+  // Renaming the show. The lot numbers stay automatic — only this name is the seller's.
+  const [nameDraft, setNameDraft] = useState(a.displayName ?? "");
+  const [savingName, setSavingName] = useState(false);
   const startingRef    = useRef(false);
   const [streaming,      setStreaming]      = useState(false);
   const [connecting,     setConnecting]     = useState(false);
@@ -1974,6 +1978,18 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     } catch { /* best effort — the layout is cosmetic */ }
   }, []);
 
+  async function saveLiveName() {
+    if (savingName) return;
+    setSavingName(true);
+    try {
+      const { data } = await auctionsApi.update(a.id, { displayName: nameDraft });
+      onAuctionUpdate?.(data);
+      flashToast(nameDraft.trim() ? "Nombre del live actualizado" : "Se restauró el número del live");
+    } catch (e: any) {
+      flashToast(e?.response?.data?.message ?? "No se pudo cambiar el nombre.");
+    } finally { setSavingName(false); }
+  }
+
   async function toggleSelfie() {
     const room = roomRef.current;
     if (!room || selfieBusy) return;
@@ -2039,7 +2055,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   }
 
   const status     = STATUS_LABEL[a.status ?? "upcoming"];
-  const title      = a.title ?? a.name ?? "Sin título";
+  const title      = liveName(a);
   const sellerName = a.seller?.username ?? a.sellerName ?? "—";
   const verified   = a.seller?.verified;
   // Clock comes from the active card's closesAt (nowTick forces the re-render each second)
@@ -2652,6 +2668,31 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                         </div>
                       </div>
                     )}
+                    {/* ── Nombre del live (editable; los lotes siguen numerándose solos) ── */}
+                    <div className="pt-3 mt-1 space-y-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Nombre del live</p>
+                      <div className="flex gap-2">
+                        <input
+                          value={nameDraft}
+                          onChange={e => setNameDraft(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") saveLiveName(); }}
+                          placeholder={a.title ?? "Nombre del live"}
+                          maxLength={80}
+                          className="flex-1 rounded-lg px-3 py-2 text-sm"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }}
+                        />
+                        <button type="button" onClick={saveLiveName} disabled={savingName}
+                          className="px-3 py-2 rounded-lg text-sm font-bold disabled:opacity-60"
+                          style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+                          {savingName ? "…" : "Guardar"}
+                        </button>
+                      </div>
+                      <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                        Déjalo vacío para volver a <span style={{ color: "var(--text-secondary)" }}>{a.title}</span>.
+                        El nombre de cada puja se asigna solo y no se puede cambiar.
+                      </p>
+                    </div>
+
                     {/* ── Segunda cámara: la cara del vendedor sobre el video de las cartas ── */}
                     <div className="pt-3 mt-1 space-y-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
                       <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Segunda cámara</p>
@@ -3920,7 +3961,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
 /* ─── Card Info ─────────────────────────────────────────── */
 function CardInfo({ auction: a, isSeller }: { auction: ApiAuction; isSeller?: boolean }) {
-  const title = a.title ?? a.name ?? "Sin título";
+  const title = liveName(a);
   const sellerName = a.seller?.username ?? a.sellerName ?? "—";
   const verified = a.seller?.verified;
   const imageUrl = (a.items ?? [])[0]?.imageUrls?.[0];

@@ -21,6 +21,8 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword]   = useState(false);
   const [showConfirm, setShowConfirm]     = useState(false);
   const [isAdult, setIsAdult]             = useState(false);
+  const [birthDate, setBirthDate]         = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   function set(key: string, val: string) {
     setForm((prev) => ({ ...prev, [key]: val }));
@@ -36,14 +38,33 @@ export default function RegisterPage() {
       setError("Completa la verificación de seguridad.");
       return;
     }
+    if (!birthDate) {
+      setError("Ingresa tu fecha de nacimiento.");
+      return;
+    }
+    // Mirrors the server's check so the person hears it before the round trip; the
+    // server decides either way.
+    const dob = new Date(birthDate);
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const mth = today.getMonth() - dob.getMonth();
+    if (mth < 0 || (mth === 0 && today.getDate() < dob.getDate())) age--;
+    if (Number.isNaN(age) || age < 18) {
+      setError("Debes tener al menos 18 años para registrarte.");
+      return;
+    }
     if (!isAdult) {
       setError("Debes confirmar que eres mayor de 18 años.");
+      return;
+    }
+    if (!acceptedTerms) {
+      setError("Debes aceptar los términos y condiciones.");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      await register(form.name, form.email, form.password, isAdult);
+      await register(form.name, form.email, form.password, isAdult, { birthDate, acceptedTerms });
       router.push("/auctions");
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "No se pudo crear la cuenta. Intenta de nuevo.");
@@ -355,6 +376,26 @@ export default function RegisterPage() {
               />
             </div>
 
+            {/* Date of birth — the server checks the age against this. */}
+            <div>
+              <label htmlFor="birthDate" className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                Fecha de nacimiento
+              </label>
+              <input
+                id="birthDate"
+                type="date"
+                required
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+                max={new Date().toISOString().slice(0, 10)}
+                className="w-full rounded-xl px-4 py-3 text-sm"
+                style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }}
+              />
+              <p className="text-[11px] mt-1" style={{ color: "var(--text-muted)" }}>
+                TCG Live es solo para mayores de 18 años.
+              </p>
+            </div>
+
             {/* Age (18+) confirmation checkbox */}
             <label className="flex items-start gap-3 cursor-pointer mt-1">
               <input
@@ -371,7 +412,9 @@ export default function RegisterPage() {
 
             {/* Terms checkbox */}
             <label className="flex items-start gap-3 cursor-pointer">
-              <input type="checkbox" required className="mt-0.5 accent-blue-500" />
+              <input type="checkbox" required className="mt-0.5 accent-blue-500"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)} />
               <span className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
                 Acepto los{" "}
                 <Link href="/terminos" className="transition-opacity hover:opacity-80" style={{ color: "var(--accent-text)" }}>
@@ -387,7 +430,7 @@ export default function RegisterPage() {
             {/* Submit button */}
             <button
               type="submit"
-              disabled={loading || !cfToken || !isAdult}
+              disabled={loading || !cfToken || !isAdult || !acceptedTerms || !birthDate}
               className="w-full py-4 rounded-xl font-black text-white transition-all active:scale-[0.97] disabled:opacity-60 mt-1 flex items-center justify-center gap-2.5"
               style={{
                 background: "linear-gradient(135deg, var(--brand), #3B82F6)",

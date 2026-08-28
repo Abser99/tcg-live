@@ -54,6 +54,12 @@ export class Auction {
   @Column()
   title: string;
 
+  /** Seller-chosen name for the live. The lot names stay automatic — only the show
+      can be renamed. Null falls back to `title`, which never changes because orders,
+      notifications and replays refer to it. */
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  displayName: string | null;
+
   @Column({ type: 'enum', enum: AuctionGame, default: AuctionGame.POKEMON })
   game: AuctionGame;
 

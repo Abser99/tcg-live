@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/auth";
 import { ordersApi, auctionsApi, paymentsApi, watchlistApi, messagesApi, sellerApplicationsApi, sellerDocumentsApi, disputesApi, type ApiOrder, type ApiBid, type WatchlistItem, type MessageThread, type SellerApplication, type SellerDocumentRecord, type ApiDispute, type ApiMessage } from "@/lib/api";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { useAnalytics } from "@/hooks/useAnalytics";
-import { gameLabel } from "@/lib/format";
+import { gameLabel, liveName } from "@/lib/format";
 
 interface Order {
   id: string;
@@ -802,7 +802,7 @@ export default function PerfilPage() {
                         {a.items?.[0]?.imageUrls?.[0] ? (
                           <img
                             src={a.items[0].imageUrls[0]}
-                            alt={a.title ?? a.name ?? "Subasta"}
+                            alt={liveName(a)}
                             className="w-12 h-16 object-contain rounded-lg shrink-0"
                           />
                         ) : (
@@ -811,7 +811,7 @@ export default function PerfilPage() {
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm truncate" style={{ color: "var(--text-primary)" }}>{a.title ?? a.name ?? "Subasta"}</p>
+                          <p className="font-bold text-sm truncate" style={{ color: "var(--text-primary)" }}>{liveName(a)}</p>
                           <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{gameLabel(a.game)}</p>
                           <div className="flex items-center gap-2 mt-2">
                             <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.12)", color: "var(--error-text)" }}>

@@ -548,6 +548,7 @@ export class AuctionsService implements OnModuleInit {
     sellerId: string,
     dto: {
       title?: string;
+      displayName?: string;
       game?: AuctionGame;
       reactionEmojis?: string[];
       bidMode?: BidMode;
@@ -559,7 +560,13 @@ export class AuctionsService implements OnModuleInit {
     if (auction.status === AuctionStatus.ENDED || auction.status === AuctionStatus.CANCELLED) {
       throw new BadRequestException('No se puede editar una subasta terminada');
     }
-    // dto.title is ignored on purpose — the number is the identity of the auction.
+    // dto.title is ignored on purpose — the number is the identity of the auction and is
+    // referenced by orders, notifications and replays. The seller renames the show through
+    // displayName instead; blanking it falls back to the number.
+    if (dto.displayName !== undefined) {
+      const clean = dto.displayName.trim();
+      auction.displayName = clean.length ? clean.slice(0, 80) : null;
+    }
     if (dto.game)  auction.game  = dto.game;
     if (dto.reactionEmojis) auction.reactionEmojis = dto.reactionEmojis.slice(0, 6);
     if (dto.bidMode) auction.bidMode = dto.bidMode;

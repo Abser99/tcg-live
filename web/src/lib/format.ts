@@ -36,3 +36,9 @@ const APPROX_USD_TO_MXN = 18.5;
 export function usdCentsToMxnCents(usdCents: number): number {
   return Math.round(usdCents * APPROX_USD_TO_MXN);
 }
+
+/** What to call a live on screen: the seller's chosen name, else its permanent number.
+    Kept in one place so every screen agrees after a rename. */
+export function liveName(a?: { displayName?: string | null; title?: string; name?: string } | null): string {
+  return a?.displayName?.trim() || a?.title || a?.name || "Sin título";
+}

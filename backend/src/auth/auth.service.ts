@@ -34,8 +34,43 @@ export class AuthService {
         });
   }
 
+  /** Current terms revision. Bumping it lets us tell who accepted what. */
+  private static readonly TERMS_VERSION = '2026-08';
+  /** This is an 18+ marketplace. */
+  private static readonly MIN_AGE = 18;
+
+  /** Whole years between a date of birth and today. */
+  private static ageFrom(birthDate: string): number {
+    const dob = new Date(birthDate);
+    const now = new Date();
+    let age = now.getFullYear() - dob.getFullYear();
+    const m = now.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
+    return age;
+  }
+
   async register(dto: RegisterDto) {
-    const user = await this.usersService.create(dto.email, dto.username, dto.password, dto.over18);
+    // The age gate is enforced here, not by the checkbox: anything the client asserts
+    // can be forged, so we check the date of birth ourselves.
+    if (dto.birthDate) {
+      const age = AuthService.ageFrom(dto.birthDate);
+      if (Number.isNaN(age) || age < 0 || age > 120) {
+        throw new BadRequestException('La fecha de nacimiento no es válida');
+      }
+      if (age < AuthService.MIN_AGE) {
+        throw new BadRequestException(`Debes tener al menos ${AuthService.MIN_AGE} años para registrarte`);
+      }
+    } else if (!dto.over18) {
+      throw new BadRequestException('Debes confirmar que eres mayor de edad');
+    }
+    if (dto.acceptedTerms === false) {
+      throw new BadRequestException('Debes aceptar los términos y condiciones');
+    }
+
+    const user = await this.usersService.create(
+      dto.email, dto.username, dto.password, dto.over18,
+      { birthDate: dto.birthDate, termsVersion: dto.acceptedTerms ? AuthService.TERMS_VERSION : undefined },
+    );
 
     // auto-promote to admin if email matches ADMIN_EMAIL env var
     const adminEmail = this.configService.get<string>('ADMIN_EMAIL');

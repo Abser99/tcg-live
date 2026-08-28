@@ -57,6 +57,19 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   ageConfirmedAt: Date | null;
 
+  /** Date of birth given at sign-up. The age gate is checked against this on the server;
+      a checkbox alone is something the client can simply lie about. */
+  @Column({ type: 'date', nullable: true })
+  birthDate: string | null;
+
+  /** When these terms were accepted, and which version — a checkbox that leaves no
+      record proves nothing later. */
+  @Column({ type: 'timestamptz', nullable: true })
+  termsAcceptedAt: Date | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  termsVersion: string | null;
+
   @Column({ default: false })
   isSuspended: boolean;
 

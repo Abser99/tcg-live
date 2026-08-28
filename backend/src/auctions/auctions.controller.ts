@@ -35,6 +35,9 @@ class UpdateAuctionDto {
   @IsArray() @IsString({ each: true }) @IsOptional() reactionEmojis?: string[];
   @IsEnum(BidMode) @IsOptional() bidMode?: BidMode;
   @IsInt() @Min(0) @Max(100_000_000) @IsOptional() dutchFloorCents?: number;
+
+  /** Rename the show. The lot numbers stay automatic. */
+  @IsString() @MaxLength(80) @IsOptional() displayName?: string;
 }
 
 class SetTimerDto {

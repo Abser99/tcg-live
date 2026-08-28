@@ -16,7 +16,7 @@ interface AuthState {
   user: ApiUser | null;
   loading: boolean;
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
-  register: (username: string, email: string, password: string, over18: boolean) => Promise<void>;
+  register: (username: string, email: string, password: string, over18: boolean, extra?: { birthDate?: string; acceptedTerms?: boolean }) => Promise<void>;
   logout: () => void;
 }
 
@@ -99,8 +99,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(
-    async (username: string, email: string, password: string, over18: boolean) => {
-      const { data } = await authApi.register(username, email, password, over18);
+    async (username: string, email: string, password: string, over18: boolean, extra?: { birthDate?: string; acceptedTerms?: boolean }) => {
+      const { data } = await authApi.register(username, email, password, over18, extra);
       persist(data.token, data.user);
     },
     []
