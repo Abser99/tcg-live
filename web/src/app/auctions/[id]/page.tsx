@@ -842,6 +842,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [myMinutes, setMyMinutes] = useState(0);
   const [myEntries, setMyEntries] = useState(0);
   const [friendBoost, setFriendBoost] = useState({ multiplier: 1, connectedFriends: 0 });
+  const [showRaffle, setShowRaffle] = useState(false);
   const [showShare, setShowShare] = useState(false);
   // Reporting from inside the live. The moment is marked against the recording, so
   // there's no video buffer to keep — see IncidentsService.
@@ -3994,43 +3995,69 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           </div>
         )}
 
-        {/* Raffle status for the viewer: what's up for grabs and what they've earned.
-            Only while a raffle is actually open — otherwise it's noise over the video. */}
-        {!isSeller && user && raffles.some(r => r.status === "pending") && !chromeHidden && (
-          <div className="absolute top-14 left-3 z-[36] rounded-xl px-3 py-2 max-w-[62%]"
-            style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.16)" }}>
-            {raffles.filter(r => r.status === "pending").slice(0, 1).map(r => (
-              <div key={r.id}>
-                <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: "var(--accent-text)" }}>🎁 Sorteo</p>
-                <div className="flex items-start gap-2">
-                  {r.prizeImageUrl && (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img src={fileUrl(r.prizeImageUrl)} alt="" className="w-11 h-11 rounded-lg object-cover shrink-0 mt-0.5"
-                      style={{ border: "1px solid rgba(255,255,255,0.22)" }} />
-                  )}
-                  <div className="min-w-0">
-                <p className="text-[13px] font-semibold text-white leading-tight truncate">{r.prizeTitle}</p>
-                <p className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.75)" }}>
-                  {myMinutes >= r.minMinutes
-                    ? `Llevas ${myMinutes} min · ${myEntries} ${myEntries === 1 ? "entrada" : "entradas"}`
-                    : `Necesitas ${r.minMinutes} min viendo · llevas ${myMinutes}`}
-                </p>
-                {friendBoost.multiplier > 1 && (
-                  <p className="text-[11px] font-semibold" style={{ color: "var(--accent-text)" }}>
-                    ×{friendBoost.multiplier} por {friendBoost.connectedFriends} {friendBoost.connectedFriends === 1 ? "amigo" : "amigos"} en el live
-                  </p>
-                )}
+        {/* The raffle used to sit open across the top-left, over the very video people
+            came to watch. It's a badge now: a tap opens the detail, and the entry count
+            stays visible on the badge so nothing important needs the panel to be read. */}
+        {!isSeller && user && raffles.some(r => r.status === "pending") && !chromeHidden && (() => {
+          const r = raffles.find(x => x.status === "pending")!;
+          const qualifies = myMinutes >= r.minMinutes;
+          return (
+            <>
+              <button type="button" onClick={() => setShowRaffle(v => !v)}
+                aria-expanded={showRaffle}
+                aria-label={`Sorteo: ${r.prizeTitle}. ${qualifies ? `${myEntries} entradas` : `necesitas ${r.minMinutes} minutos`}`}
+                className="absolute right-3 z-[37] flex items-center gap-1.5 h-9 pl-2.5 pr-3 rounded-full active:scale-95 transition-transform"
+                style={{
+                  bottom: "10.5rem",
+                  background: showRaffle ? "var(--brand-light)" : "rgba(0,0,0,0.55)",
+                  color: showRaffle ? "var(--brand-ink)" : "#fff",
+                  backdropFilter: "blur(8px)",
+                  border: `1px solid ${showRaffle ? "transparent" : "rgba(255,255,255,0.22)"}`,
+                }}>
+                <span className="text-base leading-none" aria-hidden="true">🎁</span>
+                <span className="text-[12px] font-bold tabular-nums">
+                  {qualifies ? myEntries : `${myMinutes}/${r.minMinutes}`}
+                </span>
+              </button>
+
+              {showRaffle && (
+                <div className="absolute right-3 z-[37] w-64 max-w-[78vw] rounded-2xl p-3 slide-up"
+                  style={{ bottom: "14rem", background: "rgba(10,10,14,0.92)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                    <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: "var(--accent-text)" }}>🎁 Sorteo</p>
+                    <button type="button" onClick={() => setShowRaffle(false)} aria-label="Cerrar"
+                      className="text-white/60 hover:text-white text-xs leading-none -mt-0.5">✕</button>
                   </div>
+                  <div className="flex items-start gap-2.5">
+                    {r.prizeImageUrl && (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={fileUrl(r.prizeImageUrl)} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0"
+                        style={{ border: "1px solid rgba(255,255,255,0.22)" }} />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-white leading-tight">{r.prizeTitle}</p>
+                      <p className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.75)" }}>
+                        {qualifies
+                          ? `Llevas ${myMinutes} min · ${myEntries} ${myEntries === 1 ? "entrada" : "entradas"}`
+                          : `Necesitas ${r.minMinutes} min viendo · llevas ${myMinutes}`}
+                      </p>
+                      {friendBoost.multiplier > 1 && (
+                        <p className="text-[11px] font-semibold" style={{ color: "var(--accent-text)" }}>
+                          ×{friendBoost.multiplier} por {friendBoost.connectedFriends} {friendBoost.connectedFriends === 1 ? "amigo" : "amigos"} en el live
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => { setShowRaffle(false); setShowShare(true); }}
+                    className="mt-2.5 w-full py-1.5 rounded-full text-[11px] font-bold"
+                    style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+                    Invitar amigos
+                  </button>
                 </div>
-                <button type="button" onClick={() => setShowShare(true)}
-                  className="mt-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full"
-                  style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
-                  Invitar amigos
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+              )}
+            </>
+          );
+        })()}
 
         {/* ── Live chat overlay (bottom, blurred gradient for legibility) ── */}
         <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col justify-end pointer-events-none"
