@@ -4,10 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
-import {
-  sellerApplicationsApi, sellerDocumentsApi, disputesApi, usersApi, adminOrdersApi,
-  type SellerApplication, type SellerDocumentRecord, type ApiDispute, type AdminUser, type ApiOrder,
-} from "@/lib/api";
+import { sellerApplicationsApi, sellerDocumentsApi, disputesApi, usersApi, adminOrdersApi, type SellerApplication, type SellerDocumentRecord, type ApiDispute, type AdminUser, type ApiOrder, adminStatsApi, type ApiAdminOverview, type ApiSellerStatsRow, type ApiBuyerStatsRow } from "@/lib/api";
 
 const DOC_LABELS: Record<string, string> = {
   identificacion:        "Identificación Oficial",
@@ -24,6 +21,11 @@ const STATUS_STYLE: Record<string, { label: string; color: string; bg: string }>
   rejected: { label: "Rechazado", color: "var(--error-text)", bg: "rgba(248,113,113,0.12)" },
 };
 
+/** MXN from cents, with no decimals — these are reporting figures, not receipts. */
+function money(cents: number): string {
+  return `$${Math.round((cents ?? 0) / 100).toLocaleString("es-MX")}`;
+}
+
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -32,7 +34,14 @@ export default function AdminPage() {
   const [documents,     setDocuments]     = useState<SellerDocumentRecord[]>([]);
   const [allDisputes,   setAllDisputes]   = useState<ApiDispute[]>([]);
   const [loading,       setLoading]       = useState(true);
-  const [tab,           setTab]           = useState<"applications" | "documents" | "disputes" | "users" | "cobros">("applications");
+  const [tab,           setTab]           = useState<"stats" | "applications" | "documents" | "disputes" | "users" | "cobros">("stats");
+
+  // ── Reporting ──
+  const [overview, setOverview] = useState<ApiAdminOverview | null>(null);
+  const [sellerRows, setSellerRows] = useState<ApiSellerStatsRow[]>([]);
+  const [buyerRows, setBuyerRows] = useState<ApiBuyerStatsRow[]>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [who, setWho] = useState<"sellers" | "buyers">("sellers");
   const [filter,        setFilter]        = useState("pending");
   const [selected,      setSelected]      = useState<SellerApplication | null>(null);
   const [rejectNote,    setRejectNote]    = useState("");
@@ -159,6 +168,13 @@ export default function AdminPage() {
   }, [user]);
 
   useEffect(() => {
+    if (tab === "stats" && !overview && !statsLoading) {
+      setStatsLoading(true);
+      Promise.all([adminStatsApi.overview(), adminStatsApi.sellers(50), adminStatsApi.buyers(50)])
+        .then(([o, se, bu]) => { setOverview(o.data); setSellerRows(se.data); setBuyerRows(bu.data); })
+        .catch(() => {})
+        .finally(() => setStatsLoading(false));
+    }
     if (tab === "users" && allUsers.length === 0) loadUsers(1);
   }, [tab, allUsers.length, loadUsers]);
 
@@ -300,7 +316,7 @@ export default function AdminPage() {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-2xl font-black">Panel de Administración</h1>
-              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Revisión de solicitudes y documentos KYC</p>
+              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Actividad de la plataforma, solicitudes de vendedor y disputas</p>
             </div>
             <div className="flex gap-2">
               {(["pending", "approved", "rejected", "all"] as const).map(f => (
@@ -317,6 +333,7 @@ export default function AdminPage() {
 
           <div className="flex gap-1 mt-6 flex-wrap">
             {[
+              { key: "stats",        label: "Estadísticas",            count: 0            },
               { key: "applications", label: "Solicitudes de Vendedor", count: pendingApps  },
               { key: "documents",    label: "Documentos KYC",          count: pendingDocs  },
               { key: "disputes",     label: "Disputas",                count: openDisputes },
@@ -349,6 +366,94 @@ export default function AdminPage() {
         ) : (
           <>
             {/* ── SOLICITUDES ── */}
+            {tab === "stats" && (
+              <div className="space-y-6">
+                {statsLoading && !overview ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[1,2,3,4,5,6,7,8].map(i => <div key={i} className="h-24 rounded-2xl shimmer" style={{ border: "1px solid var(--border)" }} />)}
+                  </div>
+                ) : overview ? (
+                  <>
+                    {/* Headline numbers. Money first — it's what the question usually is. */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {([
+                        ["Ingresos cobrados", money(overview.orders.revenueCents), `comisión ${money(overview.orders.commissionCents)}`],
+                        ["Ventas totales",    money(overview.orders.gmvCents),     `${overview.orders.total} órdenes · ${overview.orders.paid} pagadas`],
+                        ["Minutos vistos",    overview.watch.watchedMinutes.toLocaleString("es-MX"), `${overview.watch.viewers} espectadores`],
+                        ["Pujas",             overview.bids.total.toLocaleString("es-MX"), `${overview.bids.bidders} pujadores · ${overview.bids.automatic} automáticas`],
+                        ["Minutos al aire",   overview.auctions.streamedMinutes.toLocaleString("es-MX"), `${overview.auctions.total} subastas`],
+                        ["En vivo ahora",     String(overview.auctions.live), `${overview.auctions.scheduled} programadas`],
+                        ["Usuarios",          String(overview.users.total), `${overview.users.sellers} vendedores · ${overview.users.buyers} compradores`],
+                        ["Sorteos",           String(overview.raffles.drawn), `de ${overview.raffles.total} creados`],
+                      ] as const).map(([label, value, sub]) => (
+                        <div key={label} className="rounded-2xl p-4" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+                          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>{label}</p>
+                          <p className="text-2xl font-black mt-1 tabular-nums" style={{ color: "var(--text-primary)" }}>{value}</p>
+                          <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{sub}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Per-person detail. One table at a time keeps the columns readable. */}
+                    <div className="flex gap-2">
+                      {(["sellers", "buyers"] as const).map(k => (
+                        <button key={k} onClick={() => setWho(k)}
+                          className="px-4 py-2 rounded-full text-sm font-semibold"
+                          style={who === k
+                            ? { background: "var(--brand-light)", color: "var(--brand-ink)" }
+                            : { background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                          {k === "sellers" ? `Vendedores (${sellerRows.length})` : `Compradores (${buyerRows.length})`}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="rounded-2xl overflow-x-auto" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+                      <table className="w-full text-sm" style={{ minWidth: 680 }}>
+                        <thead>
+                          <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                            {(who === "sellers"
+                              ? ["Vendedor", "Lives", "Min. al aire", "Órdenes", "Ingresos", "Pujas recibidas", "Min. de audiencia"]
+                              : ["Comprador", "Órdenes", "Gastado", "Sorteos ganados", "Pujas", "Min. vistos", "Lives"]
+                            ).map((h, i) => (
+                              <th key={h} className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap"
+                                style={{ color: "var(--text-muted)", textAlign: i === 0 ? "left" : "right" }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {who === "sellers" ? sellerRows.map(r => (
+                            <tr key={r.userId} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                              <td className="px-4 py-2.5 font-semibold whitespace-nowrap" style={{ color: "var(--text-primary)" }}>
+                                @{r.username}{r.verified && <span style={{ color: "var(--accent-text)" }}> ✓</span>}
+                              </td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.lives}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.streamedMinutes.toLocaleString("es-MX")}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.orders}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: "var(--text-primary)" }}>{money(r.revenueCents)}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.bidsReceived}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.audienceMinutes.toLocaleString("es-MX")}</td>
+                            </tr>
+                          )) : buyerRows.map(r => (
+                            <tr key={r.userId} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                              <td className="px-4 py-2.5 font-semibold whitespace-nowrap" style={{ color: "var(--text-primary)" }}>@{r.username}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.orders}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: "var(--text-primary)" }}>{money(r.spentCents)}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.giveaways}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.bids}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.watchedMinutes.toLocaleString("es-MX")}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.livesAttended}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-center py-12" style={{ color: "var(--text-muted)" }}>No se pudieron cargar las estadísticas.</p>
+                )}
+              </div>
+            )}
+
             {tab === "applications" && (
               <div className="space-y-3">
                 <h2 className="sr-only">Solicitudes de vendedor</h2>

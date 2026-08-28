@@ -176,6 +176,13 @@ export const auctionsApi = {
     }),
 };
 
+// ─── Admin reporting ───────────────────────────────────────────
+export const adminStatsApi = {
+  overview: () => api.get<ApiAdminOverview>("/admin/stats/overview"),
+  sellers:  (limit = 50) => api.get<ApiSellerStatsRow[]>("/admin/stats/sellers", { params: { limit } }),
+  buyers:   (limit = 50) => api.get<ApiBuyerStatsRow[]>("/admin/stats/buyers", { params: { limit } }),
+};
+
 // ─── Orders ────────────────────────────────────────────────────
 export const ordersApi = {
   my: () => api.get<ApiOrder[]>("/orders/my"),
@@ -670,6 +677,26 @@ export interface ApiWatchTime {
   multiplier: number;
   connectedFriends: number;
   entries: number;
+}
+
+/** Admin reporting. */
+export interface ApiAdminOverview {
+  users: { total: number; sellers: number; buyers: number; suspended: number; new_week: number };
+  auctions: { total: number; live: number; scheduled: number; ended: number; streamedMinutes: number };
+  orders: { total: number; paid: number; unpaid: number; giveaways: number; revenueCents: number; gmvCents: number; commissionCents: number };
+  bids: { total: number; automatic: number; bidders: number };
+  watch: { watchedMinutes: number; viewers: number };
+  raffles: { total: number; drawn: number };
+}
+export interface ApiSellerStatsRow {
+  username: string; userId: string; verified: boolean;
+  lives: number; streamedMinutes: number; orders: number;
+  revenueCents: number; bidsReceived: number; audienceMinutes: number; viewers: number;
+}
+export interface ApiBuyerStatsRow {
+  username: string; userId: string;
+  orders: number; spentCents: number; giveaways: number;
+  bids: number; watchedMinutes: number; livesAttended: number;
 }
 
 /** A raffle on a live. Entries come from watch time — one per minute. */

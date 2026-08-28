@@ -37,6 +37,7 @@ import { Listing } from './listings/entities/listing.entity';
 import { ListingOffer } from './listings/entities/listing-offer.entity';
 import { SellerDocumentsModule } from './seller-documents/seller-documents.module';
 import { HealthController } from './health.controller';
+import { AdminModule } from './admin/admin.module';
 import { SellerDocument } from './seller-documents/seller-document.entity';
 import { User } from './users/user.entity';
 import { Auction } from './auctions/entities/auction.entity';
@@ -116,6 +117,7 @@ import { Notification } from './notifications/entities/notification.entity';
     UsersModule,
     AuthModule,
     AuctionsModule,
+    AdminModule,
     SellerApplicationsModule,
     CardsModule,
     GeoModule,
