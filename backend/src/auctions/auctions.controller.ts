@@ -160,8 +160,8 @@ export class AuctionsController {
   /** "I'm still watching." Credits time toward raffle entries. */
   @Post(':id/heartbeat')
   @UseGuards(AuthGuard('jwt'))
-  heartbeat(@Param('id') id: string, @CurrentUser() user: User) {
-    return this.auctionsService.heartbeat(id, user.id);
+  heartbeat(@Param('id') id: string, @Query('ref') ref: string | undefined, @CurrentUser() user: User) {
+    return this.auctionsService.heartbeat(id, user.id, ref);
   }
 
   /** How long the current viewer has watched this live. */

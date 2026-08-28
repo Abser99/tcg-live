@@ -155,8 +155,10 @@ export const auctionsApi = {
   segments: (id: string) => api.get<ApiSegments>(`/auctions/${id}/segments`),
 
   /** "Still watching" — credits time toward raffle entries. */
-  heartbeat: (id: string) => api.post<{ watchedSec: number; minutes: number }>(`/auctions/${id}/heartbeat`),
-  watchTime: (id: string) => api.get<{ watchedSec: number; minutes: number }>(`/auctions/${id}/watch-time`),
+  /** `ref` is the username of whoever's invite link brought this viewer in. */
+  heartbeat: (id: string, ref?: string) =>
+    api.post<ApiWatchTime>(`/auctions/${id}/heartbeat`, null, ref ? { params: { ref } } : undefined),
+  watchTime: (id: string) => api.get<ApiWatchTime>(`/auctions/${id}/watch-time`),
   raffles:      (id: string) => api.get<ApiRaffle[]>(`/auctions/${id}/raffles`),
   createRaffle: (id: string, dto: { prizeTitle: string; prizeListingId?: string; minMinutes?: number }) =>
     api.post<ApiRaffle>(`/auctions/${id}/raffles`, dto),
@@ -658,6 +660,16 @@ export interface SellerDocumentRecord {
   isExpired?: boolean;
   userId?: string;
   user?: { id: string; username: string; email: string };
+}
+
+/** Watch time and the raffle entries it earns, including the friend multiplier. */
+export interface ApiWatchTime {
+  watchedSec: number;
+  minutes: number;
+  /** 2× per connected friend you invited, capped. */
+  multiplier: number;
+  connectedFriends: number;
+  entries: number;
 }
 
 /** A raffle on a live. Entries come from watch time — one per minute. */

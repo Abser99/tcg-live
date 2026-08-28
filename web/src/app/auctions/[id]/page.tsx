@@ -839,6 +839,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   // ── Raffles: entries come from watch time, so the page reports it while open ──
   const [myMinutes, setMyMinutes] = useState(0);
+  const [myEntries, setMyEntries] = useState(0);
+  const [friendBoost, setFriendBoost] = useState({ multiplier: 1, connectedFriends: 0 });
+  const [showShare, setShowShare] = useState(false);
   const [raffles, setRaffles] = useState<ApiRaffle[]>([]);
   const [rafflePrize, setRafflePrize] = useState("");
   const [raffleListing, setRaffleListing] = useState("");
@@ -1024,21 +1027,46 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     toastTimerRef.current = setTimeout(() => setToast(null), 2200);
   }
 
-  async function shareLive() {
-    setShowMoreMenu(false);
-    const url = typeof window !== "undefined" ? window.location.href : "";
-    try {
+  /** The live's link carrying my invite code, so friends who arrive count as mine. */
+  function myShareUrl(): string {
+    if (typeof window === "undefined") return "";
+    const u = new URL(window.location.href);
+    u.searchParams.delete("stream");
+    if (user?.username) u.searchParams.set("ref", user.username);
+    return u.toString();
+  }
+
+  const shareText = () => `Estoy en el live de @${sellerName} en TCG Live 🔥`;
+
+  function shareTo(where: "whatsapp" | "instagram" | "copy") {
+    const url = myShareUrl();
+    setShowShare(false);
+    if (where === "whatsapp") {
+      window.open(`https://wa.me/?text=${encodeURIComponent(`${shareText()} ${url}`)}`, "_blank", "noopener");
+      return;
+    }
+    if (where === "instagram") {
+      // Instagram has no web share target, so the useful move is the OS share sheet
+      // (which lists Instagram when it's installed) and a copied link as the fallback.
       if (typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share({ title: `Live de ${sellerName} · TCG Live`, url });
+        navigator.share({ title: `Live de ${sellerName}`, text: shareText(), url }).catch(() => {});
         return;
       }
-    } catch { /* user cancelled share sheet — fall through to copy */ }
-    try {
-      await navigator.clipboard.writeText(url);
-      flashToast("Enlace copiado 🔗");
-    } catch {
-      flashToast(url);
+      navigator.clipboard?.writeText(url).then(
+        () => flashToast("Enlace copiado — pégalo en tu historia de Instagram"),
+        () => flashToast(url),
+      );
+      return;
     }
+    navigator.clipboard?.writeText(url).then(
+      () => flashToast("Enlace copiado 🔗 — si tus amigos entran, suben tus entradas"),
+      () => flashToast(url),
+    );
+  }
+
+  async function shareLive() {
+    setShowMoreMenu(false);
+    setShowShare(true);
   }
 
   const [favSeller, toggleFavSeller] = useFavoriteSeller(a.seller?.username ?? a.sellerName ?? "", a.seller?.id);
@@ -1994,9 +2022,17 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   useEffect(() => {
     if (!user || !isLive) return;
     let alive = true;
+    // Whoever's link brought us here, if any. Sent on every beat; the server only
+    // records it once, so a refresh can't re-credit the same friend.
+    const ref = new URLSearchParams(window.location.search).get("ref") ?? undefined;
     const beat = () => {
-      auctionsApi.heartbeat(a.id)
-        .then(r => { if (alive) setMyMinutes(r.data.minutes); })
+      auctionsApi.heartbeat(a.id, ref)
+        .then(r => {
+          if (!alive) return;
+          setMyMinutes(r.data.minutes);
+          setMyEntries(r.data.entries);
+          setFriendBoost({ multiplier: r.data.multiplier, connectedFriends: r.data.connectedFriends });
+        })
         .catch(() => {});
     };
     beat();
@@ -3239,6 +3275,50 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           </div>
         )}
 
+        {/* Share sheet. The link carries the sharer's code, so friends who arrive
+            through it raise their odds in whatever raffle is running. */}
+        {showShare && (
+          <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4"
+            style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setShowShare(false)}>
+            <div className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl overflow-hidden"
+              style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between gap-3 px-5 py-4" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                <div className="min-w-0">
+                  <p className="font-semibold" style={{ color: "var(--text-primary)" }}>Compartir el live</p>
+                  {user && (
+                    <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                      Tu enlace lleva tu código: cada amigo que entre y se quede duplica tus entradas.
+                    </p>
+                  )}
+                </div>
+                <button onClick={() => setShowShare(false)} aria-label="Cerrar"
+                  className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-base leading-none"
+                  style={{ color: "var(--text-muted)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>✕</button>
+              </div>
+              <div className="p-4 grid grid-cols-3 gap-2">
+                {([
+                  ["whatsapp",  "WhatsApp",  "💬", "#25D366"],
+                  ["instagram", "Instagram", "📸", "#E1306C"],
+                  ["copy",      "Copiar",    "🔗", "var(--brand)"],
+                ] as const).map(([key, label, icon, color]) => (
+                  <button key={key} type="button" onClick={() => shareTo(key)}
+                    className="flex flex-col items-center gap-2 py-4 rounded-xl transition-transform active:scale-95"
+                    style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                    <span className="text-2xl leading-none" aria-hidden="true">{icon}</span>
+                    <span className="text-xs font-semibold" style={{ color }}>{label}</span>
+                  </button>
+                ))}
+              </div>
+              {friendBoost.connectedFriends > 0 && (
+                <p className="px-5 pb-4 text-xs" style={{ color: "var(--accent-text)" }}>
+                  {friendBoost.connectedFriends} {friendBoost.connectedFriends === 1 ? "amigo conectado" : "amigos conectados"} · tus entradas van ×{friendBoost.multiplier}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Raffle status for the viewer: what's up for grabs and what they've earned.
             Only while a raffle is actually open — otherwise it's noise over the video. */}
         {!isSeller && user && raffles.some(r => r.status === "pending") && !chromeHidden && (
@@ -3250,9 +3330,19 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                 <p className="text-[13px] font-semibold text-white leading-tight truncate">{r.prizeTitle}</p>
                 <p className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.75)" }}>
                   {myMinutes >= r.minMinutes
-                    ? `Llevas ${myMinutes} min · ${myMinutes} ${myMinutes === 1 ? "entrada" : "entradas"}`
+                    ? `Llevas ${myMinutes} min · ${myEntries} ${myEntries === 1 ? "entrada" : "entradas"}`
                     : `Necesitas ${r.minMinutes} min viendo · llevas ${myMinutes}`}
                 </p>
+                {friendBoost.multiplier > 1 && (
+                  <p className="text-[11px] font-semibold" style={{ color: "var(--accent-text)" }}>
+                    ×{friendBoost.multiplier} por {friendBoost.connectedFriends} {friendBoost.connectedFriends === 1 ? "amigo" : "amigos"} en el live
+                  </p>
+                )}
+                <button type="button" onClick={() => setShowShare(true)}
+                  className="mt-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full"
+                  style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+                  Invitar amigos
+                </button>
               </div>
             ))}
           </div>

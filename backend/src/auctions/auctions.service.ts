@@ -15,6 +15,7 @@ import { MaxBid } from './entities/max-bid.entity';
 import { LiveSanction, SanctionKind } from './entities/live-sanction.entity';
 import { LiveAttendance } from './entities/live-attendance.entity';
 import { Raffle, RaffleStatus } from './entities/raffle.entity';
+import { LiveReferral } from './entities/live-referral.entity';
 import { CreateAuctionDto } from './dto/create-auction.dto';
 import { PlaceBidDto } from './dto/place-bid.dto';
 import { SetMaxBidDto } from './dto/set-max-bid.dto';
@@ -55,6 +56,8 @@ export class AuctionsService implements OnModuleInit {
     private readonly attendanceRepo: Repository<LiveAttendance>,
     @InjectRepository(Raffle)
     private readonly rafflesRepo: Repository<Raffle>,
+    @InjectRepository(LiveReferral)
+    private readonly referralsRepo: Repository<LiveReferral>,
     private readonly dataSource: DataSource,
     private readonly gateway: AuctionsGateway,
     private readonly usersService: UsersService,
@@ -1206,6 +1209,29 @@ export class AuctionsService implements OnModuleInit {
   /** Never credit more than this from one beat, so a tab asleep for an hour
       (or a forged call) can't mint entries it didn't earn. */
   private static readonly MAX_CREDIT_SEC = 75;
+  /** A friend counts as present if they beat within this window. */
+  private static readonly PRESENT_WITHIN_SEC = 90;
+  /**
+   * Each friend watching alongside you doubles your entries. Capped: doubling is
+   * exponential, so without a ceiling one person with ten friends would hold a thousand
+   * times everyone else's odds and the raffle would stop being a raffle.
+   */
+  private static readonly MAX_FRIEND_DOUBLINGS = 3; // up to 8×
+
+  /** How much someone's entries are multiplied right now by friends they brought. */
+  private async friendMultiplier(auctionId: string, userId: string): Promise<{ multiplier: number; connectedFriends: number }> {
+    const referrals = await this.referralsRepo.find({ where: { auctionId, referrerId: userId } });
+    if (!referrals.length) return { multiplier: 1, connectedFriends: 0 };
+
+    const cutoff = new Date(Date.now() - AuctionsService.PRESENT_WITHIN_SEC * 1000);
+    const rows = await this.attendanceRepo.find({ where: { auctionId } });
+    const presentIds = new Set(rows.filter(r => r.lastSeenAt > cutoff).map(r => r.userId));
+
+    // Only friends who are actually in the room count — that's the point of the rule.
+    const connected = referrals.filter(r => presentIds.has(r.friendId)).length;
+    const doublings = Math.min(connected, AuctionsService.MAX_FRIEND_DOUBLINGS);
+    return { multiplier: 2 ** doublings, connectedFriends: connected };
+  }
 
   /**
    * Record that someone is watching right now, and credit the time since their last
@@ -1213,8 +1239,24 @@ export class AuctionsService implements OnModuleInit {
    * closed laptop never sends "leave" — and counting that as presence would hand raffle
    * entries to people who left hours ago.
    */
-  async heartbeat(auctionId: string, userId: string): Promise<{ watchedSec: number; minutes: number }> {
+  async heartbeat(
+    auctionId: string, userId: string, refUsername?: string,
+  ): Promise<{ watchedSec: number; minutes: number; multiplier: number; connectedFriends: number; entries: number }> {
     const now = new Date();
+    // First beat carrying an invite code links this viewer to whoever shared it. The
+    // unique index means a friend is credited once, to one referrer, for good.
+    if (refUsername) {
+      const referrer = await this.usersService.findByUsername(refUsername).catch(() => null);
+      if (referrer && referrer.id !== userId) {
+        await this.referralsRepo
+          .createQueryBuilder()
+          .insert()
+          .values({ auctionId, referrerId: referrer.id, friendId: userId })
+          .orIgnore()
+          .execute()
+          .catch(() => undefined);
+      }
+    }
     let row = await this.attendanceRepo.findOne({ where: { auctionId, userId } });
     if (!row) {
       row = this.attendanceRepo.create({ auctionId, userId, watchedSec: 0, lastSeenAt: now });
@@ -1226,14 +1268,18 @@ export class AuctionsService implements OnModuleInit {
       row.lastSeenAt = now;
     }
     await this.attendanceRepo.save(row);
-    return { watchedSec: row.watchedSec, minutes: Math.floor(row.watchedSec / 60) };
+    const minutes = Math.floor(row.watchedSec / 60);
+    const { multiplier, connectedFriends } = await this.friendMultiplier(auctionId, userId);
+    return { watchedSec: row.watchedSec, minutes, multiplier, connectedFriends, entries: minutes * multiplier };
   }
 
   /** Watch time for one viewer of one live. */
   async myWatchTime(auctionId: string, userId: string) {
     const row = await this.attendanceRepo.findOne({ where: { auctionId, userId } });
     const watchedSec = row?.watchedSec ?? 0;
-    return { watchedSec, minutes: Math.floor(watchedSec / 60) };
+    const minutes = Math.floor(watchedSec / 60);
+    const { multiplier, connectedFriends } = await this.friendMultiplier(auctionId, userId);
+    return { watchedSec, minutes, multiplier, connectedFriends, entries: minutes * multiplier };
   }
 
   /** Seller sets up a raffle — before going live or in the middle of the show. */
@@ -1296,10 +1342,17 @@ export class AuctionsService implements OnModuleInit {
 
     const rows = await this.attendanceRepo.find({ where: { auctionId: raffle.auctionId } });
     // The seller can't win their own raffle, and short visits don't qualify.
-    const eligible = rows
+    const candidates = rows
       .filter(r => r.userId !== sellerId)
-      .map(r => ({ userId: r.userId, entries: Math.floor(r.watchedSec / 60) }))
-      .filter(r => r.entries >= Math.max(1, raffle.minMinutes));
+      .map(r => ({ userId: r.userId, minutes: Math.floor(r.watchedSec / 60) }))
+      .filter(r => r.minutes >= Math.max(1, raffle.minMinutes));
+
+    // Friends brought to the live multiply entries, but qualifying is on watch time
+    // alone — inviting people can't get you in, only improve your odds once you're in.
+    const eligible = await Promise.all(candidates.map(async c => {
+      const { multiplier } = await this.friendMultiplier(raffle.auctionId, c.userId);
+      return { userId: c.userId, entries: c.minutes * multiplier };
+    }));
 
     if (!eligible.length) {
       throw new BadRequestException(
