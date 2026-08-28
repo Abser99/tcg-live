@@ -445,13 +445,12 @@ export class AuctionsService implements OnModuleInit {
       .where('a.status IN (:...statuses)', { statuses: [AuctionStatus.SCHEDULED, AuctionStatus.LIVE] });
 
     if (query?.trim()) {
+      /* Sellers only. Searching card names sold a promise the catalogue can't keep:
+         a lot is named when it opens, so what someone types is either not on the wheel
+         yet or already gone. Who is streaming is the stable thing to look for. */
       const q = `%${query.toLowerCase().trim()}%`;
       qb.andWhere(
-        `(LOWER(a.title) LIKE :q OR EXISTS (` +
-        `SELECT 1 FROM auction_items ai ` +
-        `WHERE ai."auctionId" = a.id ` +
-        `AND (LOWER(ai."cardName") LIKE :q OR LOWER(ai."cardSet") LIKE :q)` +
-        `))`,
+        `(LOWER(seller.username) LIKE :q OR LOWER(COALESCE(seller."displayName", '')) LIKE :q)`,
         { q },
       );
     }

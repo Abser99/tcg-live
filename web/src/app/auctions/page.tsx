@@ -340,8 +340,8 @@ export default function AuctionsPage() {
                 </svg>
                 <input
                   type="text"
-                  aria-label="Buscar subastas por carta o vendedor"
-                  placeholder="Buscar carta, vendedor…"
+                  aria-label="Buscar por vendedor"
+                  placeholder="Buscar vendedor…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full rounded-full pl-10 pr-4 py-3 text-sm transition-all"
@@ -607,7 +607,7 @@ const AUCTIONS_EMPTY = [
   { title: "Sin subastas en este momento",  sub: "El estadio está en calma. Los duelos comienzan pronto." },
   { title: "Nada por aquí aún",              sub: "Como buscar una carta holográfica — hay que tener paciencia." },
   { title: "El mercado descansa",            sub: "Vuelve pronto para ver las próximas subastas en vivo." },
-  { title: "Sin resultados",                 sub: "Intenta buscar con otras palabras o quita los filtros." },
+  { title: "Sin resultados",                 sub: "Busca por el nombre del vendedor, o quita los filtros." },
 ];
 
 function AuctionsEmptyState({ search, filter }: { search: string; filter: string }) {
