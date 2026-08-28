@@ -160,8 +160,16 @@ export const auctionsApi = {
     api.post<ApiWatchTime>(`/auctions/${id}/heartbeat`, null, ref ? { params: { ref } } : undefined),
   watchTime: (id: string) => api.get<ApiWatchTime>(`/auctions/${id}/watch-time`),
   raffles:      (id: string) => api.get<ApiRaffle[]>(`/auctions/${id}/raffles`),
-  createRaffle: (id: string, dto: { prizeTitle: string; prizeListingId?: string; minMinutes?: number }) =>
+  createRaffle: (id: string, dto: { prizeTitle: string; prizeListingId?: string; minMinutes?: number; prizeImageUrl?: string }) =>
     api.post<ApiRaffle>(`/auctions/${id}/raffles`, dto),
+  /** Multipart: a photo of the prize, straight from the camera or the library. */
+  uploadRaffleImage: (id: string, form: FormData) =>
+    api.post<{ url: string }>(`/auctions/${id}/raffle-image`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 60_000,
+    }),
+  /** Money, lots and time on air for the seller running this live. */
+  liveStats: (id: string) => api.get<ApiLiveStats>(`/auctions/${id}/live-stats`),
   drawRaffle:   (id: string, raffleId: string) =>
     api.post<{ raffle: ApiRaffle; order: ApiOrder | null; participants: number }>(`/auctions/${id}/raffles/${raffleId}/draw`),
   cancelRaffle: (id: string, raffleId: string) => api.delete(`/auctions/${id}/raffles/${raffleId}`),
@@ -731,11 +739,22 @@ export interface ApiBuyerStatsRow {
 }
 
 /** A raffle on a live. Entries come from watch time — one per minute. */
+/** The seller's own scoreboard while the show is running. */
+export interface ApiLiveStats {
+  soldCents: number;
+  buyers: number;
+  lotsSold: number;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
 export interface ApiRaffle {
   id: string;
   auctionId: string;
   prizeTitle: string;
   prizeListingId: string | null;
+  /** Photo of the prize, under /uploads. Run it through fileUrl() to display it. */
+  prizeImageUrl: string | null;
   minMinutes: number;
   status: "pending" | "drawn" | "cancelled";
   winnerUsername: string | null;

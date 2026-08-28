@@ -8,13 +8,13 @@ import { WhatsAppIcon, InstagramIcon, NativeShareIcon, LinkIcon, usePlatform } f
 import ErrorBoundary from "@/components/ErrorBoundary";
 import PokemonCardSearch from "@/components/PokemonCardSearch";
 import { Room, RoomEvent, Track, createLocalVideoTrack } from "livekit-client";
-import { auctionsApi, watchlistApi, usersApi, paymentMethodsApi, listingsApi, bidIncrement, type ApiAuction, type ApiAuctionItem, type ApiPaymentMethod, type ApiListing, type BidMode, type ApiRaffle, incidentsApi } from "@/lib/api";
+import { auctionsApi, watchlistApi, usersApi, paymentMethodsApi, listingsApi, bidIncrement, type ApiAuction, type ApiAuctionItem, type ApiPaymentMethod, type ApiListing, type BidMode, type ApiRaffle, type ApiLiveStats, fileUrl, incidentsApi } from "@/lib/api";
 import { createLiveRecorder } from "@/lib/live-recorder";
 import { getAuctionsCache } from "@/lib/live-back-cache";
 import { useFavoriteSeller } from "@/lib/seller-favorites";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { censorText } from "@/lib/profanity";
-import { formatTimer, gameLabel, liveName } from "@/lib/format";
+import { formatTimer, gameLabel, liveName, apiMessage } from "@/lib/format";
 import { useAuth } from "@/contexts/auth";
 import { useAnalytics } from "@/hooks/useAnalytics";
 
@@ -854,6 +854,15 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [raffleListing, setRaffleListing] = useState("");
   const [raffleMin, setRaffleMin] = useState("5");
   const [raffleBusy, setRaffleBusy] = useState(false);
+  // The prize photo is uploaded the moment it's picked, so creating the raffle stays
+  // a plain JSON post and the seller sees the thumbnail before committing.
+  const [rafflePhoto, setRafflePhoto] = useState<string | null>(null);
+  const [rafflePhotoBusy, setRafflePhotoBusy] = useState(false);
+  // The seller's own scoreboard. Money and lots come from the server; the clock is
+  // local, counting from startedAt, so it moves every second without polling for it.
+  const [liveStats, setLiveStats] = useState<ApiLiveStats | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
 
   // Renaming the show. The lot numbers stay automatic — only this name is the seller's.
   const [nameDraft, setNameDraft] = useState(a.displayName ?? "");
@@ -1309,6 +1318,21 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     const t = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  /* Sales figures for the seller running the show. Every 15s is plenty — a lot closing
+     is the only thing that moves them, and the clock beside them ticks on its own. */
+  useEffect(() => {
+    if (!isSeller || !isLive) return;
+    let cancelled = false;
+    const pull = () => {
+      auctionsApi.liveStats(a.id)
+        .then(r => { if (!cancelled) setLiveStats(r.data); })
+        .catch(() => {});
+    };
+    pull();
+    const t = setInterval(() => { if (!document.hidden) pull(); }, 15_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [isSeller, isLive, a.id]);
 
   /* Optimistic bid: the price on screen jumps the instant the slider fires, so the
      UI never waits on the round-trip. Cleared once the server value catches up. */
@@ -2077,6 +2101,21 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   useEffect(() => { loadRaffles(); }, [loadRaffles]);
 
+  async function pickRafflePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // so picking the same file twice still fires
+    if (!file) return;
+    setRafflePhotoBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const { data } = await auctionsApi.uploadRaffleImage(a.id, form);
+      setRafflePhoto(data.url);
+    } catch (e: unknown) {
+      flashToast(apiMessage(e, "No se pudo subir la foto."));
+    } finally { setRafflePhotoBusy(false); }
+  }
+
   async function createRaffle() {
     if (!rafflePrize.trim() || raffleBusy) return;
     setRaffleBusy(true);
@@ -2085,8 +2124,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         prizeTitle: rafflePrize.trim(),
         prizeListingId: raffleListing || undefined,
         minMinutes: Math.max(0, Number(raffleMin) || 0),
+        prizeImageUrl: rafflePhoto ?? undefined,
       });
-      setRafflePrize(""); setRaffleListing("");
+      setRafflePrize(""); setRaffleListing(""); setRafflePhoto(null);
       loadRaffles();
       flashToast("Sorteo creado — se anuncia a quienes están viendo");
     } catch (e: any) {
@@ -2493,6 +2533,33 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           )}
         </div>
 
+        {/* Seller's scoreboard: takings, lots gone, time on air. Only he sees it —
+            viewers get the raffle card in this same slot. */}
+        {isSeller && isLive && !chromeHidden && (() => {
+          const startedMs = liveStats?.startedAt ? new Date(liveStats.startedAt).getTime() : null;
+          const onAirSec = startedMs ? Math.max(0, Math.floor((nowTick - startedMs) / 1000)) : null;
+          const clock = onAirSec === null ? "—"
+            : onAirSec >= 3600
+              ? `${Math.floor(onAirSec / 3600)}:${String(Math.floor(onAirSec / 60) % 60).padStart(2, "0")}:${String(onAirSec % 60).padStart(2, "0")}`
+              : `${Math.floor(onAirSec / 60)}:${String(onAirSec % 60).padStart(2, "0")}`;
+          return (
+            <div className="absolute top-14 left-3 z-[36] flex items-stretch rounded-xl overflow-hidden"
+              style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.16)" }}>
+              {([
+                ["Vendido", `$${((liveStats?.soldCents ?? 0) / 100).toLocaleString("es-MX", { maximumFractionDigits: 0 })}`, "var(--accent-text)"],
+                ["Lotes", String(liveStats?.lotsSold ?? 0), "#fff"],
+                ["En vivo", clock, "#fff"],
+              ] as const).map(([label, value, color], i) => (
+                <div key={label} className="px-2.5 py-1.5"
+                  style={i > 0 ? { borderLeft: "1px solid rgba(255,255,255,0.14)" } : undefined}>
+                  <p className="text-[9px] font-bold uppercase tracking-wider leading-none" style={{ color: "rgba(255,255,255,0.6)" }}>{label}</p>
+                  <p className="text-[13px] font-black tabular-nums leading-tight mt-0.5" style={{ color }}>{value}</p>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* ── Right-side icon stack (compact): buy-now, wallet, more (⋮), peek-arrow ── */}
         <div className="absolute top-4 right-3 z-30 flex flex-col items-end gap-1.5"
           style={{ opacity: chromeHidden ? 0 : 1, visibility: chromeHidden ? "hidden" : "visible", transition: "opacity 0.45s ease, visibility 0.45s ease" }}>
@@ -2845,6 +2912,43 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                         className="w-full rounded-lg px-3 py-2 text-sm"
                         style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
 
+                      {/* Two inputs, not one: `capture` opens the camera straight away,
+                          and its absence lets the OS offer the photo library. */}
+                      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment"
+                        onChange={pickRafflePhoto} className="hidden" />
+                      <input ref={libraryInputRef} type="file" accept="image/*"
+                        onChange={pickRafflePhoto} className="hidden" />
+
+                      {rafflePhoto ? (
+                        <div className="flex items-center gap-2.5 rounded-lg p-2"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={fileUrl(rafflePhoto)} alt="Premio del sorteo"
+                            className="w-14 h-14 rounded-lg object-cover shrink-0" style={{ border: "1px solid var(--border)" }} />
+                          <p className="text-[11px] flex-1" style={{ color: "var(--text-muted)" }}>
+                            Se muestra a quienes están viendo el live.
+                          </p>
+                          <button type="button" onClick={() => setRafflePhoto(null)}
+                            className="shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-lg"
+                            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--error-text)" }}>
+                            Quitar
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => cameraInputRef.current?.click()} disabled={rafflePhotoBusy}
+                            className="flex-1 py-2 rounded-lg text-xs font-semibold disabled:opacity-50"
+                            style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                            {rafflePhotoBusy ? "Subiendo…" : "📷 Tomar foto"}
+                          </button>
+                          <button type="button" onClick={() => libraryInputRef.current?.click()} disabled={rafflePhotoBusy}
+                            className="flex-1 py-2 rounded-lg text-xs font-semibold disabled:opacity-50"
+                            style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                            {rafflePhotoBusy ? "Subiendo…" : "🖼️ Biblioteca"}
+                          </button>
+                        </div>
+                      )}
+
                       <div className="flex gap-2">
                         <select value={raffleListing} onChange={e => setRaffleListing(e.target.value)}
                           className="flex-1 rounded-lg px-2 py-2 text-sm min-w-0"
@@ -2872,6 +2976,11 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                           {raffles.filter(r => r.status !== "cancelled").map(r => (
                             <div key={r.id} className="rounded-lg px-2.5 py-2 flex items-center gap-2"
                               style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                              {r.prizeImageUrl && (
+                                /* eslint-disable-next-line @next/next/no-img-element */
+                                <img src={fileUrl(r.prizeImageUrl)} alt="" className="w-9 h-9 rounded object-cover shrink-0"
+                                  style={{ border: "1px solid var(--border)" }} />
+                              )}
                               <div className="min-w-0 flex-1">
                                 <p className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>{r.prizeTitle}</p>
                                 <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
@@ -3423,6 +3532,13 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
             {raffles.filter(r => r.status === "pending").slice(0, 1).map(r => (
               <div key={r.id}>
                 <p className="text-[10px] font-black uppercase tracking-wider" style={{ color: "var(--accent-text)" }}>🎁 Sorteo</p>
+                <div className="flex items-start gap-2">
+                  {r.prizeImageUrl && (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={fileUrl(r.prizeImageUrl)} alt="" className="w-11 h-11 rounded-lg object-cover shrink-0 mt-0.5"
+                      style={{ border: "1px solid rgba(255,255,255,0.22)" }} />
+                  )}
+                  <div className="min-w-0">
                 <p className="text-[13px] font-semibold text-white leading-tight truncate">{r.prizeTitle}</p>
                 <p className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.75)" }}>
                   {myMinutes >= r.minMinutes
@@ -3434,6 +3550,8 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                     ×{friendBoost.multiplier} por {friendBoost.connectedFriends} {friendBoost.connectedFriends === 1 ? "amigo" : "amigos"} en el live
                   </p>
                 )}
+                  </div>
+                </div>
                 <button type="button" onClick={() => setShowShare(true)}
                   className="mt-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full"
                   style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>

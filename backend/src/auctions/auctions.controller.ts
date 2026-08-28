@@ -3,6 +3,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import { unlink } from 'fs/promises';
 import { Throttle } from '@nestjs/throttler';
 import { IsArray, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
 import { AuctionsService } from './auctions.service';
@@ -79,6 +80,8 @@ class CreateRaffleDto {
   @IsString() @IsOptional() prizeListingId?: string;
   /** Minutes of watch time required to qualify. */
   @IsInt() @Min(0) @Max(600) @IsOptional() minMinutes?: number;
+  /** Path returned by POST :id/raffle-image. The service rejects anything else. */
+  @IsString() @MaxLength(300) @IsOptional() prizeImageUrl?: string;
 }
 
 class AwardGiveawayDto {
@@ -175,6 +178,49 @@ export class AuctionsController {
   @Get(':id/raffles')
   raffles(@Param('id') id: string) {
     return this.auctionsService.listRaffles(id);
+  }
+
+  /**
+   * Photo of a raffle prize — the phone's camera or its library, both arriving here
+   * as a plain file upload. Stored next to the other uploads and served from /uploads.
+   */
+  @Post(':id/raffle-image')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: './uploads/raffles',
+      filename: (_req, file, cb) => {
+        const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+        cb(null, `${unique}${extname(file.originalname) || '.jpg'}`);
+      },
+    }),
+    fileFilter: (_req, file, cb) =>
+      file.mimetype.startsWith('image/')
+        ? cb(null, true)
+        : cb(new BadRequestException('Solo se aceptan imágenes'), false),
+    limits: { fileSize: 12 * 1024 * 1024 }, // a phone photo, not a video
+  }))
+  async uploadRaffleImage(
+    @Param('id') id: string,
+    @UploadedFile() file: { filename: string; path: string } | undefined,
+    @CurrentUser() user: User,
+  ) {
+    if (!file) throw new BadRequestException('No se recibió la imagen');
+    // Multer has already written the file, so a stranger's upload must be swept up here.
+    const auction = await this.auctionsService.findOne(id);
+    if (auction.sellerId !== user.id && user.role !== UserRole.ADMIN) {
+      await unlink(file.path).catch(() => undefined);
+      throw new ForbiddenException('Este live no es tuyo');
+    }
+    return { url: `/uploads/raffles/${file.filename}` };
+  }
+
+  /** Seller's own numbers for the live he's running right now. */
+  @Get(':id/live-stats')
+  @UseGuards(AuthGuard('jwt'))
+  liveStats(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.auctionsService.sellerLiveStats(id, user.id);
   }
 
   @Post(':id/raffles')

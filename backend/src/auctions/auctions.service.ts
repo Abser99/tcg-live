@@ -1276,6 +1276,40 @@ export class AuctionsService implements OnModuleInit {
     return { watchedSec, minutes, multiplier, connectedFriends, entries: minutes * multiplier };
   }
 
+  /**
+   * What the seller wants on screen mid-show: money in, lots gone, time on air.
+   *
+   * The money comes from orders rather than the lots, because a live also sells
+   * buy-now items — counting only closed lots would under-report the take.
+   */
+  async sellerLiveStats(auctionId: string, sellerId: string) {
+    const auction = await this.findOne(auctionId);
+    this.assertOwner(auction.sellerId, sellerId);
+
+    const [money] = (await this.attendanceRepo.query(
+      `SELECT COALESCE(SUM("totalCents"), 0)::int AS "soldCents",
+              COUNT(DISTINCT "buyerId")::int      AS "buyers"
+         FROM orders
+        WHERE "auctionId" = $1 AND "isGiveaway" = false`,
+      [auctionId],
+    )) as [{ soldCents: number; buyers: number }];
+
+    const [lots] = (await this.attendanceRepo.query(
+      `SELECT COUNT(*)::int AS "lotsSold"
+         FROM auction_items WHERE "auctionId" = $1 AND status = 'sold'`,
+      [auctionId],
+    )) as [{ lotsSold: number }];
+
+    return {
+      soldCents: Number(money.soldCents),
+      buyers: Number(money.buyers),
+      lotsSold: Number(lots.lotsSold),
+      // The clock ticks in the browser; this is the anchor it counts from.
+      startedAt: auction.startedAt ?? null,
+      endedAt: auction.endedAt ?? null,
+    };
+  }
+
   /** Watch time for one viewer of one live. */
   async myWatchTime(auctionId: string, userId: string) {
     const row = await this.attendanceRepo.findOne({ where: { auctionId, userId } });
@@ -1289,7 +1323,7 @@ export class AuctionsService implements OnModuleInit {
   async createRaffle(
     auctionId: string,
     sellerId: string,
-    dto: { prizeTitle: string; prizeListingId?: string; minMinutes?: number },
+    dto: { prizeTitle: string; prizeListingId?: string; minMinutes?: number; prizeImageUrl?: string },
   ): Promise<Raffle> {
     const auction = await this.findOne(auctionId);
     this.assertOwner(auction.sellerId, sellerId);
@@ -1305,12 +1339,16 @@ export class AuctionsService implements OnModuleInit {
       sellerId,
       prizeTitle: dto.prizeTitle.trim().slice(0, 120),
       prizeListingId: dto.prizeListingId ?? null,
+      // Only our own upload paths — an arbitrary URL here would render remote content
+      // inside the live for every viewer.
+      prizeImageUrl: dto.prizeImageUrl?.startsWith('/uploads/') ? dto.prizeImageUrl : null,
       minMinutes: Math.max(0, Math.min(600, dto.minMinutes ?? 1)),
       status: RaffleStatus.PENDING,
     });
     const saved = await this.rafflesRepo.save(raffle);
     this.gateway.server?.to(`auction:${auctionId}`).emit('raffle:created', {
-      auctionId, raffleId: saved.id, prizeTitle: saved.prizeTitle, minMinutes: saved.minMinutes,
+      auctionId, raffleId: saved.id, prizeTitle: saved.prizeTitle,
+      minMinutes: saved.minMinutes, prizeImageUrl: saved.prizeImageUrl,
     });
     return saved;
   }

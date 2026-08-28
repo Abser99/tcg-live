@@ -34,6 +34,11 @@ export class Raffle {
   @Column({ type: 'varchar', nullable: true })
   prizeListingId: string | null;
 
+  /** Photo of the prize — shot on the spot or picked from the seller's library.
+      A path under /uploads, never a foreign URL. */
+  @Column({ type: 'varchar', nullable: true })
+  prizeImageUrl: string | null;
+
   /** Minutes a viewer must have watched to qualify at all. */
   @Column({ type: 'int', default: 1 })
   minMinutes: number;
