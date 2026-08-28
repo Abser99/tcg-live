@@ -22,6 +22,7 @@ export class NotificationsService {
     const type = (data?.type as string) ?? '';
     const auctionId = data?.auctionId as string | undefined;
     switch (type) {
+      // No longer sent — kept so notifications already in the inbox still deep-link.
       case 'outbid':
       case 'auction_live':
       case 'seller_live':

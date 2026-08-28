@@ -17,7 +17,7 @@ function timeAgo(iso: string): string {
 
 /* dot color by notification type */
 function typeDot(type: string): string {
-  if (type === "outbid") return "#f59e0b";
+  if (type === "outbid") return "#f59e0b"; // no longer sent; kept so old rows still render
   if (type.startsWith("auction")) return "#ef4444";
   if (type === "new_message") return "var(--brand)";
   if (type.startsWith("dispute")) return "var(--error-text)";

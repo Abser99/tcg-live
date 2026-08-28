@@ -288,7 +288,8 @@ export default function AjustesPage() {
   const [payoutError, setPayoutError] = useState("");
 
   const [notifs, setNotifs] = useState({
-    outbid:    true,
+    liveStart:   true,
+    auctionWin:  true,
     orderUpdate: true,
     newMessage:  true,
     promotions:  false,
@@ -1314,7 +1315,8 @@ export default function AjustesPage() {
 
                 <div className="space-y-0">
                   {([
-                    { key: "outbid" as const,      label: "Me superaron una puja",      desc: "Cuando alguien puja más que tú en una subasta activa" },
+                    { key: "liveStart" as const,   label: "Lives que empiezan",         desc: "Cuando un vendedor que sigues abre su transmisión" },
+                    { key: "auctionWin" as const,  label: "Pujas que ganas",            desc: "Cuando te llevas un lote o un premio" },
                     { key: "orderUpdate" as const, label: "Actualizaciones de órdenes", desc: "Confirmación de compra, envío y entrega" },
                     { key: "newMessage" as const,  label: "Mensajes nuevos",             desc: "Cuando recibes un mensaje de un vendedor o comprador" },
                     { key: "promotions" as const,  label: "Promociones y novedades",     desc: "Subastas especiales, nuevas cartas y ofertas exclusivas" },

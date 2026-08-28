@@ -677,7 +677,7 @@ export class AuctionsService implements OnModuleInit {
   }
 
   async placeBid(itemId: string, bidderId: string, dto: PlaceBidDto): Promise<Bid> {
-    const { bid, auctionId, autoBid, closesAt, binTriggered, prevWinnerId, cardName } = await this.dataSource.transaction(async (manager) => {
+    const { bid, auctionId, autoBid, closesAt, binTriggered } = await this.dataSource.transaction(async (manager) => {
       const item = await manager.findOne(AuctionItem, {
         where: { id: itemId },
         lock: { mode: 'pessimistic_write' },
@@ -768,18 +768,13 @@ export class AuctionsService implements OnModuleInit {
         }
       }
 
-      return { bid: savedBid, auctionId: item.auctionId, autoBid, closesAt: item.closesAt, binTriggered, prevWinnerId, cardName: item.cardName };
+      return { bid: savedBid, auctionId: item.auctionId, autoBid, closesAt: item.closesAt, binTriggered };
     });
 
-    // Notify previous highest bidder that they were outbid (fire-and-forget)
-    if (prevWinnerId && prevWinnerId !== bidderId) {
-      const amountMxn = (dto.amount / 100).toFixed(0);
-      this.notificationsService.sendToUser(prevWinnerId, {
-        title: '¡Te superaron!',
-        body: `Alguien pujó $${amountMxn} MXN por ${cardName}. Vuelve a pujar para no perderla.`,
-        data: { type: 'outbid', auctionId, itemId },
-      }).catch(() => {});
-    }
+    /* Being outbid deliberately does NOT notify. In a live the price moves every few
+       seconds, so one lot could fire a dozen alerts at a viewer who is already watching
+       it happen. Notifications are reserved for the two things worth interrupting
+       someone for: a live starting, and winning. */
 
     const bidder = await this.usersService.findById(bidderId);
     this.gateway.emitBidPlaced(auctionId, {
