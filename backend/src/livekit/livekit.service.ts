@@ -42,6 +42,40 @@ export class LivekitService {
     }
   }
 
+  /* Whether the video service will actually accept a join right now. The browser can't
+     tell us: a WebSocket handshake that fails hides its HTTP status, so the client only
+     ever sees "ServerUnreachable" — the same thing it reports for a dead wifi. The
+     server can ask directly, so it does, and caches the answer for a minute. */
+  private availability: { ok: boolean; issue?: string; checkedAt: number } | null = null;
+  private static readonly AVAILABILITY_TTL_MS = 60_000;
+
+  async videoAvailability(): Promise<{ ok: boolean; issue?: string }> {
+    const cached = this.availability;
+    if (cached && Date.now() - cached.checkedAt < LivekitService.AVAILABILITY_TTL_MS) {
+      return { ok: cached.ok, issue: cached.issue };
+    }
+    let result: { ok: boolean; issue?: string } = { ok: true };
+    try {
+      const probe = new AccessToken(this.apiKey, this.apiSecret, { identity: '__probe__', ttl: 60 });
+      probe.addGrant({ roomJoin: true, room: '__availability_probe__' });
+      const token = await probe.toJwt();
+      const httpUrl = this.wsUrl.replace(/^ws/, 'http');
+      const res = await fetch(`${httpUrl}/rtc/validate?access_token=${token}`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) {
+        const body = (await res.text()).slice(0, 200);
+        result = { ok: false, issue: res.status === 429 ? 'quota' : 'unavailable' };
+        this.logger.warn(`LiveKit refused a join probe: ${res.status} ${body}`);
+      }
+    } catch (err) {
+      // A probe that can't run is not proof the service is down; don't cry wolf.
+      this.logger.warn(`Could not probe LiveKit availability: ${String(err)}`);
+    }
+    this.availability = { ...result, checkedAt: Date.now() };
+    return result;
+  }
+
   /** True when a recording can actually be written somewhere. */
   get canRecord(): boolean {
     return !!this.s3;

@@ -874,7 +874,11 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const startingRef    = useRef(false);
   const [streaming,      setStreaming]      = useState(false);
   const [connecting,     setConnecting]     = useState(false);
-  const [roomConnected,  setRoomConnected]  = useState(false);
+  /* The room has more than two states, and conflating them is what put a permanent
+     "Reconectando…" on screen: a booleano can't tell "hasn't connected yet" from
+     "was connected and dropped" from "tried and failed". */
+  const [connState, setConnState] = useState<"idle" | "connecting" | "connected" | "reconnecting" | "failed">("idle");
+  const roomConnected = connState === "connected";
   const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
   const [micMuted,       setMicMuted]       = useState(false);
   const [camOff,         setCamOff]         = useState(false);
@@ -1938,8 +1942,11 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       if (isSeller && selfieTrackRef.current) broadcastSelfieLayout(selfieLayout, true);
     });
 
-    room.on(RoomEvent.Reconnecting, () => { if (alive) setRoomConnected(false); });
-    room.on(RoomEvent.Reconnected,  () => { if (alive) setRoomConnected(true); });
+    // These two are the only genuine reconnects — LiveKit fires them after a live
+    // connection drops, never during the first attempt.
+    room.on(RoomEvent.Reconnecting, () => { if (alive) setConnState("reconnecting"); });
+    room.on(RoomEvent.Reconnected,  () => { if (alive) setConnState("connected"); });
+    room.on(RoomEvent.Disconnected, () => { if (alive) setConnState(s => (s === "connected" ? "failed" : s)); });
 
     const updateViewers = () => {
       if (!alive) return;
@@ -1964,19 +1971,39 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
     attachChatListener(room);
     setConnectError(null);
+    setConnState("connecting");
 
+    // The server already asked the video service whether it will take a join; keep the
+    // answer so a failure below can be explained instead of guessed at.
+    let videoIssue: string | undefined;
     auctionsApi.livekitToken(a.id)
       .then(({ data }) => {
         if (!alive) return;
-        return room.connect(data.wsUrl, data.token).then(() => { if (alive) setRoomConnected(true); });
+        if (data.videoAvailable === false) videoIssue = data.videoIssue ?? "unavailable";
+        return room.connect(data.wsUrl, data.token).then(() => { if (alive) setConnState("connected"); });
       })
-      .catch(() => {
-        if (alive) setConnectError("No se pudo conectar al stream. Revisa tu conexión.");
+      .catch((err: unknown) => {
+        if (!alive) return;
+        setConnState("failed");
+        /* A rejection by the video service is not the viewer's network, and telling
+           them to "revisa tu conexión" sends someone to reset a router for nothing.
+           LiveKit reports the reason in the message rather than a status field, so
+           read both. */
+        /* A browser can't see why a WebSocket handshake failed — a refusal by the video
+           service and a dead wifi both arrive as "ServerUnreachable". So the reason
+           comes from the server, which asked directly. */
+        setConnectError(
+          videoIssue === "quota"
+            ? "El video no está disponible ahora (el servicio alcanzó su límite de minutos). El chat y las pujas siguen funcionando."
+            : videoIssue
+              ? "El servicio de video no está disponible ahora. El chat y las pujas siguen funcionando."
+              : "No se pudo conectar al stream. Revisa tu conexión.",
+        );
       });
 
     return () => {
       alive = false;
-      setRoomConnected(false);
+      setConnState("idle");
       room.disconnect();
       roomRef.current = null;
     };
@@ -4445,8 +4472,13 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         {/* ── Live chat overlay (bottom, blurred gradient for legibility) ── */}
         <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col justify-end pointer-events-none"
           style={{ background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.45) 42%, rgba(0,0,0,0) 100%)", paddingTop: 72, opacity: chromeHidden ? 0 : 1, visibility: chromeHidden ? "hidden" : "visible", transform: chromeHidden ? "translateY(8px)" : "none", transition: "opacity 0.45s ease, transform 0.45s ease, visibility 0.45s ease" }}>
-          {isLive && !roomConnected && roomRef.current && (
-            <p className="text-xs text-amber-300 text-center mb-1 animate-pulse">Reconectando…</p>
+          {/* Only while something is actually in flight. On a failure the notice at the
+              top says what happened and offers Reintentar — repeating it here as an
+              endless "Reconectando…" was the bug. */}
+          {isLive && (connState === "connecting" || connState === "reconnecting") && (
+            <p className="text-xs text-amber-300 text-center mb-1 animate-pulse">
+              {connState === "connecting" ? "Conectando…" : "Reconectando…"}
+            </p>
           )}
           {/* Chat: username on top, the message text below it. Capped to ~8 lines
              (name + text). Scroll up/down inside the box for history; top edge fades. */}

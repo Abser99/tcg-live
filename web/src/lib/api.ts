@@ -117,7 +117,7 @@ export const auctionsApi = {
     api.post(`/auctions/items/${itemId}/bids`, { amount }),
 
   livekitToken: (auctionId: string) =>
-    api.get<{ token: string; wsUrl: string }>(`/auctions/${auctionId}/livekit-token`),
+    api.get<{ token: string; wsUrl: string; videoAvailable?: boolean; videoIssue?: string }>(`/auctions/${auctionId}/livekit-token`),
 
   start:   (id: string, durationMs?: number) => api.patch(`/auctions/${id}/start`, durationMs ? { durationMs } : {}),
   end:     (id: string) => api.patch(`/auctions/${id}/end`),
