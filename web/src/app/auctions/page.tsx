@@ -17,14 +17,8 @@ const INK = "var(--brand-ink)";
    "Favoritos" filter and (b) opts you into a browser alert when their live starts. */
 type Filter = "all" | "live" | "ending" | "upcoming" | "favorites";
 
-const FILTERS: { key: Filter; label: string; dot?: string }[] = [
-  { key: "all",       label: "Todas" },
-  { key: "live",      label: "En vivo",   dot: "#ef4444" },
-  { key: "upcoming",  label: "Próximas",  dot: "var(--text-muted)" },
-  { key: "favorites", label: "Favoritos", dot: "#f43f5e" },
-];
-
-// Category filters for "Todas las subastas" (multi-select). Values match the seller's stream categories.
+/* The scheduler still lets a seller tag their stream with these; the browse filters
+   that used to share the list are gone. */
 const CATEGORIES: { value: string; label: string }[] = [
   { value: "pokemon",    label: "Pokémon" },
   { value: "onepiece",   label: "One Piece" },
@@ -67,8 +61,6 @@ export default function AuctionsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(false);
-  const [filter, setFilter]     = useState<Filter>("all");
-  const [catFilter, setCatFilter] = useState<string[]>([]); // selected categories (multi)
   const favSellers = useFavoriteSellers();
   const [search, setSearch]     = useState("");
   const { user } = useAuth();
@@ -130,7 +122,6 @@ export default function AuctionsPage() {
     try {
       await auctionsApi.create({ isStream: true, scheduledAt: when.toISOString(), categories: schedCats } as any);
       setShowScheduler(false);
-      setFilter("upcoming");           // show the new scheduled stream under "Próximas"
       loadInitial(search);             // refresh the list so it appears
     } catch (err: any) {
       setSchedError(err?.response?.data?.message ?? "No se pudo agendar el stream.");
@@ -225,16 +216,9 @@ export default function AuctionsPage() {
     finally { setLoadingMore(false); }
   }
 
-  const isFav = (a: ApiAuction) => {
-    const n = a.seller?.username ?? a.sellerName;
-    return !!n && favSellers.includes(n);
-  };
-  const auctionCats = (a: ApiAuction) => (a.categories && a.categories.length ? a.categories : (a.game ? [a.game] : []));
-  const filtered = auctions.filter((a) => {
-    const statusOk = filter === "all" ? true : filter === "favorites" ? isFav(a) : dispStatus(a) === filter;
-    const catOk = catFilter.length === 0 || auctionCats(a).some((c) => catFilter.includes(c));
-    return statusOk && catOk;
-  });
+  /* No client-side filtering any more: the search box is the only control, and the
+     server already decides what comes back for it. */
+  const filtered = auctions;
   const liveCount = auctions.filter((a) => a.status === "live").length;
   const hasMore = auctions.length < total;
 
@@ -340,8 +324,8 @@ export default function AuctionsPage() {
                 </svg>
                 <input
                   type="text"
-                  aria-label="Buscar por vendedor"
-                  placeholder="Buscar vendedor…"
+                  aria-label="Buscar por vendedor o por juego"
+                  placeholder="Vendedor o juego: One Piece, Lorcana…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full rounded-full pl-10 pr-4 py-3 text-sm transition-all"
@@ -353,71 +337,6 @@ export default function AuctionsPage() {
               </div>
             </div>
 
-            {/* Filter pills — always one row (scrolls horizontally if it overflows) */}
-            <div className="flex items-center gap-1.5 overflow-x-auto mt-7 pb-1 pr-6" style={{
-              scrollbarWidth: "none",
-              WebkitMaskImage: "linear-gradient(to right, black calc(100% - 28px), transparent 100%)",
-              maskImage: "linear-gradient(to right, black calc(100% - 28px), transparent 100%)",
-            }}>
-              {FILTERS.map((f) => {
-                const count = f.key === "all" ? auctions.length : f.key === "favorites" ? auctions.filter(isFav).length : auctions.filter((a) => dispStatus(a) === f.key).length;
-                const active = filter === f.key;
-                return (
-                  <button
-                    key={f.key}
-                    onClick={() => setFilter(f.key)}
-                    aria-pressed={active}
-                    className="pill flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap shrink-0"
-                    style={active
-                      ? { background: "color-mix(in srgb, var(--brand) 8%, transparent)", border: "1px solid var(--border-brand)", color: "var(--accent-text)" }
-                      : { background: "transparent", border: "1px solid var(--border)", color: "var(--text-muted)" }}
-                  >
-                    {f.dot && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: f.dot }} />}
-                    {f.label}
-                    <span className="text-[11px] tabular-nums px-1.5 rounded-md"
-                      style={{ background: active ? "color-mix(in srgb, var(--brand) 12%, transparent)" : "var(--bg-elevated)", color: active ? "var(--accent-text)" : "var(--text-muted)" }}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Category filter — multi-select; only shows categories that have auctions */}
-            {(() => {
-              const cats = CATEGORIES.filter((c) => catFilter.includes(c.value) || auctions.some((a) => auctionCats(a).includes(c.value)));
-              if (cats.length === 0) return null;
-              return (
-                <div className="flex items-center gap-1.5 overflow-x-auto mt-3 pb-1 pr-6" style={{
-                  scrollbarWidth: "none",
-                  WebkitMaskImage: "linear-gradient(to right, black calc(100% - 28px), transparent 100%)",
-                  maskImage: "linear-gradient(to right, black calc(100% - 28px), transparent 100%)",
-                }}>
-                  <span className="text-[11px] uppercase tracking-wide shrink-0 mr-0.5" style={{ color: "var(--text-muted)" }}>Categoría</span>
-                  {catFilter.length > 0 && (
-                    <button onClick={() => setCatFilter([])}
-                      className="pill flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap shrink-0"
-                      style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--text-muted)" }}>✕ Limpiar</button>
-                  )}
-                  {cats.map((c) => {
-                    const count = auctions.filter((a) => auctionCats(a).includes(c.value)).length;
-                    const on = catFilter.includes(c.value);
-                    return (
-                      <button key={c.value} aria-pressed={on}
-                        onClick={() => setCatFilter((p) => p.includes(c.value) ? p.filter((x) => x !== c.value) : [...p, c.value])}
-                        className="pill flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap shrink-0"
-                        style={on
-                          ? { background: "color-mix(in srgb, var(--brand) 8%, transparent)", border: "1px solid var(--border-brand)", color: "var(--accent-text)" }
-                          : { background: "transparent", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
-                        {c.label}
-                        <span className="text-[11px] tabular-nums px-1.5 rounded-md"
-                          style={{ background: on ? "color-mix(in srgb, var(--brand) 12%, transparent)" : "var(--bg-elevated)", color: on ? "var(--accent-text)" : "var(--text-muted)" }}>{count}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })()}
           </div>
         </div>
 
@@ -451,7 +370,7 @@ export default function AuctionsPage() {
               </button>
             </div>
           ) : filtered.length === 0 ? (
-            <AuctionsEmptyState search={search} filter={filter} />
+            <AuctionsEmptyState search={search} />
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-8">
               {filtered.map((a) => {
@@ -607,15 +526,13 @@ const AUCTIONS_EMPTY = [
   { title: "Sin subastas en este momento",  sub: "El estadio está en calma. Los duelos comienzan pronto." },
   { title: "Nada por aquí aún",              sub: "Como buscar una carta holográfica — hay que tener paciencia." },
   { title: "El mercado descansa",            sub: "Vuelve pronto para ver las próximas subastas en vivo." },
-  { title: "Sin resultados",                 sub: "Busca por el nombre del vendedor, o quita los filtros." },
+  { title: "Sin resultados",                 sub: "Busca por vendedor o por juego — Pokémon, One Piece, Lorcana…" },
 ];
 
-function AuctionsEmptyState({ search, filter }: { search: string; filter: string }) {
+function AuctionsEmptyState({ search }: { search: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- pick once per mount, not per keystroke
   const randomIdx = useMemo(() => Math.floor(Math.random() * 3), []);
-  const msg = filter === "favorites"
-    ? { title: "Aún no tienes vendedores favoritos", sub: "Toca el ♥ en el perfil o el live de un vendedor para verlos aquí." }
-    : search ? AUCTIONS_EMPTY[3] : AUCTIONS_EMPTY[randomIdx];
+  const msg = search ? AUCTIONS_EMPTY[3] : AUCTIONS_EMPTY[randomIdx];
   return (
     <div className="text-center py-28">
       <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6"
@@ -626,11 +543,6 @@ function AuctionsEmptyState({ search, filter }: { search: string; filter: string
       </div>
       <p className="text-lg font-medium mb-2" style={{ color: "var(--text-primary)" }}>{msg.title}</p>
       <p className="text-sm" style={{ color: "var(--text-muted)" }}>{msg.sub}</p>
-      {filter !== "all" && (
-        <p className="text-xs mt-3" style={{ color: "var(--text-muted)", opacity: 0.7 }}>
-          Prueba cambiando el filtro a &ldquo;Todas&rdquo;
-        </p>
-      )}
     </div>
   );
 }

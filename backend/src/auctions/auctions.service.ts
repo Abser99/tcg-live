@@ -28,6 +28,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { LivekitService } from '../livekit/livekit.service';
 import { ListingsService } from '../listings/listings.service';
 import { bidIncrement, itemDurationMs, ITEM_TIMER_MS, dutchPriceAt } from './auction-pricing';
+import { gamesMatching } from './game-search';
 
 const MIN_BID_INCREMENT = 100; // 1 MXN in cents (floor for validation)
 
@@ -445,14 +446,26 @@ export class AuctionsService implements OnModuleInit {
       .where('a.status IN (:...statuses)', { statuses: [AuctionStatus.SCHEDULED, AuctionStatus.LIVE] });
 
     if (query?.trim()) {
-      /* Sellers only. Searching card names sold a promise the catalogue can't keep:
-         a lot is named when it opens, so what someone types is either not on the wheel
-         yet or already gone. Who is streaming is the stable thing to look for. */
-      const q = `%${query.toLowerCase().trim()}%`;
-      qb.andWhere(
-        `(LOWER(seller.username) LIKE :q OR LOWER(COALESCE(seller."displayName", '')) LIKE :q)`,
-        { q },
-      );
+      /* Sellers and games. Card names are deliberately not searched: a lot is named
+         when it opens, so what someone types is either not on the wheel yet or already
+         gone. The seller and the game are the things that stay put. */
+      const raw = query.toLowerCase().trim();
+      const q = `%${raw}%`;
+      const games = gamesMatching(raw);
+      const where = [
+        `LOWER(seller.username) LIKE :q`,
+        `LOWER(COALESCE(seller."displayName", '')) LIKE :q`,
+      ];
+      const params: Record<string, unknown> = { q };
+      if (games.length) {
+        // `categories` is a simple-array, i.e. a comma-joined string. Wrapping both
+        // sides in commas keeps "sports" from matching a hypothetical "esports".
+        where.push(`a.game IN (:...games)`);
+        where.push(`(',' || COALESCE(a.categories, '') || ',') ~ :gameRe`);
+        params.games = games;
+        params.gameRe = `,(${games.join('|')}),`;
+      }
+      qb.andWhere(`(${where.join(' OR ')})`, params);
     }
 
     if (game?.trim()) {
