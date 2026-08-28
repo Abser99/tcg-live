@@ -309,10 +309,14 @@ export class AuctionsController {
       throw new ForbiddenException('Fuiste expulsado de este live');
     }
     const canPublish = auction.sellerId === user.id;
-    const token = await this.livekitService.generateToken(user.id, user.username, id, canPublish);
     // Tell the client up front whether video will work, so a failure to connect can be
     // explained honestly instead of blamed on the viewer's wifi.
     const video = await this.livekitService.videoAvailability();
+    // With video off for development there is nothing to hand a token for, and minting
+    // one would be the one call that still costs quota.
+    const token = video.issue === 'disabled'
+      ? ''
+      : await this.livekitService.generateToken(user.id, user.username, id, canPublish);
     return { token, wsUrl: this.livekitService.wsUrl, videoAvailable: video.ok, videoIssue: video.issue };
   }
 

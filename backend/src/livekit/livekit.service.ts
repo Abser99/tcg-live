@@ -49,7 +49,21 @@ export class LivekitService {
   private availability: { ok: boolean; issue?: string; checkedAt: number } | null = null;
   private static readonly AVAILABILITY_TTL_MS = 60_000;
 
+  /**
+   * Development escape hatch. Opening a live connects a LiveKit room, and every one of
+   * those spends connection minutes from the cloud quota — verifying anything else in
+   * the app burned video budget. With this set the client skips LiveKit entirely and
+   * relays chat, reactions and the games between local tabs instead.
+   *
+   * Deliberately inert in production: a stray env var must not take the video down.
+   */
+  get videoDisabled(): boolean {
+    return process.env.NODE_ENV !== 'production'
+      && (this.config.get<string>('LIVEKIT_DISABLED') ?? '').toLowerCase() === 'true';
+  }
+
   async videoAvailability(): Promise<{ ok: boolean; issue?: string }> {
+    if (this.videoDisabled) return { ok: false, issue: 'disabled' };
     const cached = this.availability;
     if (cached && Date.now() - cached.checkedAt < LivekitService.AVAILABILITY_TTL_MS) {
       return { ok: cached.ok, issue: cached.issue };

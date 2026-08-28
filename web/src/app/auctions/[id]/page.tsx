@@ -824,6 +824,12 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const isLive   = a.status === "live" || a.status === "ending";
 
   const roomRef        = useRef<Room | null>(null);
+  /* No-video development mode: the same message objects the LiveKit data channel would
+     carry, relayed between tabs on this machine instead. Nothing here reaches another
+     device — it exists so the rest of the app can be exercised without spending video
+     minutes, and it is only ever wired up when the server says video is off. */
+  const devBusRef = useRef<BroadcastChannel | null>(null);
+  const [videoOff, setVideoOff] = useState(false);
   const videoRef       = useRef<HTMLVideoElement>(null);
   // Captures the seller's own outgoing stream so the session can be replayed later.
   const recorderRef    = useRef<ReturnType<typeof createLiveRecorder> | null>(null);
@@ -1561,6 +1567,8 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   // ── Roulette game ──
   function broadcast(payload: any) {
+    const bus = devBusRef.current;
+    if (bus) { try { bus.postMessage(payload); } catch {} return; }
     const room = roomRef.current;
     if (room && room.state === "connected") {
       try { room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(payload)), { reliable: true }); } catch {}
@@ -1980,6 +1988,20 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       .then(({ data }) => {
         if (!alive) return;
         if (data.videoAvailable === false) videoIssue = data.videoIssue ?? "unavailable";
+
+        /* Development without video: never open a room — that connection is the thing
+           that costs quota. Chat, reactions and the games run over a channel between
+           this machine's tabs instead, carrying the identical message objects. */
+        if (videoIssue === "disabled") {
+          const bus = new BroadcastChannel(`tcg-live-${a.id}`);
+          bus.onmessage = (ev) => handleLiveMessage(ev.data);
+          devBusRef.current = bus;
+          setVideoOff(true);
+          setConnState("connected");
+          setViewerCount(1);
+          return;
+        }
+
         return room.connect(data.wsUrl, data.token).then(() => { if (alive) setConnState("connected"); });
       })
       .catch((err: unknown) => {
@@ -2006,6 +2028,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     return () => {
       alive = false;
       setConnState("idle");
+      setVideoOff(false);
+      devBusRef.current?.close();
+      devBusRef.current = null;
       room.disconnect();
       roomRef.current = null;
     };
@@ -2023,59 +2048,68 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     if (nearBottom) box.scrollTop = box.scrollHeight;
   }, [chatMessages]);
 
+  /* One handler, two transports. Live rooms carry these over LiveKit's data channel;
+     the no-video dev mode carries the same objects over a BroadcastChannel, so
+     everything downstream is identical. */
+  function handleLiveMessage(msg: any) {
+    try {
+      if (msg.type === "chat") {
+        setChatMessages(prev => [...prev, { username: msg.username, text: censorText(msg.text), ts: msg.ts }]);
+      } else if (msg.type === "lightning") {
+        setLightningEndsAt(msg.startsAt + msg.duration * 1000);
+      } else if (msg.type === "price_reveal") {
+        setRevealedPrice(String(msg.price));
+        setPriceRevealed(true);
+      } else if (msg.type === "reaction" && typeof msg.emoji === "string") {
+        spawnReaction(msg.emoji);
+      } else if (msg.type === "raffle_drawn") {
+        flashToast(`🎉 Sorteo: ganó @${msg.winner}`);
+        loadRaffles();
+      } else if (msg.type === "selfie_layout") {
+        // The seller decides where their face feed sits; viewers can't infer it.
+        if (msg.mode === "round" || msg.mode === "corner") setSelfieLayout(msg.mode);
+        if (typeof msg.on === "boolean" && !msg.on) setHasSelfieVideo(false);
+      } else if (msg.type === "roulette_spin") {
+        // Viewers see the same spinning wheel, landing on the same winner
+        const pool: string[] = Array.isArray(msg.pool) ? msg.pool : [];
+        if (pool.length && msg.winner) {
+          setRouletteLanded(false);
+          setRouletteShow({ names: pool, winner: msg.winner, prize: msg.prize, label: msg.label });
+        }
+      } else if (msg.type === "dice_roll") {
+        // Every screen replays the seller's rolls — the result travels with the message
+        // so nobody re-rolls their own outcome.
+        if (Array.isArray(msg.rounds) && msg.rounds.length && msg.winner) {
+          setDiceLanded(false);
+          setDiceShow({ rounds: msg.rounds, winner: msg.winner, prize: msg.prize });
+        }
+      } else if (msg.type === "coin_flip") {
+        if (msg.side === "aguila" || msg.side === "sol") {
+          setCoinLanded(false);
+          setCoinShow({ side: msg.side, heads: msg.heads ?? "", tails: msg.tails ?? "", winner: msg.winner ?? null, prize: msg.prize });
+        }
+      } else if (msg.type === "roulette_winner") {
+        setRouletteWinner({ name: msg.winner, prize: msg.prize });
+      } else if (msg.type === "pin" && typeof msg.text === "string") {
+        pinMessage(msg.text, msg.by || "Mod");
+      }
+    } catch {}
+  }
+
   function attachChatListener(room: Room) {
     room.on(RoomEvent.DataReceived, (data: Uint8Array, participant?: any) => {
-      try {
-        if (participant?.identity === room.localParticipant?.identity) return;
-        const msg = JSON.parse(new TextDecoder().decode(data));
-        if (msg.type === "chat") {
-          setChatMessages(prev => [...prev, { username: msg.username, text: censorText(msg.text), ts: msg.ts }]);
-        } else if (msg.type === "lightning") {
-          setLightningEndsAt(msg.startsAt + msg.duration * 1000);
-        } else if (msg.type === "price_reveal") {
-          setRevealedPrice(String(msg.price));
-          setPriceRevealed(true);
-        } else if (msg.type === "reaction" && typeof msg.emoji === "string") {
-          spawnReaction(msg.emoji);
-        } else if (msg.type === "raffle_drawn") {
-          flashToast(`🎉 Sorteo: ganó @${msg.winner}`);
-          loadRaffles();
-        } else if (msg.type === "selfie_layout") {
-          // The seller decides where their face feed sits; viewers can't infer it.
-          if (msg.mode === "round" || msg.mode === "corner") setSelfieLayout(msg.mode);
-          if (typeof msg.on === "boolean" && !msg.on) setHasSelfieVideo(false);
-        } else if (msg.type === "roulette_spin") {
-          // Viewers see the same spinning wheel, landing on the same winner
-          const pool: string[] = Array.isArray(msg.pool) ? msg.pool : [];
-          if (pool.length && msg.winner) {
-            setRouletteLanded(false);
-            setRouletteShow({ names: pool, winner: msg.winner, prize: msg.prize, label: msg.label });
-          }
-        } else if (msg.type === "dice_roll") {
-          // Every screen replays the seller's rolls — the result travels with the message
-          // so nobody re-rolls their own outcome.
-          if (Array.isArray(msg.rounds) && msg.rounds.length && msg.winner) {
-            setDiceLanded(false);
-            setDiceShow({ rounds: msg.rounds, winner: msg.winner, prize: msg.prize });
-          }
-        } else if (msg.type === "coin_flip") {
-          if (msg.side === "aguila" || msg.side === "sol") {
-            setCoinLanded(false);
-            setCoinShow({ side: msg.side, heads: msg.heads ?? "", tails: msg.tails ?? "", winner: msg.winner ?? null, prize: msg.prize });
-          }
-        } else if (msg.type === "roulette_winner") {
-          setRouletteWinner({ name: msg.winner, prize: msg.prize });
-        } else if (msg.type === "pin" && typeof msg.text === "string") {
-          pinMessage(msg.text, msg.by || "Mod");
-        }
-      } catch {}
+      if (participant?.identity === room.localParticipant?.identity) return;
+      try { handleLiveMessage(JSON.parse(new TextDecoder().decode(data))); } catch {}
     });
   }
 
+
   async function sendChat() {
-    if (!chatInput.trim() || !roomRef.current || !user) return;
+    if (!chatInput.trim() || !user) return;
     if (myMute) { flashToast("Estás silenciado por un moderador."); setChatInput(""); return; }
-    if (roomRef.current.state !== "connected") {
+    // Gate on the connection, not on the room object existing — the same distinction
+    // that kept the chat field inviting messages it could never send.
+    if (!devBusRef.current && roomRef.current?.state !== "connected") {
       setChatMessages(prev => [...prev, { username: "sistema", text: "Sin conexión, intenta de nuevo", ts: Date.now() }]);
       return;
     }
@@ -2083,10 +2117,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     if (!clean) { setChatInput(""); return; }
     const msg = { type: "chat", username: user.username, text: clean, ts: Date.now() };
     try {
-      await roomRef.current.localParticipant.publishData(
-        new TextEncoder().encode(JSON.stringify(msg)),
-        { reliable: true }
-      );
+      // broadcast() picks the transport; neither one echoes to the sender, so the
+      // message is added locally either way.
+      broadcast(msg);
       setChatMessages(prev => [...prev, { username: user.username, text: clean, ts: Date.now() }]);
     } catch {}
     setChatInput("");
@@ -2666,7 +2699,14 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         {/* Stream connection error. It used to sit at bottom-4 on the same layer as the
             chat and the bid bar, so the three of them printed on top of each other. It
             belongs up here, where nothing else is. */}
-        {connectError && (
+        {videoOff && !chromeHidden && (
+          <div className="absolute left-1/2 -translate-x-1/2 z-[38] px-3 py-1.5 rounded-full text-[11px] font-semibold"
+            style={{ top: "calc(3.5rem + env(safe-area-inset-top, 0px))", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.8)" }}>
+            🛠 Modo local · sin video
+          </div>
+        )}
+
+        {connectError && !videoOff && (
           <div
             role="alert"
             className="absolute left-1/2 -translate-x-1/2 z-[38] flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs max-w-[86%]"
@@ -4541,6 +4581,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                 !user ? "Inicia sesión para chatear"
                 : myMute ? "🔇 Estás silenciado"
                 : connState === "failed" ? "Chat no disponible"
+                : videoOff ? "Di algo… (modo local)"
                 : !roomConnected ? "Conectando…"
                 : "Di algo…"
               }
