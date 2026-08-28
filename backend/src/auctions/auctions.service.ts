@@ -1242,7 +1242,6 @@ export class AuctionsService implements OnModuleInit {
   async heartbeat(
     auctionId: string, userId: string, refUsername?: string,
   ): Promise<{ watchedSec: number; minutes: number; multiplier: number; connectedFriends: number; entries: number }> {
-    const now = new Date();
     // First beat carrying an invite code links this viewer to whoever shared it. The
     // unique index means a friend is credited once, to one referrer, for good.
     if (refUsername) {
@@ -1257,20 +1256,24 @@ export class AuctionsService implements OnModuleInit {
           .catch(() => undefined);
       }
     }
-    let row = await this.attendanceRepo.findOne({ where: { auctionId, userId } });
-    if (!row) {
-      row = this.attendanceRepo.create({ auctionId, userId, watchedSec: 0, lastSeenAt: now });
-    } else {
-      const gapSec = Math.floor((now.getTime() - row.lastSeenAt.getTime()) / 1000);
-      if (gapSec > 0) {
-        row.watchedSec += Math.min(gapSec, AuctionsService.MAX_CREDIT_SEC);
-      }
-      row.lastSeenAt = now;
-    }
-    await this.attendanceRepo.save(row);
-    const minutes = Math.floor(row.watchedSec / 60);
+    // Read-then-write would race: two beats landing together both miss the row and both
+    // insert (or both credit the same gap). One upsert lets Postgres serialise it, so the
+    // credit is added exactly once per beat no matter how many tabs are open.
+    const [row] = (await this.attendanceRepo.query(
+      `INSERT INTO live_attendance ("auctionId", "userId", "watchedSec", "lastSeenAt")
+       VALUES ($1, $2, 0, now())
+       ON CONFLICT ("auctionId", "userId") DO UPDATE
+         SET "watchedSec" = live_attendance."watchedSec"
+               + LEAST(GREATEST(FLOOR(EXTRACT(EPOCH FROM (now() - live_attendance."lastSeenAt")))::int, 0), $3),
+             "lastSeenAt" = now(),
+             "updatedAt"  = now()
+       RETURNING "watchedSec"`,
+      [auctionId, userId, AuctionsService.MAX_CREDIT_SEC],
+    )) as [{ watchedSec: number }];
+    const watchedSec = Number(row.watchedSec);
+    const minutes = Math.floor(watchedSec / 60);
     const { multiplier, connectedFriends } = await this.friendMultiplier(auctionId, userId);
-    return { watchedSec: row.watchedSec, minutes, multiplier, connectedFriends, entries: minutes * multiplier };
+    return { watchedSec, minutes, multiplier, connectedFriends, entries: minutes * multiplier };
   }
 
   /** Watch time for one viewer of one live. */

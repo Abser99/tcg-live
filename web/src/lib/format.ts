@@ -42,3 +42,11 @@ export function usdCentsToMxnCents(usdCents: number): number {
 export function liveName(a?: { displayName?: string | null; title?: string; name?: string } | null): string {
   return a?.displayName?.trim() || a?.title || a?.name || "Sin título";
 }
+
+/** Pull the backend's message out of an axios error without reaching for `any`. */
+export function apiMessage(e: unknown, fallback: string): string {
+  const msg = (e as { response?: { data?: { message?: unknown } } })?.response?.data?.message;
+  if (typeof msg === "string") return msg;
+  if (Array.isArray(msg) && typeof msg[0] === "string") return msg[0]; // class-validator returns a list
+  return fallback;
+}

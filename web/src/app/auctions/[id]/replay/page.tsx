@@ -6,7 +6,7 @@
    every lot of the session, a buyer only the lots they won. Offsets are seconds into
    the recording, so a marker points at the exact moment a bid landed. */
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, useRef } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { auctionsApi, fileUrl, type ApiSegments, type ApiSegment } from "@/lib/api";
@@ -116,6 +116,20 @@ export default function ReplayPage({ params }: { params: Promise<{ id: string }>
       .finally(() => setLoading(false));
   }, [id]);
 
+  // ?t=<segundos> jumps straight to a moment — how an incident report hands the admin
+  // the exact minute instead of a description of it.
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [jumpedTo, setJumpedTo] = useState<number | null>(null);
+  useEffect(() => {
+    if (!data?.recordingUrl) return;
+    const t = Number(new URLSearchParams(window.location.search).get("t"));
+    if (!Number.isFinite(t) || t <= 0) return;
+    const v = videoRef.current;
+    if (!v) return;
+    const seek = () => { v.currentTime = t; setJumpedTo(t); };
+    if (v.readyState >= 1) seek(); else v.addEventListener("loadedmetadata", seek, { once: true });
+  }, [data?.recordingUrl]);
+
   return (
     <div className="min-h-screen" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
       <Navbar />
@@ -145,8 +159,15 @@ export default function ReplayPage({ params }: { params: Promise<{ id: string }>
         ) : (
           <>
             {data?.recordingUrl ? (
-              <video src={fileUrl(data.recordingUrl)} controls preload="metadata" className="w-full rounded-2xl mb-6"
-                style={{ background: "#000", border: "1px solid var(--border)" }} />
+              <div className="mb-6">
+                <video ref={videoRef} src={fileUrl(data.recordingUrl)} controls preload="metadata"
+                  className="w-full rounded-2xl" style={{ background: "#000", border: "1px solid var(--border)" }} />
+                {jumpedTo !== null && (
+                  <p className="text-xs mt-2" style={{ color: "var(--accent-text)" }}>
+                    ▶ Saltamos a {stamp(jumpedTo)} — el momento marcado en el reporte.
+                  </p>
+                )}
+              </div>
             ) : (
               <div className="rounded-2xl px-4 py-3 mb-6 text-xs" style={{ background: "var(--bg-elevated)", border: "1px dashed var(--border)", color: "var(--text-muted)" }}>
                 El video de esta sesión aún no está disponible. Las marcas de tiempo de cada

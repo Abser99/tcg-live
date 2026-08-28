@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
-import { sellerApplicationsApi, sellerDocumentsApi, disputesApi, usersApi, adminOrdersApi, type SellerApplication, type SellerDocumentRecord, type ApiDispute, type AdminUser, type ApiOrder, adminStatsApi, type ApiAdminOverview, type ApiSellerStatsRow, type ApiBuyerStatsRow } from "@/lib/api";
+import { sellerApplicationsApi, sellerDocumentsApi, disputesApi, usersApi, adminOrdersApi, type SellerApplication, type SellerDocumentRecord, type ApiDispute, type AdminUser, type ApiOrder, adminStatsApi, type ApiAdminOverview, type ApiSellerStatsRow, type ApiBuyerStatsRow, incidentsApi, type ApiIncident } from "@/lib/api";
 
 const DOC_LABELS: Record<string, string> = {
   identificacion:        "Identificación Oficial",
@@ -34,7 +34,7 @@ export default function AdminPage() {
   const [documents,     setDocuments]     = useState<SellerDocumentRecord[]>([]);
   const [allDisputes,   setAllDisputes]   = useState<ApiDispute[]>([]);
   const [loading,       setLoading]       = useState(true);
-  const [tab,           setTab]           = useState<"stats" | "applications" | "documents" | "disputes" | "users" | "cobros">("stats");
+  const [tab,           setTab]           = useState<"stats" | "incidents" | "applications" | "documents" | "disputes" | "users" | "cobros">("stats");
 
   // ── Reporting ──
   const [overview, setOverview] = useState<ApiAdminOverview | null>(null);
@@ -42,6 +42,14 @@ export default function AdminPage() {
   const [buyerRows, setBuyerRows] = useState<ApiBuyerStatsRow[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [who, setWho] = useState<"sellers" | "buyers">("sellers");
+
+  // ── Incident queue ──
+  const [incidents, setIncidents] = useState<ApiIncident[]>([]);
+  const [incidentNote, setIncidentNote] = useState<Record<string, string>>({});
+  const openIncidents = incidents.filter(i => i.status === "open").length;
+  const loadIncidents = useCallback(() => {
+    incidentsApi.list().then(r => setIncidents(r.data)).catch(() => {});
+  }, []);
   const [filter,        setFilter]        = useState("pending");
   const [selected,      setSelected]      = useState<SellerApplication | null>(null);
   const [rejectNote,    setRejectNote]    = useState("");
@@ -167,16 +175,24 @@ export default function AdminPage() {
     }
   }, [user]);
 
-  useEffect(() => {
-    if (tab === "stats" && !overview && !statsLoading) {
-      setStatsLoading(true);
-      Promise.all([adminStatsApi.overview(), adminStatsApi.sellers(50), adminStatsApi.buyers(50)])
-        .then(([o, se, bu]) => { setOverview(o.data); setSellerRows(se.data); setBuyerRows(bu.data); })
-        .catch(() => {})
-        .finally(() => setStatsLoading(false));
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      const [o, se, bu] = await Promise.all([adminStatsApi.overview(), adminStatsApi.sellers(50), adminStatsApi.buyers(50)]);
+      setOverview(o.data); setSellerRows(se.data); setBuyerRows(bu.data);
+    } catch {
+      // the empty state already reads as "sin datos"
+    } finally {
+      setStatsLoading(false);
     }
+  }, []);
+
+  // Each tab pays for its own query the first time it is opened.
+  useEffect(() => {
+    if (tab === "stats" && !overview && !statsLoading) loadStats();
+    if (tab === "incidents" && incidents.length === 0) loadIncidents();
     if (tab === "users" && allUsers.length === 0) loadUsers(1);
-  }, [tab, allUsers.length, loadUsers]);
+  }, [tab, overview, statsLoading, loadStats, incidents.length, loadIncidents, allUsers.length, loadUsers]);
 
   useEffect(() => {
     if (tab === "cobros" && pendingPayouts === null) loadPendingPayouts();
@@ -334,6 +350,7 @@ export default function AdminPage() {
           <div className="flex gap-1 mt-6 flex-wrap">
             {[
               { key: "stats",        label: "Estadísticas",            count: 0            },
+              { key: "incidents",    label: "Reportes",                count: openIncidents },
               { key: "applications", label: "Solicitudes de Vendedor", count: pendingApps  },
               { key: "documents",    label: "Documentos KYC",          count: pendingDocs  },
               { key: "disputes",     label: "Disputas",                count: openDisputes },
@@ -451,6 +468,86 @@ export default function AdminPage() {
                 ) : (
                   <p className="text-sm text-center py-12" style={{ color: "var(--text-muted)" }}>No se pudieron cargar las estadísticas.</p>
                 )}
+              </div>
+            )}
+
+            {tab === "incidents" && (
+              <div className="space-y-3">
+                {incidents.length === 0 ? (
+                  <p className="text-sm text-center py-16" style={{ color: "var(--text-muted)" }}>No hay reportes.</p>
+                ) : incidents.map(i => {
+                  const kindLabel: Record<string, string> = {
+                    live: "En transmisión", no_response: "Vendedor no responde",
+                    seller_report: "Denuncia a vendedor", other: "Otro",
+                  };
+                  const stamp = (sec: number | null) =>
+                    sec === null ? "" : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+                  const done = i.status === "resolved" || i.status === "dismissed";
+                  return (
+                    <div key={i.id} className="rounded-2xl p-4" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", opacity: done ? 0.6 : 1 }}>
+                      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ background: "var(--bg-elevated)", color: "var(--accent-text)" }}>{kindLabel[i.kind] ?? i.kind}</span>
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ background: "var(--bg-elevated)", color: done ? "var(--text-muted)" : "var(--warn)" }}>{i.status}</span>
+                        </div>
+                        <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                          {new Date(i.createdAt).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+
+                      <p className="text-sm" style={{ color: "var(--text-primary)" }}>{i.description}</p>
+                      <p className="text-[11px] mt-1.5" style={{ color: "var(--text-muted)" }}>
+                        Reportó @{i.reporterUsername}
+                        {i.reportedUsername && <> · sobre <span style={{ color: "var(--error-text)" }}>@{i.reportedUsername}</span></>}
+                      </p>
+
+                      {/* The whole point of marking instead of buffering: jump straight
+                          to the minute in the recording that already exists. */}
+                      {i.auctionId && i.fromOffsetSec !== null && (
+                        <a href={`/auctions/${i.auctionId}/replay?t=${i.fromOffsetSec}`} target="_blank" rel="noopener"
+                          className="inline-flex items-center gap-1.5 mt-2.5 text-xs font-semibold px-3 py-1.5 rounded-full"
+                          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+                          ▶ Ver la grabación {stamp(i.fromOffsetSec)} – {stamp(i.toOffsetSec)}
+                        </a>
+                      )}
+
+                      {i.adminNote && (
+                        <p className="text-xs mt-2 pt-2" style={{ color: "var(--text-secondary)", borderTop: "1px solid var(--border-subtle)" }}>
+                          Nota: {i.adminNote}
+                        </p>
+                      )}
+
+                      {!done && (
+                        <div className="mt-3 pt-3 space-y-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                          <input
+                            value={incidentNote[i.id] ?? ""}
+                            onChange={e => setIncidentNote(p => ({ ...p, [i.id]: e.target.value }))}
+                            placeholder="Qué se hizo (lo verá quien reportó)"
+                            className="w-full rounded-lg px-3 py-2 text-sm"
+                            style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                          <div className="flex gap-2">
+                            {([["resolved", "Resolver"], ["dismissed", "Descartar"], ["reviewing", "En revisión"]] as const).map(([st, label]) => (
+                              <button key={st} onClick={async () => {
+                                try {
+                                  await incidentsApi.resolve(i.id, st, incidentNote[i.id]);
+                                  loadIncidents();
+                                } catch {}
+                              }}
+                                className="text-xs font-bold px-3 py-1.5 rounded-lg"
+                                style={st === "resolved"
+                                  ? { background: "var(--brand-light)", color: "var(--brand-ink)" }
+                                  : { background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 

@@ -38,6 +38,8 @@ import { ListingOffer } from './listings/entities/listing-offer.entity';
 import { SellerDocumentsModule } from './seller-documents/seller-documents.module';
 import { HealthController } from './health.controller';
 import { AdminModule } from './admin/admin.module';
+import { IncidentsModule } from './incidents/incidents.module';
+import { Incident } from './incidents/entities/incident.entity';
 import { SellerDocument } from './seller-documents/seller-document.entity';
 import { User } from './users/user.entity';
 import { Auction } from './auctions/entities/auction.entity';
@@ -87,7 +89,7 @@ import { Notification } from './notifications/entities/notification.entity';
                 username: config.get<string>('database.user'),
                 password: config.get<string>('database.password'),
               }),
-          entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, LiveSanction, LiveAttendance, Raffle, LiveReferral, Order, OrderItem, PaymentMethod, PushToken, Notification, Dispute, WatchlistItem, Message, FollowedSeller, AuctionTemplate, Listing, ListingOffer, SellerDocument],
+          entities: [User, Auction, AuctionItem, Bid, SellerApplication, MaxBid, LiveSanction, LiveAttendance, Raffle, LiveReferral, Order, OrderItem, PaymentMethod, PushToken, Notification, Dispute, WatchlistItem, Message, FollowedSeller, AuctionTemplate, Listing, ListingOffer, SellerDocument, Incident],
           // Schema is auto-applied everywhere except production, where migrations own it.
           // Announce it loudly: pointing a non-production build at a real database would
           // let TypeORM alter that schema, and the damage is silent otherwise.
@@ -118,6 +120,7 @@ import { Notification } from './notifications/entities/notification.entity';
     AuthModule,
     AuctionsModule,
     AdminModule,
+    IncidentsModule,
     SellerApplicationsModule,
     CardsModule,
     GeoModule,

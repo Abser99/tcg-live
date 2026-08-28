@@ -35,6 +35,7 @@ export default function Navbar({ minimal = false }: { minimal?: boolean }) {
     { href: "/perfil?sec=watchlist",label: "Seguimiento", icon: "👁️" },
     { href: "/perfil?sec=disputas", label: "Disputas",    icon: "⚖️" },
     { href: "/ajustes",             label: "Ajustes",     icon: "⚙️" },
+    { href: "/soporte",             label: "Soporte",     icon: "🛟" },
     ...(isSeller ? [{ href: "/vendedor", label: "Mi tienda", icon: "🏪" }] : []),
     ...(user?.role === "ADMIN" ? [{ href: "/admin", label: "Admin", icon: "🛠️" }] : []),
   ];

@@ -8,7 +8,7 @@
    nodes on Android — so it reads as "the share thing on my phone" rather than a symbol
    they have to interpret. */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 type IconProps = { size?: number; className?: string };
 
@@ -78,14 +78,18 @@ export function LinkIcon({ size = 26, className = "" }: IconProps) {
 
 /** Which OS the viewer is on, resolved after mount so the server render can't mismatch. */
 export function usePlatform(): "ios" | "android" | "other" {
-  const [platform, setPlatform] = useState<"ios" | "android" | "other">("other");
-  useEffect(() => {
-    const ua = navigator.userAgent;
-    // iPadOS reports itself as a Mac, so touch points are what actually distinguish it.
-    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    setPlatform(isIOS ? "ios" : /Android/i.test(ua) ? "android" : "other");
-  }, []);
-  return platform;
+  // The server has no user agent, so both renders must agree on "other" and only the
+  // client subscription may narrow it — hence useSyncExternalStore rather than an effect.
+  return useSyncExternalStore(subscribeNever, readPlatform, () => "other" as const);
+}
+
+const subscribeNever = () => () => {};
+
+function readPlatform(): "ios" | "android" | "other" {
+  const ua = navigator.userAgent;
+  // iPadOS reports itself as a Mac, so touch points are what actually distinguish it.
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  return isIOS ? "ios" : /Android/i.test(ua) ? "android" : "other";
 }
 
 /** The share icon this viewer's own system uses. */

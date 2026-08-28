@@ -176,6 +176,37 @@ export const auctionsApi = {
     }),
 };
 
+/** A report an admin has to look at. */
+export type IncidentKind = "live" | "no_response" | "seller_report" | "other";
+export type IncidentStatus = "open" | "reviewing" | "resolved" | "dismissed";
+export interface ApiIncident {
+  id: string;
+  kind: IncidentKind;
+  reporterId: string;
+  reporterUsername: string | null;
+  auctionId: string | null;
+  orderId: string | null;
+  reportedUsername: string | null;
+  description: string;
+  /** Where in the live's recording this happened, when it happened in one. */
+  atOffsetSec: number | null;
+  fromOffsetSec: number | null;
+  toOffsetSec: number | null;
+  status: IncidentStatus;
+  adminNote: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+}
+
+export const incidentsApi = {
+  create: (dto: { kind: IncidentKind; description: string; auctionId?: string; orderId?: string; reportedUsername?: string }) =>
+    api.post<ApiIncident>("/incidents", dto),
+  mine: () => api.get<ApiIncident[]>("/incidents/mine"),
+  list: (status?: IncidentStatus) => api.get<ApiIncident[]>("/incidents", { params: status ? { status } : {} }),
+  resolve: (id: string, status: IncidentStatus, adminNote?: string) =>
+    api.patch<ApiIncident>(`/incidents/${id}/resolve`, { status, adminNote }),
+};
+
 // ─── Admin reporting ───────────────────────────────────────────
 export const adminStatsApi = {
   overview: () => api.get<ApiAdminOverview>("/admin/stats/overview"),

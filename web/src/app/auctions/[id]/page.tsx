@@ -8,7 +8,7 @@ import { WhatsAppIcon, InstagramIcon, NativeShareIcon, LinkIcon, usePlatform } f
 import ErrorBoundary from "@/components/ErrorBoundary";
 import PokemonCardSearch from "@/components/PokemonCardSearch";
 import { Room, RoomEvent, Track, createLocalVideoTrack } from "livekit-client";
-import { auctionsApi, watchlistApi, usersApi, paymentMethodsApi, listingsApi, bidIncrement, type ApiAuction, type ApiAuctionItem, type ApiPaymentMethod, type ApiListing, type BidMode, type ApiRaffle } from "@/lib/api";
+import { auctionsApi, watchlistApi, usersApi, paymentMethodsApi, listingsApi, bidIncrement, type ApiAuction, type ApiAuctionItem, type ApiPaymentMethod, type ApiListing, type BidMode, type ApiRaffle, incidentsApi } from "@/lib/api";
 import { createLiveRecorder } from "@/lib/live-recorder";
 import { getAuctionsCache } from "@/lib/live-back-cache";
 import { useFavoriteSeller } from "@/lib/seller-favorites";
@@ -843,6 +843,11 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [myEntries, setMyEntries] = useState(0);
   const [friendBoost, setFriendBoost] = useState({ multiplier: 1, connectedFriends: 0 });
   const [showShare, setShowShare] = useState(false);
+  // Reporting from inside the live. The moment is marked against the recording, so
+  // there's no video buffer to keep — see IncidentsService.
+  const [showReport, setShowReport] = useState(false);
+  const [reportText, setReportText] = useState("");
+  const [reporting, setReporting] = useState(false);
   const sharePlatform = usePlatform();
   const [raffles, setRaffles] = useState<ApiRaffle[]>([]);
   const [rafflePrize, setRafflePrize] = useState("");
@@ -1068,6 +1073,26 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
       () => flashToast("Enlace copiado — si tus amigos entran, suben tus entradas"),
       () => flashToast(url),
     );
+  }
+
+  async function sendReport() {
+    if (!reportText.trim() || reporting) return;
+    setReporting(true);
+    try {
+      const { data } = await incidentsApi.create({
+        kind: "live", auctionId: a.id, description: reportText.trim(),
+      });
+      setShowReport(false);
+      setReportText("");
+      const at = data.atOffsetSec;
+      flashToast(
+        at !== null
+          ? `Reporte enviado — se marcó el minuto ${Math.floor(at / 60)}:${String(at % 60).padStart(2, "0")} de la grabación`
+          : "Reporte enviado a soporte",
+      );
+    } catch (e: any) {
+      flashToast(e?.response?.data?.message ?? "No se pudo enviar el reporte.");
+    } finally { setReporting(false); }
   }
 
   async function shareLive() {
@@ -2548,6 +2573,15 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                     <span>Ajustar reloj</span>
                   </button>
                 )}
+                {user && (
+                  <button type="button" onClick={() => { setShowMoreMenu(false); setShowReport(true); }}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-white text-left hover:bg-white/10">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+                    </svg>
+                    <span>Reportar incidencia</span>
+                  </button>
+                )}
                 {isSeller && isLive && (
                   <button type="button" onClick={() => { setShowMoreMenu(false); setConfirmEndLive(true); }}
                     className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-left hover:bg-white/10"
@@ -3278,6 +3312,48 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           <div className="absolute left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-full text-sm font-semibold text-white pointer-events-none"
             style={{ bottom: "6.5rem", background: "rgba(20,20,26,0.94)", border: "1px solid rgba(255,255,255,0.16)", backdropFilter: "blur(8px)", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
             {toast}
+          </div>
+        )}
+
+        {/* Report sheet. Pressing send marks this instant in the live's own recording,
+            so support reviews the real minute instead of a description of it. */}
+        {showReport && (
+          <div className="fixed inset-0 z-[72] flex items-end sm:items-center justify-center p-0 sm:p-4"
+            style={{ background: "rgba(0,0,0,0.65)" }} onClick={() => setShowReport(false)}>
+            <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden"
+              style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between gap-3 px-5 py-4" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                <div className="min-w-0">
+                  <p className="font-semibold" style={{ color: "var(--text-primary)" }}>Reportar incidencia</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                    Se marca el minuto anterior de la transmisión para que soporte lo revise.
+                  </p>
+                </div>
+                <button onClick={() => setShowReport(false)} aria-label="Cerrar"
+                  className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-base leading-none"
+                  style={{ color: "var(--text-muted)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>✕</button>
+              </div>
+              <div className="p-5 space-y-3">
+                <textarea
+                  value={reportText}
+                  onChange={e => setReportText(e.target.value)}
+                  placeholder="¿Qué pasó? Cuéntanos lo que viste."
+                  rows={4}
+                  maxLength={2000}
+                  className="w-full rounded-xl px-3 py-2.5 text-sm resize-none"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }}
+                />
+                <button type="button" onClick={sendReport} disabled={reporting || !reportText.trim()}
+                  className="w-full py-3 rounded-xl text-sm font-black disabled:opacity-50"
+                  style={{ background: "var(--error-text)", color: "#fff" }}>
+                  {reporting ? "Enviando…" : "Enviar a soporte"}
+                </button>
+                <p className="text-[11px] text-center" style={{ color: "var(--text-muted)" }}>
+                  Un administrador lo revisa y te avisa qué pasó.
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
