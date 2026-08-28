@@ -232,7 +232,7 @@ export default function AuctionsPage() {
     : undefined;
 
   return (
-    <div className="min-h-screen relative overflow-x-hidden" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
+    <div className="min-h-screen relative overflow-clip" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
       <style>{`
         .a-card { transition: transform 0.25s cubic-bezier(0.22,1,0.36,1), border-color 0.25s ease; }
         .a-card:hover { transform: translateY(-4px); border-color: var(--border-brand); }

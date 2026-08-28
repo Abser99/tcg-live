@@ -122,7 +122,7 @@ export default function Home() {
         .cue-dot { animation: cue 1.9s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) { .tilt, .tilt:hover { transform: none; } .cue-dot { animation: none; } }
       `}</style>
-      <div className="min-h-screen overflow-x-hidden relative" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
+      <div className="min-h-screen overflow-clip relative" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
         <AmbientBackground top={520} />
         <Navbar minimal />
         {/* Above the ambient layer, which sits at z-0 */}
