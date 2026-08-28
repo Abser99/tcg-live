@@ -1431,12 +1431,13 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     let contenders = pool;
     // Real dice, real ties: the tied players simply roll again. Uniform among equals,
     // and the tiebreak is on screen instead of being resolved out of sight.
-    while (contenders.length > 1 && rounds.length < 8) {
+    // do/while, not while: a lone participant still deserves a throw to watch.
+    do {
       const round: DiceRound = contenders.map(name => ({ name, a: d6(), b: d6() }));
       const best = Math.max(...round.map(r => r.a + r.b));
       rounds.push(round);
       contenders = round.filter(r => r.a + r.b === best).map(r => r.name);
-    }
+    } while (contenders.length > 1 && rounds.length < 8);
     const winner = contenders[0] ?? pool[Math.floor(Math.random() * pool.length)];
     const prizeTitle = buyNowItems.find(l => l.id === roulettePrize)?.title;
     setSpinning(true);
@@ -2499,14 +2500,15 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
         {/* ── Roulette wheel — a real spinning wheel with the entered names, for everyone ── */}
         {rouletteShow && (
-          <div className="absolute inset-0 z-[68] flex flex-col items-center justify-center gap-4 px-4 pointer-events-auto"
+          <div className="game-in absolute inset-0 z-[68] flex flex-col items-center justify-center gap-4 px-4 pointer-events-auto"
             style={{ background: "rgba(0,0,0,0.78)" }}>
+            {rouletteLanded && <Confetti />}
             <p className="text-white font-black tracking-[0.15em] text-sm">🎡 RULETA</p>
             <RouletteWheel names={rouletteShow.names} winner={rouletteShow.winner}
               onDone={() => { setRouletteLanded(true); setSpinning(false); }} />
             {rouletteLanded && (
-              <div className="text-center reveal">
-                <p className="text-3xl font-black text-white">🎉 {rouletteShow.winner}</p>
+              <div className="text-center">
+                <p className="pop-in text-3xl font-black text-white">🎉 {rouletteShow.winner}</p>
                 {rouletteShow.prize && (
                   <p className="text-sm font-bold mt-1" style={{ color: "var(--brand-light)" }}>Premio: {rouletteShow.prize}</p>
                 )}
@@ -2524,14 +2526,15 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
         {/* ── Dados — everyone watches the same throw, tiebreaks included ── */}
         {diceShow && (
-          <div className="absolute inset-0 z-[68] flex flex-col items-center justify-center gap-4 px-4 pointer-events-auto"
+          <div className="game-in absolute inset-0 z-[68] flex flex-col items-center justify-center gap-4 px-4 pointer-events-auto"
             style={{ background: "rgba(0,0,0,0.78)" }}>
+            {diceLanded && <Confetti />}
             <p className="text-white font-black tracking-[0.15em] text-sm">🎲 DADOS</p>
             <DiceRoll rounds={diceShow.rounds} winner={diceShow.winner}
               onDone={() => { setDiceLanded(true); setSpinning(false); }} />
             {diceLanded && (
-              <div className="text-center reveal">
-                <p className="text-3xl font-black text-white">🎉 {diceShow.winner}</p>
+              <div className="text-center">
+                <p className="pop-in text-3xl font-black text-white">🎉 {diceShow.winner}</p>
                 {diceShow.prize && (
                   <p className="text-sm font-bold mt-1" style={{ color: "var(--brand-light)" }}>Premio: {diceShow.prize}</p>
                 )}
@@ -2549,17 +2552,18 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
         {/* ── Volado ── */}
         {coinShow && (
-          <div className="absolute inset-0 z-[68] flex flex-col items-center justify-center gap-5 px-4 pointer-events-auto"
+          <div className="game-in absolute inset-0 z-[68] flex flex-col items-center justify-center gap-5 px-4 pointer-events-auto"
             style={{ background: "rgba(0,0,0,0.78)" }}>
+            {coinLanded && coinShow.winner && <Confetti />}
             <p className="text-white font-black tracking-[0.15em] text-sm">🪙 VOLADO</p>
             <CoinFlip side={coinShow.side} heads={coinShow.heads} tails={coinShow.tails}
               onDone={() => { setCoinLanded(true); setSpinning(false); }} />
             {coinLanded && (
-              <div className="text-center reveal">
-                <p className="text-xl font-black" style={{ color: "#FACC15" }}>
+              <div className="text-center">
+                <p className="pop-in text-xl font-black" style={{ color: "#FACC15" }}>
                   {coinShow.side === "aguila" ? "🦅 Águila" : "☀️ Sol"}
                 </p>
-                {coinShow.winner && <p className="text-3xl font-black text-white mt-1">🎉 {coinShow.winner}</p>}
+                {coinShow.winner && <p className="pop-in text-3xl font-black text-white mt-1" style={{ animationDelay: "0.18s" }}>🎉 {coinShow.winner}</p>}
                 {coinShow.prize && coinShow.winner && (
                   <p className="text-sm font-bold mt-1" style={{ color: "var(--brand-light)" }}>Premio: {coinShow.prize}</p>
                 )}
@@ -4699,6 +4703,42 @@ function inkOn(hex: string): string {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.42 ? "#0b0b0f" : "#ffffff";
 }
 
+/** A burst of paper over whatever just won. Pure CSS: 34 divs, each with its own drift. */
+function Confetti({ pieces = 34 }: { pieces?: number }) {
+  // Built once per mount: the positions must not reshuffle on every re-render.
+  // A lazy useState initialiser, not a ref — reading .current during render is exactly
+  // what the hooks lint objects to, and this is the shape the rule wants.
+  const [bits] = useState(() =>
+    Array.from({ length: pieces }, (_, i) => {
+      // Deterministic-ish spread so the burst always covers the width evenly.
+      const left = (i / pieces) * 100 + (i % 3) * 4;
+      return {
+        left,
+        dx: `${((i * 37) % 61) - 30}px`,
+        spin: `${((i * 53) % 720) + 180}deg`,
+        dur: `${1.5 + ((i * 17) % 90) / 100}s`,
+        delay: `${((i * 29) % 45) / 100}s`,
+        color: WHEEL_PALETTE[i % WHEEL_PALETTE.length],
+        w: 5 + (i % 4) * 2,
+        h: 9 + (i % 3) * 3,
+      };
+    }),
+  );
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 overflow-hidden" style={{ height: "100%" }}>
+      {bits.map((b, i) => (
+        <span key={i} className="confetti-piece absolute block"
+          style={{
+            left: `${b.left}%`, top: "16%", width: b.w, height: b.h,
+            background: b.color, borderRadius: 1,
+            ["--dx" as string]: b.dx, ["--spin" as string]: b.spin,
+            ["--dur" as string]: b.dur, ["--delay" as string]: b.delay,
+          }} />
+      ))}
+    </div>
+  );
+}
+
 /** The pips of one die face, laid out on a 3x3 grid the way a real die is. */
 const DIE_PIPS: Record<number, [number, number][]> = {
   1: [[1, 1]],
@@ -4709,12 +4749,25 @@ const DIE_PIPS: Record<number, [number, number][]> = {
   6: [[0, 0], [0, 2], [1, 0], [1, 2], [2, 0], [2, 2]],
 };
 
-function Die({ value, size = 34, rolling = false }: { value: number; size?: number; rolling?: boolean }) {
+function Die({ value, size = 34, rolling = false, tick = 0, seed = 0 }: {
+  value: number; size?: number; rolling?: boolean; tick?: number; seed?: number;
+}) {
+  /* While it rolls the face has to keep changing — a fixed face that merely shakes
+     reads as a stuck die, which is exactly how the first version looked. The face is
+     derived from a tick the parent owns: one timer for the table, not one per die. */
   const pad = size * 0.22, step = (size - pad * 2) / 2, r = size * 0.085;
+  // Hashed, not stepped: arithmetic on (tick, seed) left the dice marching in step and
+  // drifting upward together. imul gives a real avalanche, so each die looks independent.
+  let h = Math.imul(tick + 1, 0x9e3779b1) ^ Math.imul(seed + 1, 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 15), 0xc2b2ae35);
+  h = (h ^ (h >>> 13)) >>> 0;
+  const shown = rolling ? 1 + (h % 6) : value;
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={rolling ? "die-shake" : ""} aria-label={`Dado: ${value}`}>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
+      className={rolling ? "die-tumble" : "die-settle"} aria-label={`Dado: ${value}`}
+      style={{ overflow: "visible" }}>
       <rect width={size} height={size} rx={size * 0.2} fill="#fff" stroke="rgba(0,0,0,0.25)" strokeWidth={1} />
-      {(DIE_PIPS[value] ?? []).map(([row, col], i) => (
+      {(DIE_PIPS[shown] ?? []).map(([row, col], i) => (
         <circle key={i} cx={pad + col * step} cy={pad + row * step} r={r} fill="#0b0b0f" />
       ))}
     </svg>
@@ -4725,7 +4778,15 @@ function Die({ value, size = 34, rolling = false }: { value: number; size?: numb
 function DiceRoll({ rounds, winner, onDone }: { rounds: DiceRound[]; winner: string; onDone?: () => void }) {
   const [round, setRound] = useState(0);
   const [rolling, setRolling] = useState(true);
+  const [tick, setTick] = useState(0);
   const firedRef = useRef(false);
+  // One timer drives every die on the table. Twenty-four of them would be twenty-four
+  // state updates a frame on a page that is also decoding live video.
+  useEffect(() => {
+    if (!rolling) return;
+    const t = setInterval(() => setTick(v => v + 1), 70);
+    return () => clearInterval(t);
+  }, [rolling]);
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
     let t = 0;
@@ -4745,23 +4806,30 @@ function DiceRoll({ rounds, winner, onDone }: { rounds: DiceRound[]; winner: str
   return (
     <div className="w-full max-w-sm">
       {rounds.length > 1 && (
-        <p className="text-center text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: "rgba(255,255,255,0.65)" }}>
-          {round === 0 ? "Primera tirada" : `Desempate ${round}`}
+        <p key={round} className="pop-in text-center text-[11px] font-bold uppercase tracking-widest mb-2"
+          style={{ color: round === 0 ? "rgba(255,255,255,0.65)" : "#FACC15" }}>
+          {round === 0 ? "Primera tirada" : `¡Empate! Desempate ${round}`}
         </p>
       )}
       <div className="space-y-1.5 max-h-[46vh] overflow-y-auto" style={{ scrollbarWidth: "none" }}>
-        {shown.slice(0, 12).map(r => {
+        {shown.slice(0, 12).map((r, idx) => {
           const total = r.a + r.b;
           const top = !rolling && total === best;
           return (
-            <div key={r.name} className="flex items-center gap-2.5 rounded-xl px-3 py-1.5"
-              style={top
-                ? { background: "rgba(84,66,4,0.92)", border: "1.5px solid #FACC15" }
-                : { background: "rgba(18,18,24,0.9)", border: "1px solid rgba(255,255,255,0.14)", opacity: rolling ? 1 : 0.55 }}>
+            /* Keyed by round too, so every throw re-runs the entrance instead of
+               leaving the rows sitting there from the previous one. */
+            <div key={`${round}-${r.name}`} className="row-in flex items-center gap-2.5 rounded-xl px-3 py-1.5"
+              style={{
+                animationDelay: `${idx * 55}ms`,
+                transition: "opacity 0.4s ease, border-color 0.4s ease, background 0.4s ease",
+                ...(top
+                  ? { background: "rgba(84,66,4,0.92)", border: "1.5px solid #FACC15", boxShadow: "0 0 22px rgba(250,204,21,0.35)" }
+                  : { background: "rgba(18,18,24,0.9)", border: "1px solid rgba(255,255,255,0.14)", opacity: rolling ? 1 : 0.5 }),
+              }}>
               <span className="text-[13px] font-bold text-white truncate flex-1">{r.name}</span>
-              <Die value={r.a} rolling={rolling} />
-              <Die value={r.b} rolling={rolling} />
-              <span className="text-base font-black tabular-nums w-7 text-right"
+              <Die value={r.a} rolling={rolling} tick={tick} seed={idx * 2} />
+              <Die value={r.b} rolling={rolling} tick={tick} seed={idx * 2 + 1} />
+              <span className={`text-base font-black tabular-nums w-7 text-right ${top ? "pop-in" : ""}`}
                 style={{ color: top ? "#FACC15" : "rgba(255,255,255,0.85)" }}>{rolling ? "?" : total}</span>
             </div>
           );
@@ -4799,11 +4867,16 @@ function CoinFlip({ side, heads, tails, onDone }: {
       }}>
       <span className="text-3xl leading-none" aria-hidden="true">{emoji}</span>
       <span className="text-[10px] font-black uppercase tracking-widest mt-0.5" style={{ color: "#5B4102" }}>{label}</span>
+      {/* A light running across the metal while it turns */}
+      <span className="absolute inset-0 rounded-full overflow-hidden" aria-hidden="true">
+        <span className="coin-shine absolute top-0 bottom-0 w-1/3"
+          style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent)" }} />
+      </span>
     </div>
   );
   return (
     <div className="flex flex-col items-center gap-4">
-      <div className="coin-toss" style={{ perspective: 700 }}>
+      <div className={`coin-toss ${done ? "win-glow" : ""}`} style={{ perspective: 700 }}>
         <div className={done ? "" : "coin-tumble"}
           style={{ position: "relative", width: 128, height: 128, transformStyle: "preserve-3d", transform: done ? `rotateX(${rest}deg)` : undefined }}>
           {face("Águila", "🦅", false)}
@@ -4863,7 +4936,8 @@ function RouletteWheel({ names, winner, onDone }: { names: string[]; winner: str
           const isWinner = i === winnerIdx;
           const ink = inkOn(colors[i]);
           return (
-            <g key={i} style={{ opacity: landed && !isWinner ? 0.32 : 1, transition: "opacity 0.5s ease" }}>
+            <g key={i} className={landed && isWinner ? "win-glow" : ""}
+              style={{ opacity: landed && !isWinner ? 0.3 : 1, transition: "opacity 0.6s ease" }}>
               <path d={`M0,0 L${p0.x.toFixed(2)},${p0.y.toFixed(2)} A${R},${R} 0 ${large} 1 ${p1.x.toFixed(2)},${p1.y.toFixed(2)} Z`}
                 fill={colors[i]} stroke="rgba(255,255,255,0.85)" strokeWidth={1.1} />
               {/* Paint the label in whichever ink the wedge can carry — a single dark
