@@ -8,32 +8,13 @@ import AmbientBackground from "@/components/AmbientBackground";
 import { auctionsApi, type ApiAuction } from "@/lib/api";
 import { formatTimer, gameLabel, liveName } from "@/lib/format";
 import { setAuctionsCache } from "@/lib/live-back-cache";
-import { useFavoriteSellers, useFavoriteSeller, requestLiveAlertPermission } from "@/lib/seller-favorites";
+import { useFavoriteSellers } from "@/lib/seller-favorites";
 import { useAuth } from "@/contexts/auth";
 
 const INK = "var(--brand-ink)";
 
 /* Heart to the right of the seller name. Following a seller (a) surfaces them in the
    "Favoritos" filter and (b) opts you into a browser alert when their live starts. */
-function SellerLikeButton({ username, sellerId }: { username: string; sellerId?: string }) {
-  const [fav, toggle] = useFavoriteSeller(username, sellerId);
-  return (
-    <button
-      type="button"
-      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggle(); if (!fav) requestLiveAlertPermission(); }}
-      aria-pressed={fav}
-      aria-label={fav ? `Dejar de seguir a ${username}` : `Seguir a ${username} y recibir aviso cuando inicie su live`}
-      title={fav ? "Siguiendo — te avisamos cuando inicie su live" : "Seguir — recibe aviso cuando inicie su live"}
-      className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-      style={{ background: fav ? "rgba(244,63,94,0.12)" : "var(--bg-elevated)", border: `1px solid ${fav ? "rgba(244,63,94,0.45)" : "var(--border)"}` }}
-    >
-      <svg width="15" height="15" viewBox="0 0 24 24" fill={fav ? "#f43f5e" : "none"} stroke={fav ? "#f43f5e" : "var(--text-muted)"} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8Z" />
-      </svg>
-    </button>
-  );
-}
-
 type Filter = "all" | "live" | "ending" | "upcoming" | "favorites";
 
 const FILTERS: { key: Filter; label: string; dot?: string }[] = [
@@ -491,7 +472,7 @@ export default function AuctionsPage() {
                       {/* legibility gradient */}
                       <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0) 32%, rgba(0,0,0,0.62) 100%)" }} />
                       {/* card art — extra bottom room so the title/price overlay stays clear */}
-                      <div className="absolute inset-0 flex items-center justify-center px-6 pt-6 pb-24">
+                      <div className="absolute inset-0 flex items-center justify-center px-5 pt-5 pb-14">
                         {img
                           ? <img src={img} alt="" className="relative max-h-full w-auto object-contain" style={{ filter: "drop-shadow(0 14px 30px rgba(0,0,0,0.55))" }} />
                           : <CardPlaceholder />}
@@ -508,47 +489,38 @@ export default function AuctionsPage() {
                         {timer}
                       </div>
                       {a.condition && (
-                        <span className="absolute bottom-[4.4rem] left-4 text-[10px] font-medium px-2 py-0.5 rounded-md"
+                        <span className="absolute bottom-[2.6rem] left-4 text-[10px] font-medium px-2 py-0.5 rounded-md"
                           style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)", border: "1px solid rgba(255,255,255,0.14)", color: "#fff" }}>{a.condition}</span>
                       )}
 
-                      {/* overlaid title + price */}
+                      {/* Overlaid title only. The running price is two taps of text over the
+                          card art; whoever cares about it is going in anyway, where it
+                          updates live instead of being a stale number on a grid. */}
                       <div className="absolute inset-x-0 bottom-0 p-4">
                         <p className="font-medium text-sm leading-tight tracking-tight text-white line-clamp-1">{title}</p>
-                        <div className="mt-1.5 flex items-baseline gap-2">
-                          <p className="text-lg font-semibold tabular-nums tracking-tight text-white">
-                            ${(currentBid / 100).toLocaleString("es-MX")}
-                            <span className="text-xs font-normal ml-1" style={{ color: "rgba(255,255,255,0.72)" }}>MXN</span>
-                          </p>
-                          <span className="text-[10px] uppercase font-medium" style={{ letterSpacing: "0.1em", color: "rgba(255,255,255,0.62)" }}>
-                            {disp === "upcoming" ? "· inicial" : "· puja"}
-                          </span>
-                        </div>
                       </div>
                     </Link>
 
-                    {/* Footer: clickable seller + follow heart + (live only) CTA */}
+                    {/* Footer: clickable seller + (live only) CTA. The follow heart used to
+                        sit here, but on a narrow card it landed on top of the avatar — and
+                        following already lives inside the live itself. */}
                     <div className="p-3 flex items-center justify-between gap-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
                       <div className="flex items-center gap-1.5 min-w-0">
                         {a.seller?.username ? (
+                          /* No initials avatar: two columns on a phone leave the footer about
+                             150px, and between the circle and the "Entrar" button the seller's
+                             name was the part that got squeezed to nothing. */
                           <Link href={`/tienda/${encodeURIComponent(a.seller.username)}`}
-                            className="u-link flex items-center gap-2 min-w-0" style={{ color: "var(--text-secondary)" }}>
-                            <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0"
-                              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
-                              {sellerName.slice(0, 2).toUpperCase()}
-                            </span>
-                            <span className="text-xs font-medium truncate">
-                              {sellerName} {verified && <span style={{ color: "var(--accent-text)" }}>✓</span>}
-                            </span>
+                            className="u-link min-w-0 text-xs font-medium truncate" style={{ color: "var(--text-secondary)" }}>
+                            {sellerName} {verified && <span style={{ color: "var(--accent-text)" }}>✓</span>}
                           </Link>
                         ) : (
                           <span className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{sellerName}</span>
                         )}
-                        {sellerName !== "—" && <SellerLikeButton username={sellerName} sellerId={a.seller?.id} />}
                       </div>
                       {disp === "live" && (
                         <Link href={`/auctions/${a.id}`}
-                          className="btn-brand shrink-0 inline-flex items-center gap-1 text-sm font-semibold px-4 py-2 rounded-full"
+                          className="btn-brand shrink-0 inline-flex items-center gap-1 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-1.5 sm:py-2 rounded-full"
                           style={{ background: "var(--brand-light)", color: INK }}>
                           Entrar <span aria-hidden>→</span>
                         </Link>
