@@ -1040,7 +1040,11 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [savingCard, setSavingCard] = useState(false);
   const [walletError, setWalletError] = useState("");
   const [cardForm, setCardForm] = useState({ number: "", expiry: "", name: "" });
-  const [addingCardOpen, setAddingCardOpen] = useState(false);
+  /* The wallet is three screens, not one long form: the list you pick from, adding a
+     card, and editing one. Only one is on screen at a time. */
+  const [walletView, setWalletView] = useState<"list" | "add" | "edit">("list");
+  const [editingCard, setEditingCard] = useState<ApiPaymentMethod | null>(null);
+  const [confirmDeleteCard, setConfirmDeleteCard] = useState(false);
   /* Billing address on the card. Every field optional server-side, so someone can
      save the card now and fill the address the first time it's actually needed. */
   const [cardAddr, setCardAddr] = useState({
@@ -1108,13 +1112,62 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         cardholderName: cardForm.name || undefined,
         ...Object.fromEntries(Object.entries(cardAddr).filter(([, v]) => v.trim())),
       });
-      setCardForm({ number: "", expiry: "", name: "" });
-      setCardAddr({ billingName: "", street: "", extNumber: "", intNumber: "", colonia: "", city: "", state: "", zip: "" });
-      setAddingCardOpen(false);
+      resetCardForm();
+      setWalletView("list");
       loadCards();
     } catch (e: unknown) {
       // The server re-checks the number; show what it actually objected to.
       setWalletError(apiMessage(e, "No se pudo guardar la tarjeta. Intenta de nuevo."));
+    } finally { setSavingCard(false); }
+  }
+
+  function resetCardForm() {
+    setCardForm({ number: "", expiry: "", name: "" });
+    setCardAddr({ billingName: "", street: "", extNumber: "", intNumber: "", colonia: "", city: "", state: "", zip: "" });
+    setZipColonias([]);
+    setZipMiss(false);
+    setWalletError("");
+  }
+
+  function startAddCard() {
+    resetCardForm();
+    setEditingCard(null);
+    setWalletView("add");
+  }
+
+  function startEditCard(c: ApiPaymentMethod) {
+    setEditingCard(c);
+    setConfirmDeleteCard(false);
+    setWalletError("");
+    setCardForm({ number: "", expiry: c.expiry ?? "", name: c.cardholderName ?? "" });
+    setCardAddr({
+      billingName: c.billingName ?? "", street: c.street ?? "",
+      extNumber: c.extNumber ?? "", intNumber: c.intNumber ?? "",
+      colonia: c.colonia ?? "", city: c.city ?? "",
+      state: c.state ?? "", zip: c.zip ?? "",
+    });
+    setWalletView("edit");
+  }
+
+  async function saveCardEdits() {
+    if (!editingCard) return;
+    if (cardForm.expiry && !/^\d{2}\/\d{2}$/.test(cardForm.expiry)) { setWalletError("La vigencia va como MM/AA."); return; }
+    if (cardForm.expiry && expiryPassed(cardForm.expiry)) { setWalletError("Esa vigencia ya pasó."); return; }
+    if (cardAddr.zip && !/^\d{5}$/.test(cardAddr.zip)) { setWalletError("El código postal son 5 dígitos."); return; }
+    setSavingCard(true);
+    setWalletError("");
+    try {
+      await paymentMethodsApi.update(editingCard.id, {
+        expiry: cardForm.expiry,
+        cardholderName: cardForm.name,
+        ...cardAddr,
+      });
+      resetCardForm();
+      setEditingCard(null);
+      setWalletView("list");
+      loadCards();
+    } catch (e: unknown) {
+      setWalletError(apiMessage(e, "No se pudieron guardar los cambios."));
     } finally { setSavingCard(false); }
   }
 
@@ -1126,8 +1179,10 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   async function deleteCard(id: string) {
     setCards(prev => prev.filter(c => c.id !== id));
+    setConfirmDeleteCard(false);
+    setEditingCard(null);
+    setWalletView("list");
     try { await paymentMethodsApi.remove(id); }
-    catch { loadCards(); }
     finally { loadCards(); }
   }
 
@@ -3033,166 +3088,230 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                 <button onClick={() => setShowWallet(false)} aria-label="Cerrar" className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-base leading-none" style={{ color: "var(--text-muted)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>✕</button>
               </div>
               <div className="p-5 space-y-4 overflow-y-auto">
-                {walletLoading ? (
-                  <div className="h-16 rounded-xl shimmer" />
-                ) : cards.length > 0 ? (
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-medium uppercase" style={{ letterSpacing: "0.12em", color: "var(--text-muted)" }}>
-                      {cards.length === 1 ? "Tu tarjeta" : "Con cuál pagas"}
-                    </p>
-                    {cards.map(c => {
-                      const chosen = !!c.isDefault;
-                      const dead = expiryPassed(c.expiry);
-                      return (
-                        <div key={c.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5"
-                          style={chosen
-                            ? { background: "color-mix(in srgb, var(--brand) 10%, transparent)", border: "1.5px solid var(--brand-light)" }
-                            : { background: "var(--bg-input)", border: "1px solid var(--border)" }}>
-                          {/* The whole row picks the card; the bin is its own target. */}
-                          <button type="button" onClick={() => chooseCard(c.id)} aria-pressed={chosen}
-                            className="flex items-center gap-3 min-w-0 flex-1 text-left">
-                            <CardBrandMark brand={c.brand} />
-                            <span className="min-w-0">
-                              <span className="flex items-center gap-1.5">
-                                <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                                  {maskedCard(c.last4)}
+                {walletView === "list" ? (
+                  <>
+                    {walletLoading ? (
+                      <div className="h-16 rounded-xl shimmer" />
+                    ) : cards.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-medium uppercase" style={{ letterSpacing: "0.12em", color: "var(--text-muted)" }}>
+                          {cards.length === 1 ? "Tu tarjeta" : "Con cuál pagas"}
+                        </p>
+                        {cards.map(c => {
+                          const chosen = !!c.isDefault;
+                          const dead = expiryPassed(c.expiry);
+                          return (
+                            <div key={c.id} className="flex items-center gap-2 rounded-xl px-3 py-2.5"
+                              style={chosen
+                                ? { background: "color-mix(in srgb, var(--brand) 10%, transparent)", border: "1.5px solid var(--brand-light)" }
+                                : { background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                              {/* The row picks the card; the pencil is its own target. */}
+                              <button type="button" onClick={() => chooseCard(c.id)} aria-pressed={chosen}
+                                className="flex items-center gap-3 min-w-0 flex-1 text-left">
+                                <CardBrandMark brand={c.brand} />
+                                <span className="min-w-0">
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                                      {maskedCard(c.last4)}
+                                    </span>
+                                    {chosen && (
+                                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full"
+                                        style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>Elegida</span>
+                                    )}
+                                  </span>
+                                  <span className="block text-[11px] truncate" style={{ color: dead ? "var(--error-text)" : "var(--text-muted)" }}>
+                                    {c.expiry ? (dead ? `Venció ${c.expiry}` : `Vence ${c.expiry}`) : "Sin vigencia"}
+                                    {c.colonia || c.city ? ` · ${[c.colonia, c.city].filter(Boolean).join(", ")}` : ""}
+                                  </span>
                                 </span>
-                                {chosen && (
-                                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full"
-                                    style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>Elegida</span>
-                                )}
-                              </span>
-                              <span className="block text-[11px]" style={{ color: dead ? "var(--error-text)" : "var(--text-muted)" }}>
-                                {c.expiry ? (dead ? `Venció ${c.expiry}` : `Vence ${c.expiry}`) : "Sin vigencia"}
-                                {c.colonia || c.city ? ` · ${[c.colonia, c.city].filter(Boolean).join(", ")}` : ""}
-                              </span>
-                            </span>
-                          </button>
-                          <button type="button" onClick={() => deleteCard(c.id)} aria-label={`Quitar tarjeta ${maskedCard(c.last4)}`}
-                            className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs"
-                            style={{ color: "var(--text-muted)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>✕</button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-xs text-center py-2" style={{ color: "var(--text-muted)" }}>
-                    Todavía no tienes tarjetas guardadas.
-                  </p>
-                )}
-
-                {!addingCardOpen ? (
-                  <button type="button" onClick={() => setAddingCardOpen(true)}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold"
-                    style={{ background: cards.length ? "var(--bg-input)" : "var(--brand-light)", border: cards.length ? "1px solid var(--border)" : "none", color: cards.length ? "var(--text-secondary)" : "var(--brand-ink)" }}>
-                    + Agregar tarjeta
-                  </button>
-                ) : (() => {
-                  const issue = cardIssue(cardForm.number);
-                  const brand = detectBrand(cardForm.number);
-                  return (
-                  <div className="space-y-2.5 pt-1" style={{ borderTop: cards.length ? "1px solid var(--border-subtle)" : undefined }}>
-                    <p className="text-[11px] font-medium uppercase pt-1" style={{ letterSpacing: "0.12em", color: "var(--text-muted)" }}>Agregar tarjeta</p>
-
-                    <div className="relative">
-                      <input inputMode="numeric" autoComplete="cc-number" placeholder="Número de tarjeta"
-                        value={cardForm.number}
-                        onChange={e => setCardForm(f => ({ ...f, number: formatCardNumber(e.target.value) }))}
-                        className="w-full rounded-xl pl-3.5 pr-14 py-2.5 text-sm tabular-nums"
-                        style={{ background: "var(--bg-input)", color: "var(--text-primary)",
-                          border: `1px solid ${issue?.kind === "invalid" ? "var(--error-text)" : "var(--border)"}` }} />
-                      {cardForm.number && (
-                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
-                          <CardBrandMark brand={brand} size={30} />
-                        </span>
-                      )}
-                    </div>
-                    {issue?.message && (
-                      <p className="text-[11px] -mt-1" style={{ color: issue.kind === "invalid" ? "var(--error-text)" : "var(--text-muted)" }}>
-                        {issue.message}
+                              </button>
+                              <button type="button" onClick={() => startEditCard(c)} aria-label={`Editar tarjeta ${maskedCard(c.last4)}`}
+                                className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ color: "var(--text-secondary)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                </svg>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-center py-2" style={{ color: "var(--text-muted)" }}>
+                        Todavía no tienes tarjetas guardadas.
                       </p>
                     )}
 
-                    <div className="flex gap-2">
-                      <input inputMode="numeric" autoComplete="cc-exp" placeholder="MM/AA" value={cardForm.expiry}
-                        onChange={e => setCardForm(f => ({ ...f, expiry: formatExpiry(e.target.value) }))}
-                        className="w-24 rounded-xl px-3.5 py-2.5 text-sm tabular-nums"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
-                      <input autoComplete="cc-name" placeholder="Nombre en la tarjeta (opcional)" value={cardForm.name}
-                        onChange={e => setCardForm(f => ({ ...f, name: e.target.value }))}
-                        className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
-                    </div>
-
-                    {/* ── Billing address ── */}
-                    <p className="text-[11px] font-medium uppercase pt-1.5" style={{ letterSpacing: "0.12em", color: "var(--text-muted)" }}>Dirección</p>
-
-                    <input autoComplete="name" placeholder="Nombre completo" value={cardAddr.billingName}
-                      onChange={e => setCardAddr(f => ({ ...f, billingName: e.target.value }))}
-                      className="w-full rounded-xl px-3.5 py-2.5 text-sm"
-                      style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
-
-                    <div className="flex gap-2">
-                      <input inputMode="numeric" autoComplete="postal-code" placeholder="C.P." value={cardAddr.zip}
-                        onChange={e => setCardAddr(f => ({ ...f, zip: e.target.value.replace(/\D/g, "").slice(0, 5) }))}
-                        className="w-24 rounded-xl px-3.5 py-2.5 text-sm tabular-nums"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
-                      <div className="flex-1 min-w-0 flex items-center text-[11px]" style={{ color: zipMiss ? "var(--error-text)" : "var(--text-muted)" }}>
-                        {zipBusy ? "Buscando el código postal…"
-                          : zipMiss ? "No encontramos ese C.P. — llénalo a mano."
-                          : cardAddr.city ? `${cardAddr.city}${cardAddr.state ? `, ${cardAddr.state}` : ""}`
-                          : "Escribe tu C.P. y llenamos lo demás"}
+                    <button type="button" onClick={startAddCard}
+                      className="w-full py-2.5 rounded-xl text-sm font-semibold"
+                      style={cards.length
+                        ? { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }
+                        : { background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+                      + Agregar tarjeta nueva
+                    </button>
+                  </>
+                ) : (() => {
+                  const editing = walletView === "edit";
+                  const issue = editing ? null : cardIssue(cardForm.number);
+                  const brand = detectBrand(cardForm.number);
+                  return (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => { resetCardForm(); setEditingCard(null); setWalletView("list"); }}
+                          aria-label="Volver a mis tarjetas"
+                          className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
+                          style={{ color: "var(--text-secondary)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                        </button>
+                        <p className="text-[11px] font-medium uppercase" style={{ letterSpacing: "0.12em", color: "var(--text-muted)" }}>
+                          {editing ? "Editar tarjeta" : "Agregar tarjeta nueva"}
+                        </p>
                       </div>
-                    </div>
 
-                    {zipColonias.length > 1 ? (
-                      <select value={cardAddr.colonia} onChange={e => setCardAddr(f => ({ ...f, colonia: e.target.value }))}
-                        className="w-full rounded-xl px-3 py-2.5 text-sm"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
-                        <option value="">Elige tu colonia</option>
-                        {zipColonias.map(col => <option key={col} value={col}>{col}</option>)}
-                      </select>
-                    ) : (
-                      <input placeholder="Colonia" value={cardAddr.colonia}
-                        onChange={e => setCardAddr(f => ({ ...f, colonia: e.target.value }))}
+                      {editing ? (
+                        /* The number can't change: only its last four were ever kept. */
+                        <div className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+                          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+                          <CardBrandMark brand={editingCard?.brand} />
+                          <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--text-primary)" }}>
+                            {maskedCard(editingCard?.last4)}
+                          </span>
+                          <span className="text-[11px] ml-auto" style={{ color: "var(--text-muted)" }}>El número no se cambia</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="relative">
+                            <input inputMode="numeric" autoComplete="cc-number" placeholder="Número de tarjeta"
+                              value={cardForm.number}
+                              onChange={e => setCardForm(f => ({ ...f, number: formatCardNumber(e.target.value) }))}
+                              className="w-full rounded-xl pl-3.5 pr-14 py-2.5 text-sm tabular-nums"
+                              style={{ background: "var(--bg-input)", color: "var(--text-primary)",
+                                border: `1px solid ${issue?.kind === "invalid" ? "var(--error-text)" : "var(--border)"}` }} />
+                            {cardForm.number && (
+                              <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                                <CardBrandMark brand={brand} size={30} />
+                              </span>
+                            )}
+                          </div>
+                          {issue?.message && (
+                            <p className="text-[11px] -mt-1" style={{ color: issue.kind === "invalid" ? "var(--error-text)" : "var(--text-muted)" }}>
+                              {issue.message}
+                            </p>
+                          )}
+                        </>
+                      )}
+
+                      <div className="flex gap-2">
+                        <input inputMode="numeric" autoComplete="cc-exp" placeholder="MM/AA" value={cardForm.expiry}
+                          onChange={e => setCardForm(f => ({ ...f, expiry: formatExpiry(e.target.value) }))}
+                          className="w-24 rounded-xl px-3.5 py-2.5 text-sm tabular-nums"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                        <input autoComplete="cc-name" placeholder="Nombre en la tarjeta (opcional)" value={cardForm.name}
+                          onChange={e => setCardForm(f => ({ ...f, name: e.target.value }))}
+                          className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                      </div>
+
+                      {/* ── Billing address ── */}
+                      <p className="text-[11px] font-medium uppercase pt-1.5" style={{ letterSpacing: "0.12em", color: "var(--text-muted)" }}>Dirección</p>
+
+                      <input autoComplete="name" placeholder="Nombre completo" value={cardAddr.billingName}
+                        onChange={e => setCardAddr(f => ({ ...f, billingName: e.target.value }))}
                         className="w-full rounded-xl px-3.5 py-2.5 text-sm"
                         style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
-                    )}
 
-                    <input autoComplete="address-line1" placeholder="Calle" value={cardAddr.street}
-                      onChange={e => setCardAddr(f => ({ ...f, street: e.target.value }))}
-                      className="w-full rounded-xl px-3.5 py-2.5 text-sm"
-                      style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                      <div className="flex gap-2">
+                        <input inputMode="numeric" autoComplete="postal-code" placeholder="C.P." value={cardAddr.zip}
+                          onChange={e => setCardAddr(f => ({ ...f, zip: e.target.value.replace(/\D/g, "").slice(0, 5) }))}
+                          className="w-24 rounded-xl px-3.5 py-2.5 text-sm tabular-nums"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                        <div className="flex-1 min-w-0 flex items-center text-[11px]" style={{ color: zipMiss ? "var(--error-text)" : "var(--text-muted)" }}>
+                          {zipBusy ? "Buscando el código postal…"
+                            : zipMiss ? "No encontramos ese C.P. — llénalo a mano."
+                            : cardAddr.city ? `${cardAddr.city}${cardAddr.state ? `, ${cardAddr.state}` : ""}`
+                            : "Escribe tu C.P. y llenamos lo demás"}
+                        </div>
+                      </div>
 
-                    <div className="flex gap-2">
-                      <input placeholder="Núm. exterior" value={cardAddr.extNumber}
-                        onChange={e => setCardAddr(f => ({ ...f, extNumber: e.target.value }))}
-                        className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
+                      {zipColonias.length > 1 ? (
+                        <select value={cardAddr.colonia} onChange={e => setCardAddr(f => ({ ...f, colonia: e.target.value }))}
+                          className="w-full rounded-xl px-3 py-2.5 text-sm"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+                          <option value="">Elige tu colonia</option>
+                          {/* A colonia already saved but missing from the lookup stays on the list —
+                              otherwise editing anything else would quietly wipe it. */}
+                          {(cardAddr.colonia && !zipColonias.includes(cardAddr.colonia)
+                            ? [cardAddr.colonia, ...zipColonias] : zipColonias
+                          ).map(col => <option key={col} value={col}>{col}</option>)}
+                        </select>
+                      ) : (
+                        <input placeholder="Colonia" value={cardAddr.colonia}
+                          onChange={e => setCardAddr(f => ({ ...f, colonia: e.target.value }))}
+                          className="w-full rounded-xl px-3.5 py-2.5 text-sm"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                      )}
+
+                      <input autoComplete="address-line1" placeholder="Calle" value={cardAddr.street}
+                        onChange={e => setCardAddr(f => ({ ...f, street: e.target.value }))}
+                        className="w-full rounded-xl px-3.5 py-2.5 text-sm"
                         style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
-                      <input placeholder="Interior (opc.)" value={cardAddr.intNumber}
-                        onChange={e => setCardAddr(f => ({ ...f, intNumber: e.target.value }))}
-                        className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
-                    </div>
 
-                    {walletError && <p className="text-xs" style={{ color: "var(--error-text)" }}>{walletError}</p>}
+                      <div className="flex gap-2">
+                        <input placeholder="Núm. exterior" value={cardAddr.extNumber}
+                          onChange={e => setCardAddr(f => ({ ...f, extNumber: e.target.value }))}
+                          className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                        <input placeholder="Interior (opc.)" value={cardAddr.intNumber}
+                          onChange={e => setCardAddr(f => ({ ...f, intNumber: e.target.value }))}
+                          className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                      </div>
 
-                    <div className="flex gap-2 pt-0.5">
-                      <button onClick={() => { setAddingCardOpen(false); setWalletError(""); }}
-                        className="px-4 py-2.5 rounded-xl text-sm font-semibold"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
-                        Cancelar
-                      </button>
-                      <button onClick={savePaymentCard} disabled={savingCard || !!issue}
-                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+                      {walletError && <p className="text-xs" style={{ color: "var(--error-text)" }}>{walletError}</p>}
+
+                      <button onClick={editing ? saveCardEdits : savePaymentCard} disabled={savingCard || !!issue}
+                        className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
                         style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
-                        {savingCard ? "Guardando…" : "Guardar tarjeta"}
+                        {savingCard ? "Guardando…" : editing ? "Guardar cambios" : "Guardar tarjeta"}
                       </button>
-                    </div>
-                    <p className="text-[11px] text-center" style={{ color: "var(--text-muted)" }}>
-                      Del número solo guardamos los últimos 4 dígitos.
-                    </p>
-                  </div>
+
+                      {editing && editingCard && (
+                        <div className="pt-2 mt-1" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                          {!confirmDeleteCard ? (
+                            <button type="button" onClick={() => setConfirmDeleteCard(true)}
+                              className="w-full py-2.5 rounded-xl text-sm font-semibold"
+                              style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--error-text)" }}>
+                              Eliminar tarjeta
+                            </button>
+                          ) : (
+                            <div className="rounded-xl p-3 text-center" style={{ background: "color-mix(in srgb, var(--error-text) 8%, transparent)", border: "1px solid var(--error-text)" }}>
+                              <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+                                ¿Eliminar {maskedCard(editingCard.last4)}?
+                              </p>
+                              <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>No se puede deshacer.</p>
+                              <div className="flex gap-2 mt-2.5">
+                                <button type="button" onClick={() => setConfirmDeleteCard(false)}
+                                  className="flex-1 py-2 rounded-lg text-xs font-semibold"
+                                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                                  Cancelar
+                                </button>
+                                <button type="button" onClick={() => deleteCard(editingCard.id)}
+                                  className="flex-1 py-2 rounded-lg text-xs font-bold text-white"
+                                  style={{ background: "#dc2626" }}>
+                                  Sí, eliminar
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {!editing && (
+                        <p className="text-[11px] text-center" style={{ color: "var(--text-muted)" }}>
+                          Del número solo guardamos los últimos 4 dígitos.
+                        </p>
+                      )}
+                    </>
                   );
                 })()}
               </div>

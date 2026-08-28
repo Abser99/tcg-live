@@ -31,6 +31,10 @@ export class PaymentMethod {
   @Column({ nullable: true })
   expiry: string; // MM/YY — for display only
 
+  /** Name printed on the card. Optional: a card is identified by brand and last four. */
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  cardholderName: string | null;
+
   @Column({ default: false })
   isDefault: boolean;
 

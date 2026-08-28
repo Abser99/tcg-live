@@ -249,6 +249,9 @@ export const paymentMethodsApi = {
   my: () => api.get<ApiPaymentMethod[]>("/payment-methods/my"),
   create: (dto: { type: "card" | "oxxo" | "spei"; cardNumber?: string; expiry?: string; cardholderName?: string } & CardAddressInput) =>
     api.post<ApiPaymentMethod>("/payment-methods", dto),
+  /** Edit a saved card. Not the number — only its last four were ever stored. */
+  update: (id: string, dto: { expiry?: string; cardholderName?: string } & CardAddressInput) =>
+    api.patch<ApiPaymentMethod>(`/payment-methods/${id}`, dto),
   setDefault: (id: string) => api.patch(`/payment-methods/${id}/default`),
   remove: (id: string) => api.delete(`/payment-methods/${id}`),
 };
@@ -625,6 +628,7 @@ export interface ApiPaymentMethod {
   brand?: string;
   expiry?: string;
   isDefault?: boolean;
+  cardholderName?: string | null;
   /** Billing address — lives on the card, since one person can bill two places. */
   billingName?: string | null;
   street?: string | null;

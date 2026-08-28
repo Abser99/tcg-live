@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PaymentMethod, PaymentMethodType } from './entities/payment-method.entity';
 import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
+import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 import { brandLabel, checkCardNumber } from './card';
 
 @Injectable()
@@ -48,6 +49,7 @@ export class PaymentMethodsService {
       last4,
       brand,
       expiry: dto.expiry,
+      cardholderName: dto.cardholderName?.trim() || null,
       isDefault,
       // Billing address — every part optional, so a card can be saved now and the
       // address filled in when it's first needed.
@@ -60,6 +62,26 @@ export class PaymentMethodsService {
       state:       dto.state?.trim() || null,
       zip:         dto.zip?.trim() || null,
     });
+    return this.repo.save(method);
+  }
+
+  /**
+   * Edit a saved card. The number is not among the fields: only its last four digits
+   * were ever kept, so a different number is a different card.
+   * An empty string clears a field; leaving it out keeps what's there.
+   */
+  async update(id: string, userId: string, dto: UpdatePaymentMethodDto): Promise<PaymentMethod> {
+    const method = await this.repo.findOne({ where: { id, userId } });
+    if (!method) throw new NotFoundException('Tarjeta no encontrada');
+
+    const fields: (keyof UpdatePaymentMethodDto)[] = [
+      'expiry', 'cardholderName', 'billingName', 'street', 'extNumber',
+      'intNumber', 'colonia', 'city', 'state', 'zip',
+    ];
+    for (const f of fields) {
+      if (dto[f] === undefined) continue;
+      (method as unknown as Record<string, string | null>)[f] = dto[f]!.trim() || null;
+    }
     return this.repo.save(method);
   }
 
