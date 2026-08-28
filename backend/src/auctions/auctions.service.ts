@@ -29,6 +29,7 @@ import { LivekitService } from '../livekit/livekit.service';
 import { ListingsService } from '../listings/listings.service';
 import { bidIncrement, itemDurationMs, ITEM_TIMER_MS, dutchPriceAt } from './auction-pricing';
 import { gamesMatching } from './game-search';
+import { presentCount, raffleEligibility } from './raffle-eligibility';
 
 const MIN_BID_INCREMENT = 100; // 1 MXN in cents (floor for validation)
 
@@ -1369,16 +1370,16 @@ export class AuctionsService implements OnModuleInit {
     const raffles = await this.rafflesRepo.find({ where: { auctionId }, order: { createdAt: 'ASC' } });
     if (!raffles.length) return [];
 
-    // One pass over attendance: for each threshold, how many viewers have cleared it.
-    const rows = (await this.attendanceRepo.query(
-      `SELECT "watchedSec" FROM live_attendance WHERE "auctionId" = $1`,
-      [auctionId],
-    )) as { watchedSec: number }[];
-    const watched = rows.map(r => Number(r.watchedSec));
+    /* Only people who are still watching. Counting everyone who ever opened the live
+       inflated the number all evening and promised a crowd that had gone home. */
+    const rows = await this.attendanceRepo.find({ where: { auctionId } });
 
     return raffles.map(r => ({
       ...r,
-      participants: watched.filter(sec => sec >= r.minMinutes * 60).length,
+      participants: presentCount(rows, {
+        minMinutes: r.minMinutes,
+        presentWithinSec: AuctionsService.PRESENT_WITHIN_SEC,
+      }),
     }));
   }
 
@@ -1407,11 +1408,13 @@ export class AuctionsService implements OnModuleInit {
     }
 
     const rows = await this.attendanceRepo.find({ where: { auctionId: raffle.auctionId } });
-    // The seller can't win their own raffle, and short visits don't qualify.
-    const candidates = rows
-      .filter(r => r.userId !== sellerId)
-      .map(r => ({ userId: r.userId, minutes: Math.floor(r.watchedSec / 60) }))
-      .filter(r => r.minutes >= Math.max(1, raffle.minMinutes));
+    const minMinutes = Math.max(1, raffle.minMinutes);
+    // Watch time earns a place; being here keeps it. See raffle-eligibility.ts.
+    const { qualified, present: candidates } = raffleEligibility(rows, {
+      minMinutes,
+      sellerId,
+      presentWithinSec: AuctionsService.PRESENT_WITHIN_SEC,
+    });
 
     // Friends brought to the live multiply entries, but qualifying is on watch time
     // alone — inviting people can't get you in, only improve your odds once you're in.
@@ -1422,7 +1425,9 @@ export class AuctionsService implements OnModuleInit {
 
     if (!eligible.length) {
       throw new BadRequestException(
-        `Nadie alcanza el mínimo de ${raffle.minMinutes} min de vista todavía`,
+        qualified.length
+          ? `Quienes alcanzaban los ${minMinutes} min ya salieron del live. Espera a que alguien vuelva.`
+          : `Nadie alcanza el mínimo de ${minMinutes} min de vista todavía`,
       );
     }
 
