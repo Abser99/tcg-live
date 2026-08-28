@@ -984,6 +984,16 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   // Full-screen spinning wheel shown to everyone (seller + viewers)
   const [rouletteShow, setRouletteShow] = useState<{ names: string[]; winner: string; prize?: string } | null>(null);
   const [rouletteLanded, setRouletteLanded] = useState(false);
+
+  // ── The other two games of chance. All three share the participant list and the
+  //    prize selector; only the theatre on screen differs. ──
+  const [gameKind, setGameKind] = useState<"ruleta" | "dados" | "volado">("ruleta");
+  const [coinHeads, setCoinHeads] = useState("");   // whoever is riding on águila
+  const [coinTails, setCoinTails] = useState("");   // …and on sol
+  const [coinShow, setCoinShow] = useState<CoinShow | null>(null);
+  const [coinLanded, setCoinLanded] = useState(false);
+  const [diceShow, setDiceShow] = useState<DiceShow | null>(null);
+  const [diceLanded, setDiceLanded] = useState(false);
   const [viewerMuted, setViewerMuted] = useState(true); // start muted so autoplay works; viewer can unmute
 
   // Wallet (saved cards) — synced with the main wallet via the payment-methods API
@@ -1392,8 +1402,69 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     }
   }
 
+  const gamePool = () => (rouletteNames.length ? rouletteNames : participants);
+
+  /* Hand the prize over for real. Until this existed the games were theatre: a name
+     appeared and the winner had to chase the seller off-platform for their card. */
+  function awardWinner(winner: string) {
+    auctionsApi.awardGiveaway(a.id, { winnerUsername: winner, listingId: roulettePrize || undefined })
+      .then(({ data }) => {
+        if (data.awarded) {
+          flashToast(`🎁 Premio entregado a @${winner} — ya aparece en sus compras`);
+          setBuyNowItems(prev => prev.filter(l => l.id !== roulettePrize));
+          setRoulettePrize("");
+        }
+      })
+      .catch((e: unknown) => {
+        // It already played out in front of everyone; say plainly that the prize
+        // didn't register rather than letting the seller assume it did.
+        flashToast(apiMessage(e, "El juego terminó, pero no se pudo registrar el premio."));
+      });
+  }
+
+  /** Two dice each; highest total wins. A tie sends only the tied players back in. */
+  function rollDice() {
+    const pool = gamePool();
+    if (!pool.length || spinning) { if (!pool.length) flashToast("No hay participantes para los dados."); return; }
+    const d6 = () => 1 + Math.floor(Math.random() * 6);
+    const rounds: DiceRound[] = [];
+    let contenders = pool;
+    // Real dice, real ties: the tied players simply roll again. Uniform among equals,
+    // and the tiebreak is on screen instead of being resolved out of sight.
+    while (contenders.length > 1 && rounds.length < 8) {
+      const round: DiceRound = contenders.map(name => ({ name, a: d6(), b: d6() }));
+      const best = Math.max(...round.map(r => r.a + r.b));
+      rounds.push(round);
+      contenders = round.filter(r => r.a + r.b === best).map(r => r.name);
+    }
+    const winner = contenders[0] ?? pool[Math.floor(Math.random() * pool.length)];
+    const prizeTitle = buyNowItems.find(l => l.id === roulettePrize)?.title;
+    setSpinning(true);
+    setShowControls(false);
+    setDiceLanded(false);
+    setDiceShow({ rounds, winner, prize: prizeTitle });
+    broadcast({ type: "dice_roll", rounds, winner, prize: prizeTitle });
+    awardWinner(winner);
+  }
+
+  /** Volado: águila or sol. With a name on each side the coin picks a winner. */
+  function flipCoin() {
+    if (spinning) return;
+    const heads = coinHeads.trim(), tails = coinTails.trim();
+    const side: "aguila" | "sol" = Math.random() < 0.5 ? "aguila" : "sol";
+    const winner = side === "aguila" ? heads || null : tails || null;
+    const prizeTitle = buyNowItems.find(l => l.id === roulettePrize)?.title;
+    setSpinning(true);
+    setShowControls(false);
+    setCoinLanded(false);
+    setCoinShow({ side, heads, tails, winner, prize: prizeTitle });
+    broadcast({ type: "coin_flip", side, heads, tails, winner, prize: prizeTitle });
+    // A coin with no names is just a yes/no call — nothing to hand over.
+    if (winner) awardWinner(winner);
+  }
+
   function spinRoulette() {
-    const pool = rouletteNames.length ? rouletteNames : participants;
+    const pool = gamePool();
     if (!pool.length || spinning) { if (!pool.length) flashToast("No hay participantes para la ruleta."); return; }
     const winner = pool[Math.floor(Math.random() * pool.length)];
     const prizeTitle = buyNowItems.find(l => l.id === roulettePrize)?.title;
@@ -1405,23 +1476,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     setRouletteLanded(false);
     setRouletteShow({ names: pool, winner, prize: prizeTitle });
     broadcast({ type: "roulette_spin", pool, winner, prize: prizeTitle });
-
-    // Hand the prize over for real. Until this existed the wheel was theatre: a name
-    // appeared and the winner had to chase the seller off-platform for their card.
-    auctionsApi.awardGiveaway(a.id, { winnerUsername: winner, listingId: roulettePrize || undefined })
-      .then(({ data }) => {
-        if (data.awarded) {
-          flashToast(`🎁 Premio entregado a @${winner} — ya aparece en sus compras`);
-          // The prize leaves the catalogue, so drop it locally too.
-          setBuyNowItems(prev => prev.filter(l => l.id !== roulettePrize));
-          setRoulettePrize("");
-        }
-      })
-      .catch((e: any) => {
-        // The wheel already span in front of everyone; say plainly that the prize
-        // didn't register rather than letting the seller assume it did.
-        flashToast(e?.response?.data?.message ?? "La ruleta giró, pero no se pudo registrar el premio.");
-      });
+    awardWinner(winner);
   }
 
   // ── Seller catalog management (in-panel) ──
@@ -1750,6 +1805,18 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           if (pool.length && msg.winner) {
             setRouletteLanded(false);
             setRouletteShow({ names: pool, winner: msg.winner, prize: msg.prize });
+          }
+        } else if (msg.type === "dice_roll") {
+          // Every screen replays the seller's rolls — the result travels with the message
+          // so nobody re-rolls their own outcome.
+          if (Array.isArray(msg.rounds) && msg.rounds.length && msg.winner) {
+            setDiceLanded(false);
+            setDiceShow({ rounds: msg.rounds, winner: msg.winner, prize: msg.prize });
+          }
+        } else if (msg.type === "coin_flip") {
+          if (msg.side === "aguila" || msg.side === "sol") {
+            setCoinLanded(false);
+            setCoinShow({ side: msg.side, heads: msg.heads ?? "", tails: msg.tails ?? "", winner: msg.winner ?? null, prize: msg.prize });
           }
         } else if (msg.type === "roulette_winner") {
           setRouletteWinner({ name: msg.winner, prize: msg.prize });
@@ -2455,6 +2522,59 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           </div>
         )}
 
+        {/* ── Dados — everyone watches the same throw, tiebreaks included ── */}
+        {diceShow && (
+          <div className="absolute inset-0 z-[68] flex flex-col items-center justify-center gap-4 px-4 pointer-events-auto"
+            style={{ background: "rgba(0,0,0,0.78)" }}>
+            <p className="text-white font-black tracking-[0.15em] text-sm">🎲 DADOS</p>
+            <DiceRoll rounds={diceShow.rounds} winner={diceShow.winner}
+              onDone={() => { setDiceLanded(true); setSpinning(false); }} />
+            {diceLanded && (
+              <div className="text-center reveal">
+                <p className="text-3xl font-black text-white">🎉 {diceShow.winner}</p>
+                {diceShow.prize && (
+                  <p className="text-sm font-bold mt-1" style={{ color: "var(--brand-light)" }}>Premio: {diceShow.prize}</p>
+                )}
+              </div>
+            )}
+            {(isSeller || diceLanded) && (
+              <button type="button" onClick={() => { setDiceShow(null); setDiceLanded(false); setSpinning(false); }}
+                className="mt-1 px-5 py-2 rounded-full text-sm font-bold"
+                style={{ background: diceLanded ? "var(--brand-light)" : "rgba(255,255,255,0.14)", color: diceLanded ? "var(--brand-ink)" : "#fff", border: "1px solid rgba(255,255,255,0.2)" }}>
+                {diceLanded ? "Cerrar" : "Saltar"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* ── Volado ── */}
+        {coinShow && (
+          <div className="absolute inset-0 z-[68] flex flex-col items-center justify-center gap-5 px-4 pointer-events-auto"
+            style={{ background: "rgba(0,0,0,0.78)" }}>
+            <p className="text-white font-black tracking-[0.15em] text-sm">🪙 VOLADO</p>
+            <CoinFlip side={coinShow.side} heads={coinShow.heads} tails={coinShow.tails}
+              onDone={() => { setCoinLanded(true); setSpinning(false); }} />
+            {coinLanded && (
+              <div className="text-center reveal">
+                <p className="text-xl font-black" style={{ color: "#FACC15" }}>
+                  {coinShow.side === "aguila" ? "🦅 Águila" : "☀️ Sol"}
+                </p>
+                {coinShow.winner && <p className="text-3xl font-black text-white mt-1">🎉 {coinShow.winner}</p>}
+                {coinShow.prize && coinShow.winner && (
+                  <p className="text-sm font-bold mt-1" style={{ color: "var(--brand-light)" }}>Premio: {coinShow.prize}</p>
+                )}
+              </div>
+            )}
+            {(isSeller || coinLanded) && (
+              <button type="button" onClick={() => { setCoinShow(null); setCoinLanded(false); setSpinning(false); }}
+                className="mt-1 px-5 py-2 rounded-full text-sm font-bold"
+                style={{ background: coinLanded ? "var(--brand-light)" : "rgba(255,255,255,0.14)", color: coinLanded ? "var(--brand-ink)" : "#fff", border: "1px solid rgba(255,255,255,0.2)" }}>
+                {coinLanded ? "Cerrar" : "Saltar"}
+              </button>
+            )}
+          </div>
+        )}
+
         {/* ── Winner splash — flashes for 2s, then it lives as a chip in the bid row ── */}
         {(() => {
           if (!winnerSplash) return null;
@@ -2821,7 +2941,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
               {/* Tabs */}
               <div className="flex gap-1 px-4 pt-3 shrink-0">
-                {([["subir", "🃏 Subastar"], ["ruleta", "🎡 Ruleta"]] as const).map(([k, label]) => (
+                {([["subir", "🃏 Subastar"], ["ruleta", "🎲 Juegos"]] as const).map(([k, label]) => (
                   <button key={k} type="button" onClick={() => setControlsTab(k)}
                     className="px-3 py-1.5 rounded-full text-[13px] font-semibold"
                     style={controlsTab === k
@@ -3098,8 +3218,46 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                     </div>
                   </div>
                 ) : (
-                  /* ── Roulette ── */
+                  /* ── Games of chance: same participants and same prize, three ways to draw ── */
                   <div className="space-y-3">
+                    <div className="flex gap-1.5">
+                      {([
+                        ["ruleta", "🎡", "Ruleta"],
+                        ["dados",  "🎲", "Dados"],
+                        ["volado", "🪙", "Volado"],
+                      ] as const).map(([k, icon, label]) => (
+                        <button key={k} type="button" onClick={() => setGameKind(k)}
+                          className="flex-1 py-2 rounded-lg text-xs font-bold"
+                          style={gameKind === k
+                            ? { background: "rgba(168,85,247,0.16)", border: "1.5px solid var(--brand-light)", color: "var(--accent-text)" }
+                            : { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                          <span className="mr-1" aria-hidden="true">{icon}</span>{label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                      {gameKind === "ruleta" ? "La rueda gira con todos los participantes y cae en uno."
+                        : gameKind === "dados" ? "Cada participante tira dos dados; gana el total más alto. Si empatan, sólo ellos vuelven a tirar."
+                        : "Cara o cruz entre dos personas. Sin nombres es simplemente un volado al aire."}
+                    </p>
+
+                    {gameKind === "volado" ? (
+                      <div className="space-y-2">
+                        {([["🦅 Águila", coinHeads, setCoinHeads], ["☀️ Sol", coinTails, setCoinTails]] as const).map(([label, val, set]) => (
+                          <div key={label}>
+                            <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-muted)" }}>{label}</label>
+                            <input list="volado-participantes" value={val} onChange={e => set(e.target.value)}
+                              placeholder="Nombre (opcional)" maxLength={30}
+                              className="w-full rounded-lg px-3 py-2 text-sm"
+                              style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
+                          </div>
+                        ))}
+                        <datalist id="volado-participantes">
+                          {participants.map(pn => <option key={pn} value={pn} />)}
+                        </datalist>
+                      </div>
+                    ) : (
+                    <>
                     <div className="flex items-center gap-2">
                       <button type="button" onClick={() => setRouletteNames(participants)}
                         className="flex-1 py-2 rounded-lg text-xs font-semibold" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
@@ -3136,6 +3294,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                       ))}
                     </div>
 
+                    </>
+                    )}
+
                     {/* Prize product */}
                     <div>
                       <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-muted)" }}>Producto en juego (opcional)</label>
@@ -3147,9 +3308,14 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                       <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>Se toman de tu catálogo de Compra ahora, donde puedes agregar y quitar productos.</p>
                     </div>
 
-                    <button type="button" onClick={spinRoulette} disabled={spinning}
+                    <button type="button"
+                      onClick={gameKind === "ruleta" ? spinRoulette : gameKind === "dados" ? rollDice : flipCoin}
+                      disabled={spinning}
                       className="w-full py-3 rounded-xl text-sm font-black disabled:opacity-60" style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
-                      {spinning ? "Girando…" : "🎡 Girar la ruleta"}
+                      {spinning ? "Va…"
+                        : gameKind === "ruleta" ? "🎡 Girar la ruleta"
+                        : gameKind === "dados" ? "🎲 Tirar los dados"
+                        : "🪙 Lanzar el volado"}
                     </button>
 
                     {rouletteWinner && (
@@ -3166,8 +3332,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           </div>
         )}
 
-        {/* Roulette result — shown to everyone watching */}
-        {(spinning || rouletteWinner) && !showControls && (
+        {/* Roulette result — shown to everyone watching. `spinning` is shared by all three
+            games now, so this legacy box has to stay out of the dice and coin overlays. */}
+        {(spinning || rouletteWinner) && !showControls && !diceShow && !coinShow && (
           <div className="absolute inset-x-0 top-1/4 z-40 flex justify-center pointer-events-none px-6">
             <div className="rounded-2xl px-6 py-4 text-center" style={{ background: "rgba(15,15,20,0.94)", border: "1px solid var(--brand-light)", backdropFilter: "blur(10px)", boxShadow: "0 12px 40px rgba(0,0,0,0.6)" }}>
               <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: "var(--brand-light)" }}>🎡 Ruleta</p>
@@ -4496,49 +4663,221 @@ function CardInfo({ auction: a, isSeller }: { auction: ApiAuction; isSeller?: bo
 /* ─── Slide-to-bid — drag the handle (≈40% of the track) to confirm ─────── */
 /* A real spinning roulette wheel: draws one wedge + label per name and rotates so the
    winner's wedge lands under the top pointer. Fires onDone when it stops. */
+/** One shake of the dice for every contender still in the running. */
+type DiceRound = { name: string; a: number; b: number }[];
+type DiceShow = { rounds: DiceRound[]; winner: string; prize?: string };
+type CoinShow = { side: "aguila" | "sol"; heads: string; tails: string; winner: string | null; prize?: string };
+
+/* A dozen saturated hues that all read on a black overlay. Ordered so neighbours in
+   the list already contrast; buildColors() then guarantees no two touching wedges
+   share a colour, including across the wrap. */
+const WHEEL_PALETTE = [
+  "#EF4444", "#3B82F6", "#F59E0B", "#8B5CF6", "#22C55E", "#EC4899",
+  "#06B6D4", "#F97316", "#84CC16", "#A855F7", "#14B8A6", "#FACC15",
+];
+
+function buildColors(n: number): string[] {
+  const out = Array.from({ length: n }, (_, i) => WHEEL_PALETTE[i % WHEEL_PALETTE.length]);
+  // With more wedges than colours the sequence repeats, and an odd count makes the
+  // last wedge meet the first. Nudge any collision to the next unused hue.
+  for (let i = 0; i < n; i++) {
+    const prev = out[(i - 1 + n) % n], next = out[(i + 1) % n];
+    if (i > 0 && (out[i] === prev || (i === n - 1 && out[i] === next))) {
+      out[i] = WHEEL_PALETTE.find(c => c !== prev && c !== next) ?? out[i];
+    }
+  }
+  return out;
+}
+
+/** Black or white for a label, whichever the wedge underneath can actually carry. */
+function inkOn(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.42 ? "#0b0b0f" : "#ffffff";
+}
+
+/** The pips of one die face, laid out on a 3x3 grid the way a real die is. */
+const DIE_PIPS: Record<number, [number, number][]> = {
+  1: [[1, 1]],
+  2: [[0, 0], [2, 2]],
+  3: [[0, 0], [1, 1], [2, 2]],
+  4: [[0, 0], [0, 2], [2, 0], [2, 2]],
+  5: [[0, 0], [0, 2], [1, 1], [2, 0], [2, 2]],
+  6: [[0, 0], [0, 2], [1, 0], [1, 2], [2, 0], [2, 2]],
+};
+
+function Die({ value, size = 34, rolling = false }: { value: number; size?: number; rolling?: boolean }) {
+  const pad = size * 0.22, step = (size - pad * 2) / 2, r = size * 0.085;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={rolling ? "die-shake" : ""} aria-label={`Dado: ${value}`}>
+      <rect width={size} height={size} rx={size * 0.2} fill="#fff" stroke="rgba(0,0,0,0.25)" strokeWidth={1} />
+      {(DIE_PIPS[value] ?? []).map(([row, col], i) => (
+        <circle key={i} cx={pad + col * step} cy={pad + row * step} r={r} fill="#0b0b0f" />
+      ))}
+    </svg>
+  );
+}
+
+/** Rolls the rounds one after another, so a tiebreak reads as a second throw. */
+function DiceRoll({ rounds, winner, onDone }: { rounds: DiceRound[]; winner: string; onDone?: () => void }) {
+  const [round, setRound] = useState(0);
+  const [rolling, setRolling] = useState(true);
+  const firedRef = useRef(false);
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let t = 0;
+    rounds.forEach((_, i) => {
+      timers.push(setTimeout(() => { setRound(i); setRolling(true); }, t));
+      timers.push(setTimeout(() => setRolling(false), t + 900));
+      t += 1500;
+    });
+    timers.push(setTimeout(() => {
+      if (!firedRef.current) { firedRef.current = true; onDone?.(); }
+    }, Math.max(1400, t - 300)));
+    return () => timers.forEach(clearTimeout);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const shown = rounds[round] ?? [];
+  const best = shown.length ? Math.max(...shown.map(r => r.a + r.b)) : 0;
+  return (
+    <div className="w-full max-w-sm">
+      {rounds.length > 1 && (
+        <p className="text-center text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: "rgba(255,255,255,0.65)" }}>
+          {round === 0 ? "Primera tirada" : `Desempate ${round}`}
+        </p>
+      )}
+      <div className="space-y-1.5 max-h-[46vh] overflow-y-auto" style={{ scrollbarWidth: "none" }}>
+        {shown.slice(0, 12).map(r => {
+          const total = r.a + r.b;
+          const top = !rolling && total === best;
+          return (
+            <div key={r.name} className="flex items-center gap-2.5 rounded-xl px-3 py-1.5"
+              style={top
+                ? { background: "rgba(84,66,4,0.92)", border: "1.5px solid #FACC15" }
+                : { background: "rgba(18,18,24,0.9)", border: "1px solid rgba(255,255,255,0.14)", opacity: rolling ? 1 : 0.55 }}>
+              <span className="text-[13px] font-bold text-white truncate flex-1">{r.name}</span>
+              <Die value={r.a} rolling={rolling} />
+              <Die value={r.b} rolling={rolling} />
+              <span className="text-base font-black tabular-nums w-7 text-right"
+                style={{ color: top ? "#FACC15" : "rgba(255,255,255,0.85)" }}>{rolling ? "?" : total}</span>
+            </div>
+          );
+        })}
+        {shown.length > 12 && (
+          <p className="text-center text-[11px]" style={{ color: "rgba(255,255,255,0.5)" }}>y {shown.length - 12} más…</p>
+        )}
+      </div>
+      <p className="sr-only">{`Gana ${winner}`}</p>
+    </div>
+  );
+}
+
+/** Volado — águila or sol, the way a coin is called in Mexico. */
+function CoinFlip({ side, heads, tails, onDone }: {
+  side: "aguila" | "sol"; heads: string; tails: string; onDone?: () => void;
+}) {
+  const firedRef = useRef(false);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDone(true);
+      if (!firedRef.current) { firedRef.current = true; onDone?.(); }
+    }, 2300);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Sol is the back of the coin, so it needs the extra half turn to end face-up.
+  const rest = side === "aguila" ? 0 : 180;
+  const face = (label: string, emoji: string, back: boolean) => (
+    <div className="absolute inset-0 rounded-full flex flex-col items-center justify-center"
+      style={{
+        background: "radial-gradient(circle at 34% 28%, #FDE68A, #D9A404 62%, #A87A02)",
+        border: "4px solid #F5D372", boxShadow: "0 10px 30px rgba(0,0,0,0.55)",
+        backfaceVisibility: "hidden", transform: back ? "rotateX(180deg)" : undefined,
+      }}>
+      <span className="text-3xl leading-none" aria-hidden="true">{emoji}</span>
+      <span className="text-[10px] font-black uppercase tracking-widest mt-0.5" style={{ color: "#5B4102" }}>{label}</span>
+    </div>
+  );
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <div className="coin-toss" style={{ perspective: 700 }}>
+        <div className={done ? "" : "coin-tumble"}
+          style={{ position: "relative", width: 128, height: 128, transformStyle: "preserve-3d", transform: done ? `rotateX(${rest}deg)` : undefined }}>
+          {face("Águila", "🦅", false)}
+          {face("Sol", "☀️", true)}
+        </div>
+      </div>
+      {(heads || tails) && (
+        <div className="flex items-center gap-2 text-[11px] font-bold" style={{ color: "rgba(255,255,255,0.7)" }}>
+          <span style={{ color: done && side === "aguila" ? "#FACC15" : undefined }}>🦅 {heads || "—"}</span>
+          <span style={{ color: "rgba(255,255,255,0.35)" }}>vs</span>
+          <span style={{ color: done && side === "sol" ? "#FACC15" : undefined }}>☀️ {tails || "—"}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RouletteWheel({ names, winner, onDone }: { names: string[]; winner: string; onDone?: () => void }) {
   const N = Math.max(1, names.length);
   const seg = 360 / N;
   const winnerIdx = Math.max(0, names.indexOf(winner));
   const [rot, setRot] = useState(0);
+  const [landed, setLanded] = useState(false);
   const firedRef = useRef(false);
+  const finish = () => {
+    if (firedRef.current) return;
+    firedRef.current = true;
+    setLanded(true);
+    onDone?.();
+  };
   useEffect(() => {
     // Rotate several full turns, then align the winner's wedge centre to the top (0°).
     const target = 360 * 6 - (winnerIdx + 0.5) * seg;
     const t = setTimeout(() => setRot(target), 60);
     // Fallback in case transitionend doesn't fire (e.g. reduced motion)
-    const done = setTimeout(() => { if (!firedRef.current) { firedRef.current = true; onDone?.(); } }, 5200);
+    const done = setTimeout(finish, 5200);
     return () => { clearTimeout(t); clearTimeout(done); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const COLORS = ["#2563EB", "var(--accent-text)", "#f43f5e", "#22c55e", "#a855f7", "#f97316", "#06b6d4", "#ec4899", "#84cc16", "#eab308"];
+  const colors = buildColors(N);
   const polar = (r: number, deg: number) => { const a = (deg - 90) * Math.PI / 180; return { x: r * Math.cos(a), y: r * Math.sin(a) }; };
   const R = 100;
   const size = Math.min(300, typeof window !== "undefined" ? window.innerWidth - 80 : 300);
-  const fs = N > 12 ? 6.5 : N > 8 ? 8 : N > 5 ? 10 : 12;
+  const fs = N > 12 ? 7 : N > 8 ? 8.5 : N > 5 ? 10.5 : 13;
   return (
     <div className="relative" style={{ width: size, height: size }}>
       {/* top pointer */}
       <div style={{ position: "absolute", top: -6, left: "50%", transform: "translateX(-50%)", zIndex: 3, width: 0, height: 0, borderLeft: "11px solid transparent", borderRight: "11px solid transparent", borderTop: "18px solid #fff", filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.5))" }} />
       <svg viewBox="-108 -108 216 216" width={size} height={size}
         style={{ transform: `rotate(${rot}deg)`, transition: "transform 4.8s cubic-bezier(0.16,0.84,0.28,1)", filter: "drop-shadow(0 10px 30px rgba(0,0,0,0.5))" }}
-        onTransitionEnd={() => { if (!firedRef.current) { firedRef.current = true; onDone?.(); } }}>
-        <circle r="104" fill="#0b0b0f" />
+        onTransitionEnd={finish}>
+        {/* Rim: a pale ring so the wheel reads as an object against the black scrim */}
+        <circle r="104" fill="#14141b" stroke="rgba(255,255,255,0.55)" strokeWidth="2.5" />
         {names.map((n, i) => {
           const a0 = i * seg, a1 = (i + 1) * seg, mid = (a0 + a1) / 2;
           const p0 = polar(R, a0), p1 = polar(R, a1);
           const large = seg > 180 ? 1 : 0;
+          const isWinner = i === winnerIdx;
+          const ink = inkOn(colors[i]);
           return (
-            <g key={i}>
+            <g key={i} style={{ opacity: landed && !isWinner ? 0.32 : 1, transition: "opacity 0.5s ease" }}>
               <path d={`M0,0 L${p0.x.toFixed(2)},${p0.y.toFixed(2)} A${R},${R} 0 ${large} 1 ${p1.x.toFixed(2)},${p1.y.toFixed(2)} Z`}
-                fill={COLORS[i % COLORS.length]} stroke="rgba(0,0,0,0.4)" strokeWidth={0.7} />
+                fill={colors[i]} stroke="rgba(255,255,255,0.85)" strokeWidth={1.1} />
+              {/* Paint the label in whichever ink the wedge can carry — a single dark
+                  colour disappeared on every blue and purple slice. */}
               <text transform={`rotate(${mid}) translate(0,-62)`} textAnchor="middle" dominantBaseline="middle"
-                fontSize={fs} fontWeight={800} fill="#0b0b0f" style={{ userSelect: "none" }}>
+                fontSize={fs} fontWeight={900} fill={ink}
+                stroke={ink === "#ffffff" ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.4)"} strokeWidth={0.35} paintOrder="stroke"
+                style={{ userSelect: "none", letterSpacing: "0.02em" }}>
                 {n.length > 12 ? n.slice(0, 11) + "…" : n}
               </text>
             </g>
           );
         })}
-        <circle r="13" fill="#0b0b0f" stroke="#fff" strokeWidth="2" />
+        <circle r="13" fill="#14141b" stroke="#fff" strokeWidth="2.5" />
       </svg>
     </div>
   );

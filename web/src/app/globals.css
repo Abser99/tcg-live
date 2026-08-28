@@ -163,6 +163,29 @@ body {
 }
 .winner-splash { animation: winner-splash 4s cubic-bezier(0.22,1,0.36,1) forwards; }
 
+/* ── Volado: the coin tumbles on X, so the two faces alternate as it turns.
+   The wrapper does the toss so the arc and the spin stay independent. ── */
+@keyframes coin-tumble {
+  0%   { transform: rotateX(0deg); }
+  100% { transform: rotateX(1800deg); }   /* 5 turns; the landing face is set after */
+}
+@keyframes coin-toss {
+  0%   { transform: translateY(0)      scale(1); }
+  45%  { transform: translateY(-88px)  scale(1.12); }
+  100% { transform: translateY(0)      scale(1); }
+}
+.coin-tumble { animation: coin-tumble 2.2s cubic-bezier(0.3,0,0.5,1) forwards; transform-style: preserve-3d; }
+.coin-toss   { animation: coin-toss 2.2s cubic-bezier(0.33,0,0.4,1) forwards; }
+
+/* ── Dados: a quick shake before the faces settle ── */
+@keyframes die-shake {
+  0%, 100% { transform: translateY(0)    rotate(0deg); }
+  20%      { transform: translateY(-10px) rotate(-16deg); }
+  45%      { transform: translateY(4px)   rotate(13deg); }
+  70%      { transform: translateY(-6px)  rotate(-8deg); }
+}
+.die-shake { animation: die-shake 0.42s ease-in-out infinite; }
+
 .float       { animation: float 5s ease-in-out infinite; }
 .pulse-glow  { animation: pulse-glow 2s ease-in-out infinite; }
 .slide-up    { animation: slide-up 0.35s ease-out both; }
@@ -272,9 +295,13 @@ body {
 
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
-  .float, .pulse-glow, .slide-up, .slide-in, .bid-flash, .spin-slow, .timerbar, .bidtick, .reveal, .reaction-rise {
+  .float, .pulse-glow, .slide-up, .slide-in, .bid-flash, .spin-slow, .timerbar, .bidtick, .reveal, .reaction-rise,
+  .die-shake {
     animation: none;
   }
+  /* The coin still has to end on its landing face, so keep the animation and
+     collapse it instead of removing it. */
+  .coin-tumble, .coin-toss { animation-duration: 0.01ms !important; }
   /* When motion is reduced we drop the animation, but these start hidden — so pin
      them to their visible end-state or they'd vanish entirely. */
   .reveal, .slide-in, .slide-up { opacity: 1 !important; transform: none !important; }
