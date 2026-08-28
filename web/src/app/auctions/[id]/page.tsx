@@ -982,12 +982,21 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   const [spinHighlight, setSpinHighlight] = useState<string | null>(null);
   const [rouletteWinner, setRouletteWinner] = useState<{ name: string; prize?: string } | null>(null);
   // Full-screen spinning wheel shown to everyone (seller + viewers)
-  const [rouletteShow, setRouletteShow] = useState<{ names: string[]; winner: string; prize?: string } | null>(null);
+  const [rouletteShow, setRouletteShow] = useState<RouletteShow | null>(null);
   const [rouletteLanded, setRouletteLanded] = useState(false);
 
   // ── The other two games of chance. All three share the participant list and the
   //    prize selector; only the theatre on screen differs. ──
   const [gameKind, setGameKind] = useState<"ruleta" | "dados" | "volado">("ruleta");
+  /* ── Break mode ──
+     A break isn't a raffle: the wheel holds the slots being handed out — characters,
+     energy types, packs — and each one leaves the wheel once it's drawn, so a run of
+     spins deals the whole list out without ever repeating. */
+  const [breakMode, setBreakMode] = useState(false);
+  const [breakItems, setBreakItems] = useState<string[]>([]);
+  const [breakDrawn, setBreakDrawn] = useState<{ item: string; to?: string }[]>([]);
+  const [breakManual, setBreakManual] = useState("");
+  const [breakAssignTo, setBreakAssignTo] = useState("");
   const [coinHeads, setCoinHeads] = useState("");   // whoever is riding on águila
   const [coinTails, setCoinTails] = useState("");   // …and on sol
   const [coinShow, setCoinShow] = useState<CoinShow | null>(null);
@@ -1406,11 +1415,11 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
   /* Hand the prize over for real. Until this existed the games were theatre: a name
      appeared and the winner had to chase the seller off-platform for their card. */
-  function awardWinner(winner: string) {
+  function awardWinner(winner: string, note?: string) {
     auctionsApi.awardGiveaway(a.id, { winnerUsername: winner, listingId: roulettePrize || undefined })
       .then(({ data }) => {
         if (data.awarded) {
-          flashToast(`🎁 Premio entregado a @${winner} — ya aparece en sus compras`);
+          flashToast(note ?? `🎁 Premio entregado a @${winner} — ya aparece en sus compras`);
           setBuyNowItems(prev => prev.filter(l => l.id !== roulettePrize));
           setRoulettePrize("");
         }
@@ -1464,20 +1473,35 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     if (winner) awardWinner(winner);
   }
 
+  /** What's still on the wheel in break mode — everything not yet drawn. */
+  const breakRemaining = breakItems.filter(i => !breakDrawn.some(d => d.item === i));
+
   function spinRoulette() {
-    const pool = gamePool();
-    if (!pool.length || spinning) { if (!pool.length) flashToast("No hay participantes para la ruleta."); return; }
+    const pool = breakMode ? breakRemaining : gamePool();
+    if (!pool.length || spinning) {
+      if (!pool.length) flashToast(breakMode ? "Ya se repartió todo. Agrega más o devuelve todo." : "No hay participantes para la ruleta.");
+      return;
+    }
     const winner = pool[Math.floor(Math.random() * pool.length)];
-    const prizeTitle = buyNowItems.find(l => l.id === roulettePrize)?.title;
+    const prizeTitle = breakMode ? undefined : buyNowItems.find(l => l.id === roulettePrize)?.title;
     setSpinning(true);
     setRouletteWinner(null);
     setShowControls(false);
     // Show the real spinning wheel for everyone — the winner rides in the spin message
     // so every screen's wheel lands on the same name.
     setRouletteLanded(false);
-    setRouletteShow({ names: pool, winner, prize: prizeTitle });
-    broadcast({ type: "roulette_spin", pool, winner, prize: prizeTitle });
-    awardWinner(winner);
+    setRouletteShow({ names: pool, winner, prize: prizeTitle, label: breakMode ? "🎁 BREAK" : undefined });
+    broadcast({ type: "roulette_spin", pool, winner, prize: prizeTitle, label: breakMode ? "🎁 BREAK" : undefined });
+
+    if (breakMode) {
+      // Off the wheel it comes, so the next spin can't hand out the same slot twice.
+      const to = breakAssignTo.trim();
+      setBreakDrawn(prev => [...prev, { item: winner, to: to || undefined }]);
+      setBreakAssignTo("");
+      if (to) awardWinner(to, `🎁 ${winner} → @${to}`);
+    } else {
+      awardWinner(winner);
+    }
   }
 
   // ── Seller catalog management (in-panel) ──
@@ -1805,7 +1829,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           const pool: string[] = Array.isArray(msg.pool) ? msg.pool : [];
           if (pool.length && msg.winner) {
             setRouletteLanded(false);
-            setRouletteShow({ names: pool, winner: msg.winner, prize: msg.prize });
+            setRouletteShow({ names: pool, winner: msg.winner, prize: msg.prize, label: msg.label });
           }
         } else if (msg.type === "dice_roll") {
           // Every screen replays the seller's rolls — the result travels with the message
@@ -2503,7 +2527,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           <div className="game-in absolute inset-0 z-[68] flex flex-col items-center justify-center gap-4 px-4 pointer-events-auto"
             style={{ background: "rgba(0,0,0,0.78)" }}>
             {rouletteLanded && <Confetti />}
-            <p className="text-white font-black tracking-[0.15em] text-sm">🎡 RULETA</p>
+            <p className="text-white font-black tracking-[0.15em] text-sm">{rouletteShow.label ?? "🎡 RULETA"}</p>
             <RouletteWheel names={rouletteShow.names} winner={rouletteShow.winner}
               onDone={() => { setRouletteLanded(true); setSpinning(false); }} />
             {rouletteLanded && (
@@ -3245,7 +3269,101 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                         : "Cara o cruz entre dos personas. Sin nombres es simplemente un volado al aire."}
                     </p>
 
-                    {gameKind === "volado" ? (
+                    {gameKind === "ruleta" && (
+                      <div className="flex gap-1.5">
+                        {([[false, "👥 Participantes"], [true, "🎁 Break"]] as const).map(([v, label]) => (
+                          <button key={label} type="button" onClick={() => setBreakMode(v)}
+                            className="flex-1 py-1.5 rounded-lg text-[11px] font-bold"
+                            style={breakMode === v
+                              ? { background: "rgba(168,85,247,0.16)", border: "1.5px solid var(--brand-light)", color: "var(--accent-text)" }
+                              : { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {gameKind === "ruleta" && breakMode ? (
+                      <div className="space-y-2">
+                        <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                          Pon aquí lo que vas a repartir — personajes, energías, sobres. Cada giro
+                          saca uno <span style={{ color: "var(--text-secondary)" }}>y lo quita de la rueda</span>,
+                          así repartes la lista completa sin repetir.
+                        </p>
+
+                        <div className="flex gap-2">
+                          <button type="button"
+                            onClick={() => setBreakItems(p => [...new Set([...p, ...ENERGIAS])])}
+                            className="flex-1 py-2 rounded-lg text-xs font-semibold"
+                            style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                            ⚡ Energías
+                          </button>
+                          <button type="button" onClick={() => { setBreakItems([]); setBreakDrawn([]); }}
+                            className="px-3 py-2 rounded-lg text-xs font-semibold"
+                            style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                            Limpiar
+                          </button>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <input value={breakManual} onChange={e => setBreakManual(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter" && breakManual.trim()) { setBreakItems(p => [...new Set([...p, breakManual.trim()])]); setBreakManual(""); } }}
+                            placeholder="Charizard, Sobre 3, Fuego…" maxLength={24}
+                            className="flex-1 rounded-lg px-3 py-2 text-sm"
+                            style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
+                          <button type="button" onClick={() => { if (breakManual.trim()) { setBreakItems(p => [...new Set([...p, breakManual.trim()])]); setBreakManual(""); } }}
+                            className="px-3 py-2 rounded-lg text-sm font-bold" style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>+</button>
+                        </div>
+
+                        {breakItems.length > 0 && (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                                Quedan {breakRemaining.length} de {breakItems.length}
+                              </p>
+                              {breakDrawn.length > 0 && (
+                                <button type="button" onClick={() => setBreakDrawn([])}
+                                  className="text-[11px] font-bold px-2 py-1 rounded-lg"
+                                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                                  Devolver todo
+                                </button>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {breakItems.map(it => {
+                                const drawn = breakDrawn.find(d => d.item === it);
+                                return (
+                                  <span key={it} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
+                                    style={drawn
+                                      ? { background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-muted)", textDecoration: "line-through" }
+                                      : { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                                    {it}{drawn?.to && <span style={{ color: "var(--accent-text)", textDecoration: "none" }}> → @{drawn.to}</span>}
+                                    <button type="button" onClick={() => { setBreakItems(p => p.filter(x => x !== it)); setBreakDrawn(p => p.filter(d => d.item !== it)); }}
+                                      aria-label={`Quitar ${it}`} className="opacity-60 hover:opacity-100">✕</button>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+
+                        <div>
+                          <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-muted)" }}>
+                            Este giro es para (opcional)
+                          </label>
+                          <input list="break-participantes" value={breakAssignTo} onChange={e => setBreakAssignTo(e.target.value)}
+                            placeholder="Usuario que se lo lleva" maxLength={30}
+                            className="w-full rounded-lg px-3 py-2 text-sm"
+                            style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
+                          <datalist id="break-participantes">
+                            {participants.map(pn => <option key={pn} value={pn} />)}
+                          </datalist>
+                          <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>
+                            Si lo llenas queda anotado junto a lo que salga, y le avisamos.
+                          </p>
+                        </div>
+                      </div>
+                    ) : gameKind === "volado" ? (
                       <div className="space-y-2">
                         {([["🦅 Águila", coinHeads, setCoinHeads], ["☀️ Sol", coinTails, setCoinTails]] as const).map(([label, val, set]) => (
                           <div key={label}>
@@ -3301,8 +3419,8 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                     </>
                     )}
 
-                    {/* Prize product */}
-                    <div>
+                    {/* Prize product — a break hands out the list itself, not a catalogue item */}
+                    <div style={{ display: gameKind === "ruleta" && breakMode ? "none" : undefined }}>
                       <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-muted)" }}>Producto en juego (opcional)</label>
                       <select value={roulettePrize} onChange={e => setRoulettePrize(e.target.value)}
                         className="w-full rounded-lg px-3 py-2 text-sm" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
@@ -3314,12 +3432,14 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
                     <button type="button"
                       onClick={gameKind === "ruleta" ? spinRoulette : gameKind === "dados" ? rollDice : flipCoin}
-                      disabled={spinning}
+                      disabled={spinning || (gameKind === "ruleta" && breakMode && breakRemaining.length === 0)}
                       className="w-full py-3 rounded-xl text-sm font-black disabled:opacity-60" style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
                       {spinning ? "Va…"
-                        : gameKind === "ruleta" ? "🎡 Girar la ruleta"
                         : gameKind === "dados" ? "🎲 Tirar los dados"
-                        : "🪙 Lanzar el volado"}
+                        : gameKind === "volado" ? "🪙 Lanzar el volado"
+                        : breakMode
+                          ? (breakRemaining.length === 0 ? "Ya se repartió todo" : `🎁 Sacar uno (${breakRemaining.length})`)
+                          : "🎡 Girar la ruleta"}
                     </button>
 
                     {rouletteWinner && (
@@ -4667,10 +4787,17 @@ function CardInfo({ auction: a, isSeller }: { auction: ApiAuction; isSeller?: bo
 /* ─── Slide-to-bid — drag the handle (≈40% of the track) to confirm ─────── */
 /* A real spinning roulette wheel: draws one wedge + label per name and rotates so the
    winner's wedge lands under the top pointer. Fires onDone when it stops. */
+/** The eleven energy types a Pokémon break is usually split by. */
+const ENERGIAS = [
+  "Fuego", "Agua", "Planta", "Rayo", "Psíquico", "Lucha",
+  "Oscuridad", "Metal", "Hada", "Dragón", "Incolora",
+];
+
 /** One shake of the dice for every contender still in the running. */
 type DiceRound = { name: string; a: number; b: number }[];
 type DiceShow = { rounds: DiceRound[]; winner: string; prize?: string };
 type CoinShow = { side: "aguila" | "sol"; heads: string; tails: string; winner: string | null; prize?: string };
+type RouletteShow = { names: string[]; winner: string; prize?: string; label?: string };
 
 /* A dozen saturated hues that all read on a black overlay. Ordered so neighbours in
    the list already contrast; buildColors() then guarantees no two touching wedges
@@ -4909,7 +5036,9 @@ function RouletteWheel({ names, winner, onDone }: { names: string[]; winner: str
   };
   useEffect(() => {
     // Rotate several full turns, then align the winner's wedge centre to the top (0°).
-    const target = 360 * 6 - (winnerIdx + 0.5) * seg;
+    // With a single name that centre is at 180°, which would land the wheel — and its
+    // one label — upside down, so it stops on a whole turn instead.
+    const target = 360 * 6 - (names.length === 1 ? 0 : (winnerIdx + 0.5) * seg);
     const t = setTimeout(() => setRot(target), 60);
     // Fallback in case transitionend doesn't fire (e.g. reduced motion)
     const done = setTimeout(finish, 5200);
@@ -4935,14 +5064,21 @@ function RouletteWheel({ names, winner, onDone }: { names: string[]; winner: str
           const large = seg > 180 ? 1 : 0;
           const isWinner = i === winnerIdx;
           const ink = inkOn(colors[i]);
+          // A lone name is a full turn, and an arc from a point back to itself draws
+          // nothing — which left the last pick of every break spinning on an empty wheel.
+          const single = names.length === 1;
           return (
             <g key={i} className={landed && isWinner ? "win-glow" : ""}
               style={{ opacity: landed && !isWinner ? 0.3 : 1, transition: "opacity 0.6s ease" }}>
+              {single ? (
+                <circle r={R} fill={colors[i]} stroke="rgba(255,255,255,0.85)" strokeWidth={1.1} />
+              ) : (
               <path d={`M0,0 L${p0.x.toFixed(2)},${p0.y.toFixed(2)} A${R},${R} 0 ${large} 1 ${p1.x.toFixed(2)},${p1.y.toFixed(2)} Z`}
                 fill={colors[i]} stroke="rgba(255,255,255,0.85)" strokeWidth={1.1} />
+              )}
               {/* Paint the label in whichever ink the wedge can carry — a single dark
                   colour disappeared on every blue and purple slice. */}
-              <text transform={`rotate(${mid}) translate(0,-62)`} textAnchor="middle" dominantBaseline="middle"
+              <text transform={single ? "translate(0,-45)" : `rotate(${mid}) translate(0,-62)`} textAnchor="middle" dominantBaseline="middle"
                 fontSize={fs} fontWeight={900} fill={ink}
                 stroke={ink === "#ffffff" ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.4)"} strokeWidth={0.35} paintOrder="stroke"
                 style={{ userSelect: "none", letterSpacing: "0.02em" }}>
