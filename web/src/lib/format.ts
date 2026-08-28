@@ -50,3 +50,30 @@ export function apiMessage(e: unknown, fallback: string): string {
   if (Array.isArray(msg) && typeof msg[0] === "string") return msg[0]; // class-validator returns a list
   return fallback;
 }
+
+/**
+ * Copy text, falling back to the legacy selection trick when the async clipboard is
+ * blocked (an insecure origin, a denied permission, an embedded browser). Returns
+ * whether it landed, so the caller can offer the text for manual copying instead.
+ */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Fall through to the textarea route.
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}

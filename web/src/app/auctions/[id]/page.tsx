@@ -14,7 +14,7 @@ import { getAuctionsCache } from "@/lib/live-back-cache";
 import { useFavoriteSeller } from "@/lib/seller-favorites";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { censorText } from "@/lib/profanity";
-import { formatTimer, gameLabel, liveName, apiMessage } from "@/lib/format";
+import { formatTimer, gameLabel, liveName, apiMessage, copyText } from "@/lib/format";
 import { useAuth } from "@/contexts/auth";
 import { useAnalytics } from "@/hooks/useAnalytics";
 
@@ -993,10 +993,34 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
      energy types, packs — and each one leaves the wheel once it's drawn, so a run of
      spins deals the whole list out without ever repeating. */
   const [breakMode, setBreakMode] = useState(false);
-  const [breakItems, setBreakItems] = useState<string[]>([]);
-  const [breakDrawn, setBreakDrawn] = useState<{ item: string; to?: string }[]>([]);
   const [breakManual, setBreakManual] = useState("");
   const [breakAssignTo, setBreakAssignTo] = useState("");
+  /* Chained to the bidding: the buyer who just won a lot takes the next spin, so the
+     seller never types a name mid-show. Consumed once per lot — a second spin without
+     a new sale falls back to whatever is typed. */
+  const [breakLinkBids, setBreakLinkBids] = useState(true);
+  /* The whole break survives a reload — both what's left on the wheel and who has
+     taken what. A break runs long, and losing it mid-show is exactly the note-taking
+     this replaces. */
+  const breakKey = `tcg_break_${a.id}`;
+  const [breakSaved, setBreakSaved] = useState<{ items: string[]; drawn: BreakDraw[] }>(() => {
+    if (typeof window === "undefined") return { items: [], drawn: [] };
+    try {
+      const raw = JSON.parse(localStorage.getItem(breakKey) ?? "null");
+      // Older saves held a bare array of draws; read those rather than dropping them.
+      if (Array.isArray(raw)) return { items: [], drawn: raw as BreakDraw[] };
+      return raw?.items ? raw : { items: [], drawn: [] };
+    } catch { return { items: [], drawn: [] }; }
+  });
+  const breakItems = breakSaved.items;
+  const breakDrawn = breakSaved.drawn;
+  const setBreakItems = (fn: string[] | ((p: string[]) => string[])) =>
+    setBreakSaved(s => ({ ...s, items: typeof fn === "function" ? fn(s.items) : fn }));
+  const setBreakDrawn = (fn: BreakDraw[] | ((p: BreakDraw[]) => BreakDraw[])) =>
+    setBreakSaved(s => ({ ...s, drawn: typeof fn === "function" ? fn(s.drawn) : fn }));
+  useEffect(() => {
+    try { localStorage.setItem(breakKey, JSON.stringify(breakSaved)); } catch {}
+  }, [breakKey, breakSaved]);
   const [coinHeads, setCoinHeads] = useState("");   // whoever is riding on águila
   const [coinTails, setCoinTails] = useState("");   // …and on sol
   const [coinShow, setCoinShow] = useState<CoinShow | null>(null);
@@ -1476,6 +1500,38 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   /** What's still on the wheel in break mode — everything not yet drawn. */
   const breakRemaining = breakItems.filter(i => !breakDrawn.some(d => d.item === i));
 
+  /* The lot whose winner is waiting for a spot. Derived rather than copied into the
+     input, so it clears itself the moment that lot's spin happens. */
+  // Read off the report rather than kept in state: a lot gets exactly one spin, and
+  // that has to hold across a reload too.
+  const breakPendingLot = breakLinkBids && lastWinner?.winner
+    && !breakDrawn.some(d => d.lotId === lastWinner.id) ? lastWinner : null;
+  const breakWinnerFor = breakAssignTo.trim() || breakPendingLot?.winner?.username || "";
+
+  /* Shown when the clipboard is unavailable — the report must never be a dead end,
+     since not writing this down by hand is the whole point of keeping it. */
+  const [breakReportText, setBreakReportText] = useState<string | null>(null);
+
+  /** The whole break as plain text, ready to paste wherever the seller keeps records. */
+  function copyBreakReport() {
+    const lines = breakDrawn.map((d, i) => {
+      const who = d.to ? `@${d.to}` : "sin asignar";
+      const sale = d.lot ? ` (${d.lot}${typeof d.cents === "number" ? ` — $${(d.cents / 100).toLocaleString("es-MX")}` : ""})` : "";
+      return `${i + 1}. ${d.item} → ${who}${sale}`;
+    });
+    const total = breakDrawn.reduce((sum, d) => sum + (d.cents ?? 0), 0);
+    const text = [
+      `Break — ${liveName(a)}`,
+      ...lines,
+      ...(total > 0 ? ["", `Total pujado: $${(total / 100).toLocaleString("es-MX")} MXN`] : []),
+    ].join("\n");
+    copyText(text)
+      .then(ok => {
+        if (ok) flashToast("Informe copiado 📋");
+        else { setBreakReportText(text); flashToast("Copia el informe a mano 👇"); }
+      });
+  }
+
   function spinRoulette() {
     const pool = breakMode ? breakRemaining : gamePool();
     if (!pool.length || spinning) {
@@ -1495,8 +1551,15 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
 
     if (breakMode) {
       // Off the wheel it comes, so the next spin can't hand out the same slot twice.
-      const to = breakAssignTo.trim();
-      setBreakDrawn(prev => [...prev, { item: winner, to: to || undefined }]);
+      const to = breakWinnerFor;
+      const fromLot = !breakAssignTo.trim() && breakPendingLot ? breakPendingLot : null;
+      setBreakDrawn(prev => [...prev, {
+        item: winner,
+        to: to || undefined,
+        lot: fromLot?.cardName,
+        lotId: fromLot?.id,   // marks that sale as having had its spin
+        cents: fromLot?.currentBid,
+      }]);
       setBreakAssignTo("");
       if (to) awardWinner(to, `🎁 ${winner} → @${to}`);
     } else {
@@ -2536,6 +2599,32 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                 {rouletteShow.prize && (
                   <p className="text-sm font-bold mt-1" style={{ color: "var(--brand-light)" }}>Premio: {rouletteShow.prize}</p>
                 )}
+                {/* Last spot of the break: everyone sees the full board instead of the
+                    seller reading it back off a notepad. */}
+                {breakMode && breakRemaining.length === 0 && breakDrawn.length > 0 && (
+                  <div className="mt-3 mx-auto max-w-xs text-left rounded-xl p-3"
+                    style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.18)" }}>
+                    <p className="text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: "var(--accent-text)" }}>
+                      Break completo
+                    </p>
+                    <div className="space-y-0.5 max-h-[34vh] overflow-y-auto" style={{ scrollbarWidth: "none" }}>
+                      {breakDrawn.map((d, i) => (
+                        <p key={`${d.item}-${i}`} className="text-xs text-white">
+                          <span className="font-semibold">{d.item}</span>
+                          <span style={{ color: "rgba(255,255,255,0.5)" }}> → </span>
+                          <span style={{ color: d.to ? "#FACC15" : "rgba(255,255,255,0.5)" }}>{d.to ? `@${d.to}` : "sin asignar"}</span>
+                        </p>
+                      ))}
+                    </div>
+                    {isSeller && (
+                      <button type="button" onClick={copyBreakReport}
+                        className="mt-2 w-full py-1.5 rounded-lg text-[11px] font-bold"
+                        style={{ background: "rgba(255,255,255,0.12)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)" }}>
+                        📋 Copiar informe
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {(isSeller || rouletteLanded) && (
@@ -2545,6 +2634,29 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                 {rouletteLanded ? "Cerrar" : "Saltar"}
               </button>
             )}
+          </div>
+        )}
+
+        {/* Clipboard blocked → hand the seller the text to select by hand */}
+        {breakReportText && (
+          <div className="absolute inset-0 z-[70] flex items-center justify-center p-5"
+            style={{ background: "rgba(0,0,0,0.8)" }} onClick={() => setBreakReportText(null)}>
+            <div className="w-full max-w-sm rounded-2xl p-4" onClick={e => e.stopPropagation()}
+              style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+              <p className="text-sm font-black mb-1" style={{ color: "var(--text-primary)" }}>Informe del break</p>
+              <p className="text-[11px] mb-2" style={{ color: "var(--text-muted)" }}>
+                Tu navegador no dejó copiar solo. Selecciona el texto y cópialo.
+              </p>
+              <textarea readOnly value={breakReportText} rows={10}
+                onFocus={e => e.currentTarget.select()}
+                className="w-full rounded-lg px-3 py-2 text-xs font-mono"
+                style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+              <button type="button" onClick={() => setBreakReportText(null)}
+                className="mt-2 w-full py-2 rounded-xl text-sm font-bold"
+                style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+                Cerrar
+              </button>
+            </div>
           </div>
         )}
 
@@ -3298,7 +3410,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                             style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
                             ⚡ Energías
                           </button>
-                          <button type="button" onClick={() => { setBreakItems([]); setBreakDrawn([]); }}
+                          <button type="button" onClick={() => setBreakSaved({ items: [], drawn: [] })}
                             className="px-3 py-2 rounded-lg text-xs font-semibold"
                             style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
                             Limpiar
@@ -3338,7 +3450,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                                       ? { background: "var(--bg-elevated)", border: "1px solid var(--border-subtle)", color: "var(--text-muted)", textDecoration: "line-through" }
                                       : { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
                                     {it}{drawn?.to && <span style={{ color: "var(--accent-text)", textDecoration: "none" }}> → @{drawn.to}</span>}
-                                    <button type="button" onClick={() => { setBreakItems(p => p.filter(x => x !== it)); setBreakDrawn(p => p.filter(d => d.item !== it)); }}
+                                    <button type="button" onClick={() => setBreakSaved(st => ({ items: st.items.filter(x => x !== it), drawn: st.drawn.filter(d => d.item !== it) }))}
                                       aria-label={`Quitar ${it}`} className="opacity-60 hover:opacity-100">✕</button>
                                   </span>
                                 );
@@ -3347,21 +3459,88 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                           </>
                         )}
 
+                        {/* Chain the wheel to the bidding: sell a spot, spin for its owner,
+                            sell the next. No typing names between lots. */}
+                        <button type="button" onClick={() => setBreakLinkBids(v => !v)}
+                          className="w-full flex items-center gap-2.5 rounded-xl p-2.5 text-left"
+                          style={breakLinkBids
+                            ? { background: "color-mix(in srgb, var(--brand) 12%, transparent)", border: "1.5px solid var(--brand-light)" }
+                            : { background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                          <span className="w-9 h-5 rounded-full shrink-0 relative transition-colors"
+                            style={{ background: breakLinkBids ? "var(--brand-light)" : "var(--border)" }}>
+                            <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
+                              style={{ left: breakLinkBids ? 18 : 2 }} />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-xs font-bold" style={{ color: "var(--text-primary)" }}>Enlazar con la puja</span>
+                            <span className="block text-[10px]" style={{ color: "var(--text-muted)" }}>
+                              Quien gana el lote se lleva el siguiente giro, sin escribirlo.
+                            </span>
+                          </span>
+                        </button>
+
+                        {breakPendingLot && (
+                          <div className="rounded-xl p-2.5 flex items-center gap-2"
+                            style={{ background: "rgba(250,204,21,0.1)", border: "1px solid rgba(250,204,21,0.5)" }}>
+                            <span className="text-base" aria-hidden="true">🔨</span>
+                            <p className="text-[11px] leading-tight" style={{ color: "var(--text-secondary)" }}>
+                              <span className="font-bold" style={{ color: "var(--text-primary)" }}>@{breakPendingLot.winner?.username}</span>
+                              {" "}ganó {breakPendingLot.cardName}
+                              {typeof breakPendingLot.currentBid === "number" && ` por $${(breakPendingLot.currentBid / 100).toLocaleString("es-MX")}`}
+                              {" "}— este giro es suyo.
+                            </p>
+                          </div>
+                        )}
+
                         <div>
                           <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-muted)" }}>
-                            Este giro es para (opcional)
+                            Este giro es para {breakPendingLot ? "(sobrescribe la puja)" : "(opcional)"}
                           </label>
                           <input list="break-participantes" value={breakAssignTo} onChange={e => setBreakAssignTo(e.target.value)}
-                            placeholder="Usuario que se lo lleva" maxLength={30}
+                            placeholder={breakPendingLot ? `@${breakPendingLot.winner?.username}` : "Usuario que se lo lleva"} maxLength={30}
                             className="w-full rounded-lg px-3 py-2 text-sm"
                             style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
                           <datalist id="break-participantes">
                             {participants.map(pn => <option key={pn} value={pn} />)}
                           </datalist>
                           <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>
-                            Si lo llenas queda anotado junto a lo que salga, y le avisamos.
+                            Queda anotado junto a lo que salga, y le avisamos.
                           </p>
                         </div>
+
+                        {/* The report — this is the notebook the seller no longer keeps */}
+                        {breakDrawn.length > 0 && (
+                          <div className="pt-2.5 space-y-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                                Informe del break ({breakDrawn.length})
+                              </p>
+                              <button type="button" onClick={copyBreakReport}
+                                className="text-[11px] font-bold px-2.5 py-1 rounded-lg"
+                                style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                                📋 Copiar
+                              </button>
+                            </div>
+                            <div className="space-y-1">
+                              {breakDrawn.map((d, i) => (
+                                <div key={`${d.item}-${i}`} className="flex items-center gap-2 text-xs rounded-lg px-2.5 py-1.5"
+                                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}>
+                                  <span className="w-4 text-[10px] font-bold tabular-nums" style={{ color: "var(--text-muted)" }}>{i + 1}</span>
+                                  <span className="font-semibold truncate" style={{ color: "var(--text-primary)" }}>{d.item}</span>
+                                  <span style={{ color: "var(--text-muted)" }}>→</span>
+                                  <span className="font-bold truncate flex-1" style={{ color: d.to ? "var(--accent-text)" : "var(--text-muted)" }}>
+                                    {d.to ? `@${d.to}` : "sin asignar"}
+                                  </span>
+                                  {typeof d.cents === "number" && (
+                                    <span className="text-[10px] tabular-nums shrink-0" style={{ color: "var(--text-muted)" }}>
+                                      ${(d.cents / 100).toLocaleString("es-MX")}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : gameKind === "volado" ? (
                       <div className="space-y-2">
@@ -4798,6 +4977,8 @@ type DiceRound = { name: string; a: number; b: number }[];
 type DiceShow = { rounds: DiceRound[]; winner: string; prize?: string };
 type CoinShow = { side: "aguila" | "sol"; heads: string; tails: string; winner: string | null; prize?: string };
 type RouletteShow = { names: string[]; winner: string; prize?: string; label?: string };
+/** One spot handed out in a break, with the sale it came from when there was one. */
+type BreakDraw = { item: string; to?: string; lot?: string; lotId?: string; cents?: number };
 
 /* A dozen saturated hues that all read on a black overlay. Ordered so neighbours in
    the list already contrast; buildColors() then guarantees no two touching wedges
