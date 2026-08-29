@@ -2432,6 +2432,10 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
           setMyMinutes(r.data.minutes);
           setMyEntries(r.data.entries);
           setFriendBoost({ multiplier: r.data.multiplier, connectedFriends: r.data.connectedFriends });
+          /* The badge counts who is watching right now, and that changes as people come
+             and go. Re-reading it on our own heartbeat keeps it honest without a second
+             timer — and this is exactly the moment the server's view of presence moved. */
+          loadRafflesRef.current?.();
         })
         .catch(() => {});
     };
@@ -2440,10 +2444,14 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
     return () => { alive = false; clearInterval(id); };
   }, [user, isLive, a.id]);
 
+  // Held in a ref because the heartbeat above is declared first and would otherwise
+  // have to list it as a dependency, restarting the beat on every render.
+  const loadRafflesRef = useRef<(() => void) | null>(null);
   const loadRaffles = useCallback(() => {
     auctionsApi.raffles(a.id).then(r => setRaffles(r.data)).catch(() => {});
   }, [a.id]);
 
+  useEffect(() => { loadRafflesRef.current = loadRaffles; }, [loadRaffles]);
   useEffect(() => { loadRaffles(); }, [loadRaffles]);
 
   async function pickRafflePhoto(e: React.ChangeEvent<HTMLInputElement>) {
