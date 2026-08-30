@@ -1308,10 +1308,24 @@ export class AuctionsService implements OnModuleInit {
       [auctionId],
     )) as [{ lotsSold: number }];
 
+    /* Raffles already drawn, so the seller has the list in front of them at the end
+       of the night. A prize announced on screen and nowhere else is one they have to
+       remember, and by the last lot nobody remembers. */
+    const drawn = await this.rafflesRepo.find({
+      where: { auctionId, status: RaffleStatus.DRAWN },
+      order: { drawnAt: 'ASC' },
+    });
+
     return {
       soldCents: Number(money.soldCents),
       buyers: Number(money.buyers),
       lotsSold: Number(lots.lotsSold),
+      raffles: drawn.map(r => ({
+        prizeTitle: r.prizeTitle,
+        winnerUsername: r.winnerUsername,
+        winnerEntries: r.winnerEntries,
+        totalEntries: r.totalEntries,
+      })),
       // The clock ticks in the browser; this is the anchor it counts from.
       startedAt: auction.startedAt ?? null,
       endedAt: auction.endedAt ?? null,
@@ -1457,9 +1471,20 @@ export class AuctionsService implements OnModuleInit {
         this.logger.warn(`Raffle ${raffle.id} drawn but prize not delivered: ${err}`);
       }
     } else {
-      await this.notificationsService
-        .notifyGiveawayWon(winner.userId, (await this.usersService.findById(sellerId)).username, raffle.prizeTitle)
-        .catch(() => {});
+      /* No catalogue item behind the prize, but the win is just as real. It becomes an
+         order all the same, so it lands in the seller's sales for this live instead of
+         being a name that scrolled past — and the winner can track it and give their
+         address. createForGiveaway notifies them, so there is no separate alert here. */
+      try {
+        order = await this.ordersService.createForGiveaway({
+          listingTitle: raffle.prizeTitle,
+          sellerId,
+          winnerId: winner.userId,
+          auctionId: raffle.auctionId,
+        });
+      } catch (err) {
+        this.logger.warn(`Raffle ${raffle.id} drawn but not recorded: ${err}`);
+      }
     }
 
     this.gateway.server?.to(`auction:${raffle.auctionId}`).emit('raffle:drawn', {

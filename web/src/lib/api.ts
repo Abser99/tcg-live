@@ -768,6 +768,8 @@ export interface ApiLiveStats {
   soldCents: number;
   buyers: number;
   lotsSold: number;
+  /** Raffles already drawn — what the seller still owes and to whom. */
+  raffles?: { prizeTitle: string; winnerUsername: string | null; winnerEntries: number | null; totalEntries: number | null }[];
   startedAt: string | null;
   endedAt: string | null;
 }

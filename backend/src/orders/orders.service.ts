@@ -126,8 +126,13 @@ export class OrdersService {
    * receipt — but there is nothing to pay, so it skips straight past checkout instead of
    * sitting in "pendiente de pago" forever.
    */
+  /**
+   * A prize handed over. `listingId` is optional: a raffle can name its prize without
+   * it being a catalogue item, and that win still has to leave a record — the seller
+   * needs to know what they owe and to whom once the live is over.
+   */
   async createForGiveaway(params: {
-    listingId: string;
+    listingId?: string;
     listingTitle: string;
     sellerId: string;
     winnerId: string;
@@ -136,7 +141,7 @@ export class OrdersService {
   }): Promise<Order> {
     const { listingId, listingTitle, sellerId, winnerId, auctionId, imageUrls } = params;
     let order = this.ordersRepo.create({
-      listingId,
+      ...(listingId && { listingId }),
       sellerId,
       buyerId: winnerId,
       ...(auctionId && { auctionId }),

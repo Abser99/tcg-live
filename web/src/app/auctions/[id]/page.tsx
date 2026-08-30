@@ -1503,7 +1503,7 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   /* Sales figures for the seller running the show. Every 15s is plenty — a lot closing
      is the only thing that moves them, and the clock beside them ticks on its own. */
   useEffect(() => {
-    if (!isSeller || !isLive) return;
+    if (!isSeller) return;
     let cancelled = false;
     const pull = () => {
       auctionsApi.liveStats(a.id)
@@ -1511,6 +1511,10 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
         .catch(() => {});
     };
     pull();
+    /* Read once whatever the state, and keep polling only while the show is running.
+       The end of the night is exactly when the seller reads this — who won which
+       raffle, what is owed — so it must not disappear the moment the live closes. */
+    if (!isLive) return () => { cancelled = true; };
     const t = setInterval(() => { if (!document.hidden) pull(); }, 15_000);
     return () => { cancelled = true; clearInterval(t); };
   }, [isSeller, isLive, a.id]);
@@ -3032,6 +3036,9 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                 ["Vendido", `$${((liveStats?.soldCents ?? 0) / 100).toLocaleString("es-MX", { maximumFractionDigits: 0 })}`, "var(--accent-text)"],
                 ["Lotes", String(liveStats?.lotsSold ?? 0), "#fff"],
                 ["En vivo", clock, "#fff"],
+                ...((liveStats?.raffles?.length ?? 0) > 0
+                  ? [["Sorteos", String(liveStats!.raffles!.length), "#FACC15"] as const]
+                  : []),
               ] as const).map(([label, value, color], i) => (
                 <div key={label} className="px-2.5 py-1.5"
                   style={i > 0 ? { borderLeft: "1px solid rgba(255,255,255,0.14)" } : undefined}>
@@ -3651,6 +3658,30 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
                         style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
                         {raffleBusy ? "…" : "Crear sorteo"}
                       </button>
+
+                      {/* Already drawn: the record the seller reads at the end of the
+                          night. Each one is also an order in their sales, so nothing
+                          rests on remembering a name that scrolled past on screen. */}
+                      {(liveStats?.raffles?.length ?? 0) > 0 && (
+                        <div className="rounded-xl p-2.5 mt-1" style={{ background: "rgba(250,204,21,0.08)", border: "1px solid rgba(250,204,21,0.35)" }}>
+                          <p className="text-[10px] font-black uppercase tracking-wider mb-1.5" style={{ color: "#FACC15" }}>
+                            Sorteos entregados ({liveStats!.raffles!.length})
+                          </p>
+                          <div className="space-y-1">
+                            {liveStats!.raffles!.map((r, i) => (
+                              <p key={`${r.prizeTitle}-${i}`} className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                                <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{r.prizeTitle}</span>
+                                {" → "}
+                                <span style={{ color: "var(--accent-text)" }}>@{r.winnerUsername ?? "—"}</span>
+                                {r.totalEntries ? <span style={{ color: "var(--text-muted)" }}> · {r.winnerEntries}/{r.totalEntries}</span> : null}
+                              </p>
+                            ))}
+                          </div>
+                          <p className="text-[10px] mt-1.5" style={{ color: "var(--text-muted)" }}>
+                            Cada uno quedó como pedido en tus ventas de este live.
+                          </p>
+                        </div>
+                      )}
 
                       {raffles.length > 0 && (
                         <div className="space-y-1.5 pt-1">
