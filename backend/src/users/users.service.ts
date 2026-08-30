@@ -15,14 +15,30 @@ export class UsersService {
     private readonly usersRepo: Repository<User>,
   ) {}
 
-  async create(email: string, username: string, password: string): Promise<User> {
+  async create(
+    email: string,
+    username: string,
+    password: string,
+    ageConfirmed = false,
+    extra: { birthDate?: string; termsVersion?: string } = {},
+  ): Promise<User> {
     const exists = await this.usersRepo.findOne({
       where: [{ email }, { username }],
     });
     if (exists) throw new ConflictException('Email or username already taken');
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = this.usersRepo.create({ email, username, passwordHash });
+    const user = this.usersRepo.create({
+      email,
+      username,
+      passwordHash,
+      ageConfirmedAt: ageConfirmed ? new Date() : null,
+      birthDate: extra.birthDate ?? null,
+      // Only stamped when a version was actually accepted, so a blank column means
+      // "never accepted" rather than "accepted something unknown".
+      termsAcceptedAt: extra.termsVersion ? new Date() : null,
+      termsVersion: extra.termsVersion ?? null,
+    });
     return this.usersRepo.save(user);
   }
 
@@ -32,6 +48,11 @@ export class UsersService {
       .addSelect('user.passwordHash')
       .where('user.email = :email', { email })
       .getOne();
+  }
+
+  /** Full user by username. getPublicProfileByUsername strips fields we need internally. */
+  async findByUsername(username: string): Promise<User | null> {
+    return this.usersRepo.findOne({ where: { username } });
   }
 
   async findById(id: string): Promise<User> {

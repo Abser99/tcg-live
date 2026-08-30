@@ -2,28 +2,54 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/auth";
-import { useTheme } from "@/contexts/theme";
+import NotificationBell from "@/components/NotificationBell";
 
-export default function Navbar() {
+export default function Navbar({ minimal = false }: { minimal?: boolean }) {
   const { user, logout, loading } = useAuth();
-  const { theme, toggle } = useTheme();
   const initials = user?.username?.slice(0, 2).toUpperCase() ?? "TG";
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuOpen]);
 
+  const isSeller = user?.role === "SELLER" || user?.role === "ADMIN";
+  // Top nav stays lean: the live-auctions landing (reached via the logo) is the only page,
+  // so no "Subastas" / "Tienda" entries. Everything personal lives in the profile dropdown.
   const navLinks = [
-    { href: "/auctions", label: "Subastas" },
-    { href: "/shop", label: "Tienda" },
-    { href: "/#features", label: "Características" },
-    ...(user?.role === "SELLER" || user?.role === "ADMIN" ? [{ href: "/vendedor", label: "Mi tienda", admin: false }] : []),
+    ...(user ? [] : [{ href: "/#features", label: "Características" }]),
     ...(user?.role === "ADMIN" ? [{ href: "/admin", label: "Admin", admin: true }] : []),
   ];
 
-  const isDark = theme === "dark";
+  // Everything reachable from the profile button (no more profile tabs).
+  const menuItems: { href: string; label: string; icon: string }[] = [
+    { href: "/perfil",              label: "Mi perfil",   icon: "👤" },
+    { href: "/compras",             label: "Mis compras", icon: "🧾" },
+    { href: "/mensajes",            label: "Mensajes",    icon: "💬" },
+    { href: "/perfil?sec=watchlist",label: "Seguimiento", icon: "👁️" },
+    { href: "/perfil?sec=disputas", label: "Disputas",    icon: "⚖️" },
+    { href: "/ajustes",             label: "Ajustes",     icon: "⚙️" },
+    { href: "/soporte",             label: "Soporte",     icon: "🛟" },
+    ...(isSeller ? [{ href: "/vendedor", label: "Mi tienda", icon: "🏪" }] : []),
+    ...(user?.role === "ADMIN" ? [{ href: "/admin", label: "Admin", icon: "🛠️" }] : []),
+  ];
+
+  const INK = "var(--brand-ink)"; // text on a brand fill
 
   return (
     <>
+      <style>{`
+        .nav-link { position: relative; transition: color 0.2s ease; }
+        .nav-link::after { content: ""; position: absolute; left: 0; bottom: -5px; width: 100%; height: 1px; background: var(--accent-text); transform: scaleX(0); transform-origin: left; transition: transform 0.28s cubic-bezier(0.22,1,0.36,1); }
+        .nav-link:hover { color: var(--text-primary); }
+        .nav-link:hover::after { transform: scaleX(1); }
+      `}</style>
       <nav
         className="fixed top-0 left-0 right-0 z-50 border-b transition-colors duration-200"
         style={{
@@ -35,105 +61,84 @@ export default function Navbar() {
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 shrink-0">
+          <Link href="/" className="flex items-center gap-2.5 shrink-0">
             <div
-              className="flex items-center justify-center w-8 h-8 rounded-lg font-black text-base"
-              style={{
-                background: "linear-gradient(135deg, #2563EB, #3B82F6)",
-                boxShadow: "0 0 16px rgba(37,99,235,0.5)",
-              }}
+              className="flex items-center justify-center w-8 h-8 rounded-lg"
+              style={{ background: "var(--brand-light)", color: INK }}
             >
-              ⚡
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8Z" />
+              </svg>
             </div>
-            <span className="font-black text-lg tracking-tight" style={{ color: "var(--text-primary)" }}>
+            <span className="font-semibold text-lg tracking-tight" style={{ color: "var(--text-primary)" }}>
               TCG<span style={{ color: "var(--accent-text)" }}>Live</span>
             </span>
           </Link>
 
           {/* Desktop nav links */}
-          <div className="hidden md:flex items-center gap-8 text-sm" style={{ color: "var(--text-secondary)" }}>
+          {!minimal && (
+          <div className="hidden md:flex items-center gap-9 text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
             {navLinks.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
-                className="hover:text-[var(--accent-text)] transition-colors"
+                className="nav-link"
                 style={l.admin ? { color: "#f59e0b", fontWeight: 600 } : {}}
               >
                 {l.label}
               </Link>
             ))}
           </div>
+          )}
 
           {/* Right side */}
+          {!minimal && (
           <div className="flex items-center gap-2">
-            {/* Theme toggle */}
-            <button
-              onClick={toggle}
-              aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-110"
-              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
-            >
-              {isDark ? (
-                /* sun */
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="5"/>
-                  <line x1="12" y1="1" x2="12" y2="3"/>
-                  <line x1="12" y1="21" x2="12" y2="23"/>
-                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                  <line x1="1" y1="12" x2="3" y2="12"/>
-                  <line x1="21" y1="12" x2="23" y2="12"/>
-                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-                </svg>
-              ) : (
-                /* moon */
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-                </svg>
-              )}
-            </button>
-
             {!loading && (
               <>
                 {user ? (
                   <>
-                    <Link
-                      href="/perfil"
-                      className="flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-xl transition-all"
-                      style={{
-                        color: "var(--text-primary)",
-                        border: "1px solid var(--border)",
-                        background: "transparent",
-                      }}
-                      onMouseEnter={e => {
-                        (e.currentTarget as HTMLElement).style.borderColor = "rgba(37,99,235,0.4)";
-                        (e.currentTarget as HTMLElement).style.background = "rgba(37,99,235,0.08)";
-                      }}
-                      onMouseLeave={e => {
-                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
-                        (e.currentTarget as HTMLElement).style.background = "transparent";
-                      }}
-                    >
-                      <span
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black overflow-hidden shrink-0"
-                        style={{ background: "linear-gradient(135deg, #2563EB, #3B82F6)" }}
+                    <NotificationBell />
+                    {/* Profile button → dropdown menu with everything (replaces the profile tabs) */}
+                    <div className="relative" ref={menuRef}>
+                      <button
+                        onClick={() => setMenuOpen(o => !o)}
+                        aria-haspopup="menu" aria-expanded={menuOpen} aria-label="Menú de perfil"
+                        className="flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-xl transition-all"
+                        style={{ color: "var(--text-primary)", border: "1px solid var(--border)", background: menuOpen ? "var(--bg-hover)" : "transparent" }}
                       >
-                        {user.avatarUrl
-                          ? <Image src={user.avatarUrl} alt={user.username} width={28} height={28} className="w-full h-full object-cover" />
-                          : initials}
-                      </span>
-                      <span className="hidden sm:inline">{user.username}</span>
-                    </Link>
-                    <button
-                      onClick={logout}
-                      className="hidden sm:block text-xs px-3 py-2 transition-colors"
-                      style={{ color: "var(--text-muted)" }}
-                      onMouseEnter={e => ((e.target as HTMLElement).style.color = "var(--text-secondary)")}
-                      onMouseLeave={e => ((e.target as HTMLElement).style.color = "var(--text-muted)")}
-                    >
-                      Salir
-                    </button>
+                        <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-semibold overflow-hidden shrink-0"
+                          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+                          {user.avatarUrl
+                            ? <Image src={user.avatarUrl} alt={user.username} width={28} height={28} className="w-full h-full object-cover" />
+                            : initials}
+                        </span>
+                        <span className="hidden sm:inline">{user.username}</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                          className="hidden sm:block shrink-0 transition-transform" style={{ transform: menuOpen ? "rotate(180deg)" : "none", color: "var(--text-muted)" }} aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+                      </button>
+                      {menuOpen && (
+                        <div role="menu" className="absolute right-0 mt-2 w-56 rounded-2xl overflow-hidden py-1.5 z-50"
+                          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}>
+                          <div className="px-4 pb-2 pt-1 text-[11px] uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>@{user.username}</div>
+                          {menuItems.map(m => (
+                            <Link key={m.href} href={m.href} role="menuitem" onClick={() => setMenuOpen(false)}
+                              className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-[var(--bg-hover)]"
+                              style={{ color: "var(--text-secondary)" }}>
+                              <span className="w-5 text-center text-base leading-none" aria-hidden="true">{m.icon}</span>
+                              {m.label}
+                            </Link>
+                          ))}
+                          <div className="my-1.5 mx-4" style={{ borderTop: "1px solid var(--border)" }} />
+                          <button role="menuitem" onClick={() => { setMenuOpen(false); logout(); }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors hover:bg-[var(--bg-hover)]"
+                            style={{ color: "var(--error-text)" }}>
+                            <span className="w-5 text-center text-base leading-none" aria-hidden="true">↩</span>
+                            Cerrar sesión
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </>
                 ) : (
                   <>
@@ -148,11 +153,8 @@ export default function Navbar() {
                     </Link>
                     <Link
                       href="/register"
-                      className="text-sm font-semibold text-white px-5 py-2.5 rounded-xl transition-all active:scale-95"
-                      style={{
-                        background: "linear-gradient(135deg, #2563EB, #3B82F6)",
-                        boxShadow: "0 4px 20px rgba(37,99,235,0.35)",
-                      }}
+                      className="text-sm font-semibold px-5 py-2.5 rounded-full transition-all active:scale-95 hover:brightness-105"
+                      style={{ background: "var(--brand-light)", color: INK }}
                     >
                       Registrarse
                     </Link>
@@ -178,10 +180,11 @@ export default function Navbar() {
                 style={mobileOpen ? { transform: "rotate(-45deg) translate(2px, -2px)" } : {}} />
             </button>
           </div>
+          )}
         </div>
 
         {/* Mobile menu */}
-        {mobileOpen && (
+        {!minimal && mobileOpen && (
           <div
             id="navbar-mobile-menu"
             className="md:hidden border-t"
@@ -231,3 +234,4 @@ export default function Navbar() {
     </>
   );
 }
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth";
@@ -13,16 +13,43 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
+  const [rememberMe, setRememberMe]   = useState(true);
+  const [returning, setReturning]     = useState(false);
+
+  // "Bienvenido de vuelta" only if a session existed before on this device
+  useEffect(() => {
+    setReturning(typeof window !== "undefined" && localStorage.getItem("tcg_returning") === "1");
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
-      await login(email, password);
+      await login(email, password, rememberMe);
       router.push("/auctions");
     } catch (err: any) {
       setError(err?.response?.data?.message ?? "Credenciales incorrectas. Intenta de nuevo.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Demo shortcut: fill + log in with a test account in one tap
+  const DEMO = [
+    { label: "Vendedor", user: "tcg_master_mx", email: "vendedor@tcg.mx" },
+    { label: "Cliente",  user: "ana_collector", email: "ana@tcg.mx" },
+  ];
+  async function quickLogin(email: string) {
+    setEmail(email);
+    setPassword("password123");
+    setLoading(true);
+    setError("");
+    try {
+      await login(email, "password123", rememberMe);
+      router.push("/auctions");
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? "No se pudo iniciar sesión.");
     } finally {
       setLoading(false);
     }
@@ -91,23 +118,24 @@ export default function LoginPage() {
 
         {/* Wordmark */}
         <div className="flex flex-col items-center mb-8">
-          <Link href="/" className="group mb-5">
+          <Link href="/" className="group mb-5 flex items-center gap-2.5">
             <div
-              className="flex items-center gap-2.5 px-5 py-2.5 rounded-2xl transition-all group-hover:scale-105 group-hover:brightness-110"
-              style={{
-                background: "linear-gradient(135deg, var(--brand), #3B82F6)",
-                boxShadow: "0 0 36px rgba(37,99,235,0.55)",
-              }}
+              className="flex items-center justify-center w-10 h-10 rounded-xl transition-transform group-hover:scale-105"
+              style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}
             >
-              <span className="text-xl leading-none">⚡</span>
-              <span className="text-white font-black text-lg tracking-tight">TCGLive</span>
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8Z" />
+              </svg>
             </div>
+            <span className="font-semibold text-2xl tracking-tight" style={{ color: "var(--text-primary)" }}>
+              TCG<span style={{ color: "var(--accent-text)" }}>Live</span>
+            </span>
           </Link>
           <h1 className="text-3xl font-black" style={{ color: "var(--text-primary)" }}>
-            Bienvenido de vuelta
+            {returning ? "Bienvenido de vuelta" : "Inicia sesión en tu cuenta"}
           </h1>
           <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
-            Inicia sesión en tu cuenta
+            {returning ? "Inicia sesión en tu cuenta" : "Bienvenido a TCG Live"}
           </p>
         </div>
 
@@ -237,6 +265,30 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* Remember me for 30 days */}
+            <label className="flex items-center gap-2.5 cursor-pointer select-none -mt-1">
+              <span
+                className="relative flex items-center justify-center w-5 h-5 rounded-md transition-colors shrink-0"
+                style={{
+                  background: rememberMe ? "var(--brand)" : "var(--bg-input)",
+                  border: `1px solid ${rememberMe ? "var(--brand)" : "var(--border)"}`,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="sr-only"
+                />
+                {rememberMe && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                )}
+              </span>
+              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>Recordarme por 30 días</span>
+            </label>
+
             {/* Submit button with spinner */}
             <button
               type="submit"
@@ -268,6 +320,32 @@ export default function LoginPage() {
               )}
             </button>
           </form>
+
+          {/* Demo shortcuts — one-tap sign in for testing */}
+          <div className="mt-5 pt-5" style={{ borderTop: "1px solid var(--border)" }}>
+            <p className="text-center text-xs font-semibold mb-2.5" style={{ color: "var(--text-muted)" }}>
+              Acceso rápido (demo)
+            </p>
+            <div className="grid grid-cols-2 gap-2.5">
+              {DEMO.map((d) => (
+                <button
+                  key={d.email}
+                  type="button"
+                  onClick={() => quickLogin(d.email)}
+                  disabled={loading}
+                  className="flex flex-col items-center gap-0.5 rounded-xl py-2.5 px-2 text-center transition-colors disabled:opacity-50"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)" }}
+                >
+                  <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+                    {d.label}
+                  </span>
+                  <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                    @{d.user}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <p className="text-center mt-6 text-sm" style={{ color: "var(--text-muted)" }}>

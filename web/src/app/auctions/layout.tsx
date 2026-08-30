@@ -3,18 +3,18 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Subastas en vivo — TCG Live",
   description:
-    "Explora y participa en subastas en vivo de cartas Pokémon, Magic y más. Pagos protegidos con Mercado Pago.",
+    "Explora y participa en subastas en vivo de cartas Pokémon, Magic y más. Pagos protegidos dentro de la app.",
   openGraph: {
     title: "Subastas en vivo — TCG Live",
     description:
-      "Explora y participa en subastas en vivo de cartas Pokémon, Magic y más. Pagos protegidos con Mercado Pago.",
+      "Explora y participa en subastas en vivo de cartas Pokémon, Magic y más. Pagos protegidos dentro de la app.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
     title: "Subastas en vivo — TCG Live",
     description:
-      "Explora y participa en subastas en vivo de cartas Pokémon, Magic y más. Pagos protegidos con Mercado Pago.",
+      "Explora y participa en subastas en vivo de cartas Pokémon, Magic y más. Pagos protegidos dentro de la app.",
   },
 };
 

@@ -1,4 +1,4 @@
-import { IsEmail, IsString } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString } from 'class-validator';
 
 export class LoginDto {
   @IsEmail()
@@ -6,4 +6,9 @@ export class LoginDto {
 
   @IsString()
   password: string;
+
+  /** Keep the session for 30 days instead of the default. */
+  @IsBoolean()
+  @IsOptional()
+  rememberMe?: boolean;
 }

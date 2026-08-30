@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PushToken } from './entities/push-token.entity';
+import { Notification } from './entities/notification.entity';
 import Expo, { ExpoPushMessage } from 'expo-server-sdk';
 
 @Injectable()
@@ -12,7 +13,60 @@ export class NotificationsService {
   constructor(
     @InjectRepository(PushToken)
     private readonly tokensRepo: Repository<PushToken>,
+    @InjectRepository(Notification)
+    private readonly notifsRepo: Repository<Notification>,
   ) {}
+
+  /** Derive the in-app deep link a notification should open, from its data payload. */
+  private linkFor(data?: Record<string, unknown>): string | null {
+    const type = (data?.type as string) ?? '';
+    const auctionId = data?.auctionId as string | undefined;
+    switch (type) {
+      // No longer sent — kept so notifications already in the inbox still deep-link.
+      case 'outbid':
+      case 'auction_live':
+      case 'seller_live':
+      case 'seller_live_soon':
+      case 'stream_due':
+        return auctionId ? `/auctions/${auctionId}` : '/auctions';
+      case 'giveaway_won':
+      case 'auction_win':
+      case 'order_confirmed':
+      case 'order_shipped':
+      case 'order_delivered':
+      case 'payment_received':
+      case 'new_order':
+        return '/compras';
+      case 'new_message':
+        return '/mensajes';
+      case 'dispute_opened':
+      case 'dispute_resolved':
+        return '/perfil';
+      default:
+        return null;
+    }
+  }
+
+  // ── In-app notification feed (persisted; powers the navbar bell) ──────────
+  async listForUser(userId: string, limit = 30): Promise<Notification[]> {
+    return this.notifsRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+      take: Math.min(Math.max(1, limit), 50),
+    });
+  }
+
+  async unreadCount(userId: string): Promise<number> {
+    return this.notifsRepo.count({ where: { userId, read: false } });
+  }
+
+  async markRead(userId: string, id: string): Promise<void> {
+    await this.notifsRepo.update({ id, userId }, { read: true });
+  }
+
+  async markAllRead(userId: string): Promise<void> {
+    await this.notifsRepo.update({ userId, read: false }, { read: true });
+  }
 
   async registerToken(userId: string, token: string, deviceId?: string): Promise<void> {
     if (!Expo.isExpoPushToken(token)) {
@@ -30,6 +84,19 @@ export class NotificationsService {
   }
 
   async sendToUser(userId: string, notification: { title: string; body: string; data?: Record<string, unknown> }): Promise<void> {
+    // Persist for the in-app feed (bell) regardless of whether a push token exists.
+    try {
+      await this.notifsRepo.save(this.notifsRepo.create({
+        userId,
+        type: (notification.data?.type as string) ?? 'general',
+        title: notification.title,
+        body: notification.body,
+        link: this.linkFor(notification.data),
+      }));
+    } catch (err) {
+      this.logger.warn(`Failed to persist notification for ${userId}: ${err}`);
+    }
+
     const tokens = await this.tokensRepo.find({ where: { userId } });
     if (!tokens.length) return;
 
@@ -129,6 +196,35 @@ export class NotificationsService {
       title: `🔴 @${sellerUsername} está en vivo`,
       body: `"${auctionTitle}" acaba de comenzar`,
       data: { type: 'seller_live', auctionId },
+    });
+  }
+
+  /** Reminder to a follower ~1h before a seller's scheduled stream. */
+  async notifySellerLiveSoon(
+    userId: string, sellerUsername: string, auctionTitle: string, auctionId: string, minutes: number,
+  ): Promise<void> {
+    await this.sendToUser(userId, {
+      title: `⏰ @${sellerUsername} transmite pronto`,
+      body: `"${auctionTitle}" comienza en ${minutes} min`,
+      data: { type: 'seller_live_soon', auctionId },
+    });
+  }
+
+  /** Nudge the seller when their scheduled stream is due to start. */
+  async notifyStreamDue(sellerId: string, auctionTitle: string, auctionId: string): Promise<void> {
+    await this.sendToUser(sellerId, {
+      title: '📅 Es hora de tu stream',
+      body: `"${auctionTitle}" estaba programado para ahora. Ábrelo para iniciarlo.`,
+      data: { type: 'stream_due', auctionId },
+    });
+  }
+
+  /** The winner of a live giveaway — the prize ships like any other order. */
+  async notifyGiveawayWon(userId: string, sellerUsername: string, prize: string): Promise<void> {
+    await this.sendToUser(userId, {
+      title: '🎉 ¡Ganaste el sorteo!',
+      body: `@${sellerUsername} te dio "${prize}". Confirma tu dirección para recibirlo.`,
+      data: { type: 'giveaway_won' },
     });
   }
 

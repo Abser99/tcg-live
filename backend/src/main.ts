@@ -38,7 +38,8 @@ async function bootstrap() {
         !rawWebUrl ||                                 // WEB_URL not set → open (dev)
         allowedOrigins.includes(origin) ||            // exact match
         /\.vercel\.app$/.test(origin) ||              // any Vercel preview URL
-        /^http:\/\/localhost(:\d+)?$/.test(origin)    // any localhost port
+        /^http:\/\/([a-z0-9-]+\.)?localhost(:\d+)?$/.test(origin) || // localhost + subdomains
+        /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)               // loopback by IP
       ) {
         callback(null, true);
       } else {

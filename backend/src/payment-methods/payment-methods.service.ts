@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PaymentMethod, PaymentMethodType } from './entities/payment-method.entity';
 import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
+import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
+import { brandLabel, checkCardNumber } from './card';
 
 @Injectable()
 export class PaymentMethodsService {
@@ -21,10 +23,13 @@ export class PaymentMethodsService {
     let nickname: string;
 
     if (dto.type === PaymentMethodType.CARD) {
-      const num = dto.cardNumber!.replace(/\s/g, '');
-      last4 = num.slice(-4);
-      brand = this.detectBrand(num);
-      nickname = `${this.capitalize(brand)} ****${last4}`;
+      // Per-brand length and check digit, so a typo is caught here rather than by the
+      // processor, where it comes back as an opaque decline.
+      const check = checkCardNumber(dto.cardNumber ?? '');
+      if (!check.ok) throw new BadRequestException(check.reason);
+      last4 = check.last4;
+      brand = check.brand;
+      nickname = `${brandLabel(check.brand)} •${last4}`;
     } else if (dto.type === PaymentMethodType.OXXO) {
       nickname = 'Pago en OXXO';
     } else {
@@ -44,8 +49,39 @@ export class PaymentMethodsService {
       last4,
       brand,
       expiry: dto.expiry,
+      cardholderName: dto.cardholderName?.trim() || null,
       isDefault,
+      // Billing address — every part optional, so a card can be saved now and the
+      // address filled in when it's first needed.
+      billingName: dto.billingName?.trim() || null,
+      street:      dto.street?.trim() || null,
+      extNumber:   dto.extNumber?.trim() || null,
+      intNumber:   dto.intNumber?.trim() || null,
+      colonia:     dto.colonia?.trim() || null,
+      city:        dto.city?.trim() || null,
+      state:       dto.state?.trim() || null,
+      zip:         dto.zip?.trim() || null,
     });
+    return this.repo.save(method);
+  }
+
+  /**
+   * Edit a saved card. The number is not among the fields: only its last four digits
+   * were ever kept, so a different number is a different card.
+   * An empty string clears a field; leaving it out keeps what's there.
+   */
+  async update(id: string, userId: string, dto: UpdatePaymentMethodDto): Promise<PaymentMethod> {
+    const method = await this.repo.findOne({ where: { id, userId } });
+    if (!method) throw new NotFoundException('Tarjeta no encontrada');
+
+    const fields: (keyof UpdatePaymentMethodDto)[] = [
+      'expiry', 'cardholderName', 'billingName', 'street', 'extNumber',
+      'intNumber', 'colonia', 'city', 'state', 'zip',
+    ];
+    for (const f of fields) {
+      if (dto[f] === undefined) continue;
+      (method as unknown as Record<string, string | null>)[f] = dto[f]!.trim() || null;
+    }
     return this.repo.save(method);
   }
 
@@ -73,14 +109,4 @@ export class PaymentMethodsService {
     return count > 0;
   }
 
-  private detectBrand(num: string): string {
-    if (/^4/.test(num)) return 'visa';
-    if (/^5[1-5]/.test(num)) return 'mastercard';
-    if (/^3[47]/.test(num)) return 'amex';
-    return 'other';
-  }
-
-  private capitalize(s: string) {
-    return s.charAt(0).toUpperCase() + s.slice(1);
-  }
 }

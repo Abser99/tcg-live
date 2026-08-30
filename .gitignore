@@ -13,3 +13,6 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# Uploaded media (recordings, seller documents) — user data, not source
+backend/uploads/

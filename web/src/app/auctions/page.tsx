@@ -2,46 +2,57 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import AmbientBackground from "@/components/AmbientBackground";
 import { auctionsApi, type ApiAuction } from "@/lib/api";
-import { formatTimer, gameLabel } from "@/lib/format";
+import { formatTimer, gameLabel, liveName } from "@/lib/format";
+import { setAuctionsCache } from "@/lib/live-back-cache";
+import { useFavoriteSellers } from "@/lib/seller-favorites";
+import { useAuth } from "@/contexts/auth";
 
-type Filter = "all" | "live" | "ending" | "upcoming";
+const INK = "var(--brand-ink)";
 
-const FILTERS: { key: Filter; label: string; dot?: string; icon: string }[] = [
-  { key: "all",      label: "Todas",        icon: "🎴" },
-  { key: "live",     label: "En vivo",      dot: "#ef4444", icon: "📡" },
-  { key: "ending",   label: "Por terminar", dot: "#f59e0b", icon: "⏱" },
-  { key: "upcoming", label: "Próximas",     dot: "#2563EB", icon: "📅" },
+/* Heart to the right of the seller name. Following a seller (a) surfaces them in the
+   "Favoritos" filter and (b) opts you into a browser alert when their live starts. */
+type Filter = "all" | "live" | "ending" | "upcoming" | "favorites";
+
+/* The scheduler still lets a seller tag their stream with these; the browse filters
+   that used to share the list are gone. */
+const CATEGORIES: { value: string; label: string }[] = [
+  { value: "pokemon",    label: "Pokémon" },
+  { value: "onepiece",   label: "One Piece" },
+  { value: "yugioh",     label: "Yu-Gi-Oh!" },
+  { value: "mtg",        label: "Magic" },
+  { value: "lorcana",    label: "Lorcana" },
+  { value: "dragonball", label: "Dragon Ball" },
+  { value: "sports",     label: "Deportes" },
+  { value: "other",      label: "Otro" },
 ];
 
-const STATUS_LABEL: Record<string, { text: string; bg: string; glow: string }> = {
-  live:     { text: "EN VIVO",        bg: "#ef4444", glow: "rgba(239,68,68,0.4)" },
-  ending:   { text: "TERMINA PRONTO", bg: "#f59e0b", glow: "rgba(245,158,11,0.3)" },
-  upcoming: { text: "PRÓXIMO",        bg: "#2563EB", glow: "rgba(37,99,235,0.3)" },
+/* status chip: dot color + label (minimal, no colored fills) */
+const STATUS: Record<string, { text: string; dot: string }> = {
+  live:     { text: "En vivo",  dot: "#ef4444" },
+  upcoming: { text: "Próximo",  dot: "var(--text-muted)" },
 };
 
-const GRADIENTS = [
-  "from-orange-500 to-red-600",
-  "from-violet-600 to-indigo-800",
-  "from-blue-500 to-cyan-400",
-  "from-yellow-400 to-amber-500",
-  "from-emerald-500 to-teal-600",
-  "from-pink-500 to-rose-600",
-  "from-indigo-500 to-purple-700",
-  "from-lime-500 to-green-600",
-];
+/* Map the backend status (`scheduled` / `live` / …) to a display bucket. */
+function dispStatus(a: ApiAuction): Filter {
+  if (a.status === "live") return "live";
+  if (a.status === "scheduled" || a.status === "upcoming") return "upcoming";
+  return "upcoming";
+}
 
-const GLOWS = [
-  "rgba(239,68,68,0.4)",
-  "rgba(59,130,246,0.4)",
-  "rgba(59,130,246,0.4)",
-  "rgba(251,191,36,0.4)",
-  "rgba(16,185,129,0.4)",
-  "rgba(244,63,94,0.4)",
-  "rgba(99,102,241,0.4)",
-  "rgba(132,204,22,0.4)",
-];
+function CardPlaceholder() {
+  return (
+    <div className="w-24 h-32 rounded-lg flex items-center justify-center"
+      style={{ background: "linear-gradient(155deg, var(--bg-input), var(--bg-elevated))", border: "1px solid var(--border)" }} aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="var(--text-muted)" strokeWidth={1.2}>
+        <rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" strokeLinecap="round" />
+      </svg>
+    </div>
+  );
+}
 
 export default function AuctionsPage() {
   const [auctions, setAuctions] = useState<ApiAuction[]>([]);
@@ -50,8 +61,74 @@ export default function AuctionsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState(false);
-  const [filter, setFilter]     = useState<Filter>("all");
+  const favSellers = useFavoriteSellers();
   const [search, setSearch]     = useState("");
+  const { user } = useAuth();
+  const router = useRouter();
+  const role = String(user?.role ?? "").toLowerCase();
+  const isSeller = role === "seller" || role === "admin";
+  const [goingLive, setGoingLive] = useState(false);
+  // Split "Iniciar stream" button: the chevron opens a small menu with "Agendar stream".
+  const [startMenuOpen, setStartMenuOpen] = useState(false);
+  const startMenuRef = useRef<HTMLDivElement>(null);
+  // Scheduler modal state
+  const [showScheduler, setShowScheduler] = useState(false);
+  const [schedDate, setSchedDate] = useState("");
+  const [schedTime, setSchedTime] = useState("");
+  const [schedCats, setSchedCats] = useState<string[]>(["pokemon"]);
+  const [scheduling, setScheduling] = useState(false);
+  const [schedError, setSchedError] = useState("");
+
+  useEffect(() => {
+    if (!startMenuOpen) return;
+    const onDoc = (e: MouseEvent) => { if (startMenuRef.current && !startMenuRef.current.contains(e.target as Node)) setStartMenuOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [startMenuOpen]);
+
+  // Seller: create a live auction and jump straight into it (number is auto-assigned)
+  async function startLive() {
+    if (goingLive) return;
+    setGoingLive(true);
+    try {
+      const { data } = await auctionsApi.create({ isStream: true } as any);
+      await auctionsApi.start((data as any).id);
+      router.push(`/auctions/${(data as any).id}?stream=1`);
+    } catch (err: any) {
+      setGoingLive(false);
+      alert(err?.response?.data?.message ?? "No se pudo iniciar el stream.");
+    }
+  }
+
+  function openScheduler() {
+    // Default to tomorrow at 19:00 (a sensible prime-time slot)
+    const d = new Date(Date.now() + 24 * 3600 * 1000);
+    setSchedDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+    setSchedTime("19:00");
+    setSchedCats(["pokemon"]);
+    setSchedError("");
+    setShowScheduler(true);
+  }
+
+  async function scheduleStream() {
+    if (scheduling) return;
+    setSchedError("");
+    if (!schedDate || !schedTime) { setSchedError("Elige fecha y hora."); return; }
+    const when = new Date(`${schedDate}T${schedTime}`);
+    if (isNaN(when.getTime())) { setSchedError("Fecha u hora inválida."); return; }
+    if (when.getTime() <= Date.now()) { setSchedError("La fecha debe ser en el futuro."); return; }
+    if (schedCats.length === 0) { setSchedError("Elige al menos una categoría."); return; }
+    setScheduling(true);
+    try {
+      await auctionsApi.create({ isStream: true, scheduledAt: when.toISOString(), categories: schedCats } as any);
+      setShowScheduler(false);
+      loadInitial(search);             // refresh the list so it appears
+    } catch (err: any) {
+      setSchedError(err?.response?.data?.message ?? "No se pudo agendar el stream.");
+    } finally {
+      setScheduling(false);
+    }
+  }
   const [, setTick] = useState(0);
 
   const searchRef = useRef(search);
@@ -64,6 +141,7 @@ export default function AuctionsPage() {
   function applyResponse(res: { data: ApiAuction[]; total: number; page: number }) {
     if (res.page === 1) {
       setAuctions(res.data);
+      setAuctionsCache(res.data);
     } else {
       setAuctions(prev => {
         const existing = new Set(prev.map(a => a.id));
@@ -93,9 +171,6 @@ export default function AuctionsPage() {
   }
 
   useEffect(() => {
-    // Inlined (rather than calling loadInitial) so the initial fetch's
-    // setState calls happen inside the async .then/.catch/.finally chain
-    // instead of synchronously in the effect body.
     const myId = ++requestIdRef.current;
     auctionsApi.list({ page: 1, limit: 20 })
       .then((r) => {
@@ -123,7 +198,6 @@ export default function AuctionsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Debounced server-side search: skip the very first run (handled by the mount effect above)
   useEffect(() => {
     if (isFirstSearchRun.current) { isFirstSearchRun.current = false; return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -142,452 +216,333 @@ export default function AuctionsPage() {
     finally { setLoadingMore(false); }
   }
 
-  const filtered = auctions.filter((a) => filter === "all" || a.status === filter);
-
+  /* No client-side filtering any more: the search box is the only control, and the
+     server already decides what comes back for it. */
+  const filtered = auctions;
   const liveCount = auctions.filter((a) => a.status === "live").length;
   const hasMore = auctions.length < total;
 
+  // The seller's OWN live (if any). One-live-at-a-time: while this exists the top CTA must
+  // lead back into it, not offer to start another (which the backend would reject anyway).
+  const myLive = isSeller
+    ? auctions.find((a) => a.status === "live" && (
+        (user?.id && a.sellerId === user.id) ||
+        (user?.username && a.seller?.username === user.username)
+      ))
+    : undefined;
+
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
+    <div className="min-h-screen relative overflow-clip" style={{ background: "var(--bg-base)", color: "var(--text-primary)" }}>
+      <style>{`
+        .a-card { transition: transform 0.25s cubic-bezier(0.22,1,0.36,1), border-color 0.25s ease; }
+        .a-card:hover { transform: translateY(-4px); border-color: var(--border-brand); }
+        .a-btn { transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease; }
+        .a-btn:hover { border-color: var(--border-brand); color: var(--accent-text); }
+        .btn-brand { transition: transform 0.15s ease, box-shadow 0.25s ease, filter 0.2s ease; }
+        .btn-brand:hover { box-shadow: 0 8px 26px color-mix(in srgb, var(--brand) 35%, transparent); filter: brightness(1.05); }
+        .btn-brand:active { transform: scale(0.96); }
+        .pill { transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease; }
+        .u-link { position: relative; }
+        .u-link::after { content: ""; position: absolute; left: 0; bottom: -2px; width: 100%; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: left; transition: transform 0.3s cubic-bezier(0.22,1,0.36,1); }
+        .u-link:hover::after { transform: scaleX(1); }
+      `}</style>
       <Navbar />
-      <main id="main">
+      <AmbientBackground top={360} />
+      {/* Above the ambient layer, which sits at z-0 */}
+      <main id="main" className="relative z-[1]">
 
-      {/* ── Header ── */}
-      <div className="pt-24 pb-8" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-        <div className="mx-auto max-w-[1600px] px-6">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        {/* ── Header ── */}
+        <div className="pt-32 pb-6" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+          <div className="mx-auto max-w-6xl px-6">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+              <div>
+                {!loading && liveCount > 0 && (
+                  <div className="inline-flex items-center gap-2 mb-4 text-[11px] font-medium uppercase" style={{ letterSpacing: "0.16em", color: "var(--text-muted)" }}>
+                    <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "#ef4444" }} />
+                    {liveCount} {liveCount === 1 ? "subasta en vivo ahora" : "subastas en vivo ahora"}
+                  </div>
+                )}
+                <h1 className="text-4xl md:text-[2.75rem] font-medium tracking-[-0.025em]" style={{ color: "var(--text-primary)" }}>Subastas</h1>
+                <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
+                  {loading ? "Cargando…" : total === 1 ? "1 subasta activa o próxima" : `${total} subastas activas y próximas`}
+                </p>
+              </div>
 
-            <div>
-              {!loading && liveCount > 0 && (
-                <div
-                  className="inline-flex items-center gap-2 mb-3 px-3 py-1.5 rounded-full"
-                  style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.28)" }}
-                >
-                  <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                  <span className="text-xs font-bold" style={{ color: "#ef4444" }}>
-                    {liveCount} {liveCount === 1 ? "subasta" : "subastas"} en vivo ahora
-                  </span>
+              {/* Search + seller CTA */}
+              <div className="flex items-center gap-2 w-full md:w-auto">
+              {isSeller && (
+                // Split button: main action (start now, or continue an active live) + chevron → Agendar stream.
+                <div className="relative shrink-0 md:order-2" ref={startMenuRef}>
+                  <div className="flex items-stretch">
+                    {myLive ? (
+                      <Link
+                        href={`/auctions/${myLive.id}?stream=1`}
+                        className="btn-brand flex items-center gap-1.5 pl-4 pr-3 py-3 rounded-l-full text-[13px] font-black"
+                        style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", color: "#fff", boxShadow: "0 4px 16px rgba(220,38,38,0.35)" }}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-white/90 animate-pulse" />
+                        Continuar mi live
+                      </Link>
+                    ) : (
+                      <button
+                        onClick={startLive}
+                        disabled={goingLive}
+                        className="btn-brand flex items-center gap-1.5 pl-4 pr-3 py-3 rounded-l-full text-[13px] font-black disabled:opacity-60"
+                        style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", color: "#fff", boxShadow: "0 4px 16px rgba(220,38,38,0.35)" }}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-white/90 animate-pulse" />
+                        {goingLive ? "Iniciando…" : "Iniciar stream"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setStartMenuOpen((o) => !o)}
+                      aria-label="Más opciones de stream" aria-expanded={startMenuOpen}
+                      className="flex items-center px-2.5 rounded-r-full"
+                      style={{ background: "linear-gradient(135deg, #dc2626, #ef4444)", color: "#fff", boxShadow: "0 4px 16px rgba(220,38,38,0.35)", borderLeft: "1px solid rgba(255,255,255,0.28)" }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                        className="transition-transform" style={{ transform: startMenuOpen ? "rotate(180deg)" : "none" }} aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+                    </button>
+                  </div>
+                  {startMenuOpen && (
+                    <div role="menu" className="absolute right-0 mt-2 w-52 rounded-2xl overflow-hidden py-1.5 z-50"
+                      style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}>
+                      <button role="menuitem" onClick={() => { setStartMenuOpen(false); openScheduler(); }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-left transition-colors hover:bg-[var(--bg-hover)]"
+                        style={{ color: "var(--text-secondary)" }}>
+                        <span className="text-base leading-none" aria-hidden="true">📅</span>
+                        Agendar stream
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
-              <h1 className="text-4xl font-black tracking-tight gradient-text">Subastas</h1>
-              <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-                {loading ? "Cargando..." : total === 1 ? "1 subasta activa o próxima" : `${total} subastas activas y próximas`}
-              </p>
+              <div className="relative flex-1 md:w-80 md:flex-none md:order-1">
+                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--text-muted)" }}
+                  fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                </svg>
+                <input
+                  type="text"
+                  aria-label="Buscar por vendedor o por juego"
+                  placeholder="Vendedor o juego: One Piece, Lorcana…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full rounded-full pl-10 pr-4 py-3 text-sm transition-all"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+                  onFocus={e => { e.currentTarget.style.borderColor = "var(--border-brand)"; e.currentTarget.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent)"; }}
+                  onBlur={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.boxShadow = "none"; }}
+                />
+              </div>
+              </div>
             </div>
 
-            {/* Search bar */}
-            <div className="relative w-full md:w-80">
-              <svg
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-                style={{ color: "var(--text-muted)" }}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <circle cx="11" cy="11" r="8" />
-                <path d="m21 21-4.35-4.35" />
-              </svg>
-              <input
-                type="text"
-                aria-label="Buscar subastas por carta o vendedor"
-                placeholder="Buscar carta, vendedor..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-xl pl-10 pr-4 py-3 text-sm transition-all placeholder:text-zinc-600"
-                style={{
-                  background: "var(--bg-input)",
-                  border: "1px solid var(--border)",
-                  color: "var(--text-primary)",
-                }}
-                onFocus={e => {
-                  e.currentTarget.style.borderColor = "rgba(37,99,235,0.55)";
-                  e.currentTarget.style.boxShadow   = "0 0 0 3px rgba(37,99,235,0.12)";
-                }}
-                onBlur={e => {
-                  e.currentTarget.style.borderColor = "var(--border)";
-                  e.currentTarget.style.boxShadow   = "none";
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Filter pills */}
-          <div className="flex items-center gap-2 mt-6 overflow-x-auto pb-1">
-            {FILTERS.map((f) => {
-              const count =
-                f.key === "all"
-                  ? auctions.length
-                  : auctions.filter((a) => a.status === f.key).length;
-              const active = filter === f.key;
-              return (
-                <button
-                  key={f.key}
-                  onClick={() => setFilter(f.key)}
-                  aria-pressed={active}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all"
-                  style={
-                    active
-                      ? {
-                          background: "rgba(37,99,235,0.18)",
-                          border: "1px solid rgba(37,99,235,0.5)",
-                          color: "var(--accent-text)",
-                          boxShadow: "0 0 14px rgba(37,99,235,0.22), inset 0 1px 0 rgba(255,255,255,0.06)",
-                        }
-                      : {
-                          background: "var(--bg-hover)",
-                          border: "1px solid var(--border)",
-                          color: "var(--text-muted)",
-                        }
-                  }
-                >
-                  <span className="text-sm leading-none">{f.icon}</span>
-                  {f.dot && (
-                    <span
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{
-                        background: f.dot,
-                        boxShadow: active ? `0 0 6px ${f.dot}` : "none",
-                      }}
-                    />
-                  )}
-                  {f.label}
-                  <span
-                    className="text-xs px-1.5 py-0.5 rounded-md font-bold"
-                    style={{
-                      background: active ? "rgba(37,99,235,0.3)" : "var(--bg-elevated)",
-                      color: active ? "var(--accent-text)" : "var(--text-muted)",
-                    }}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
           </div>
         </div>
-      </div>
 
-      {/* ── Grid ── */}
-      <div className="mx-auto max-w-[1600px] px-6 py-10">
-        {loading ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="rounded-2xl overflow-hidden animate-pulse"
-                style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
-              >
-                <div className="h-72" style={{ background: "var(--bg-elevated)" }} />
-                <div className="p-4 space-y-3">
-                  <div className="h-4 rounded-lg w-3/4" style={{ background: "var(--bg-elevated)" }} />
-                  <div className="h-3 rounded-lg w-1/2" style={{ background: "var(--bg-elevated)" }} />
-                  <div className="h-10 rounded-xl mt-4" style={{ background: "var(--bg-elevated)" }} />
+        {/* ── Grid ── */}
+        <div className="mx-auto max-w-6xl px-6 pt-7 pb-16">
+          {loading ? (
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-8">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+                  <div className="h-56 shimmer" />
+                  <div className="p-4 space-y-3">
+                    <div className="h-4 rounded-md w-3/4 shimmer" />
+                    <div className="h-3 rounded-md w-1/2 shimmer" />
+                    <div className="h-9 rounded-lg mt-4 shimmer" />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : error ? (
-          <div role="alert" className="text-center py-28">
-            <div
-              className="inline-flex items-center justify-center w-24 h-24 rounded-3xl text-5xl mb-6"
-              style={{
-                background: "var(--bg-elevated)",
-                border: "1px solid rgba(239,68,68,0.3)",
-                boxShadow: "0 0 40px rgba(239,68,68,0.1)",
-              }}
-            >
-              ⚠️
+              ))}
             </div>
-            <p className="text-xl font-black mb-2" style={{ color: "var(--text-primary)" }}>
-              No se pudieron cargar las subastas
-            </p>
-            <p className="text-sm mb-5" style={{ color: "var(--text-muted)" }}>
-              Ocurrió un problema de conexión. Intenta de nuevo.
-            </p>
-            <button
-              onClick={() => loadInitial(search)}
-              className="px-6 py-2.5 rounded-full font-bold text-sm transition-all"
-              style={{
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border-brand)",
-                color: "var(--accent-text)",
-              }}
-            >
-              Reintentar
-            </button>
-          </div>
-        ) : filtered.length === 0 ? (
-          <AuctionsEmptyState search={search} filter={filter} />
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filtered.map((a, idx) => {
-              const status = STATUS_LABEL[a.status ?? "upcoming"];
-              const gradient = GRADIENTS[idx % GRADIENTS.length];
-              const glow = GLOWS[idx % GLOWS.length];
-              const sellerName = a.seller?.username ?? a.sellerName ?? "—";
-              const verified = a.seller?.verified;
-              const currentBid = a.currentBid ?? a.startingBid ?? 0;
-              const title = a.title ?? a.name ?? "Sin título";
-              const cardAriaLabel = `${title} — ${sellerName}, ${
-                a.status === "upcoming" ? "precio inicial" : "puja actual"
-              } $${(currentBid / 100).toLocaleString("es-MX")} MXN, ${
-                a.status === "upcoming" ? "inicia en" : "termina en"
-              } ${formatTimer(a.endTime)}`;
+          ) : error ? (
+            <div role="alert" className="text-center py-28">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6"
+                style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--error-text)" }}>
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+                </svg>
+              </div>
+              <p className="text-lg font-medium mb-2" style={{ color: "var(--text-primary)" }}>No se pudieron cargar las subastas</p>
+              <p className="text-sm mb-6" style={{ color: "var(--text-muted)" }}>Ocurrió un problema de conexión. Intenta de nuevo.</p>
+              <button onClick={() => loadInitial(search)} className="px-6 py-2.5 rounded-full font-semibold text-sm" style={{ background: "var(--brand-light)", color: INK }}>
+                Reintentar
+              </button>
+            </div>
+          ) : filtered.length === 0 ? (
+            <AuctionsEmptyState search={search} />
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-8">
+              {filtered.map((a) => {
+                const disp = dispStatus(a);
+                const status = STATUS[disp] ?? STATUS.upcoming;
+                const sellerName = a.seller?.username ?? a.sellerName ?? "—";
+                const currentBid = a.currentBid ?? a.startingBid ?? 0;
+                const title = liveName(a);
+                const timer = formatTimer(a.endTime);
+                const img = a.items?.[0]?.imageUrls?.[0];
+                const cardAriaLabel = `${title} — ${sellerName}, ${a.status === "upcoming" ? "precio inicial" : "puja actual"} $${(currentBid / 100).toLocaleString("es-MX")} MXN`;
 
-              return (
-                <Link key={a.id} href={`/auctions/${a.id}`} aria-label={cardAriaLabel}>
-                  <div
-                    className="rounded-2xl overflow-hidden cursor-pointer transition-all duration-300"
-                    style={{
-                      background: "var(--bg-surface)",
-                      border: "1px solid var(--border)",
-                      boxShadow: "var(--card-shadow)",
-                    }}
-                    onMouseEnter={e => {
-                      const el = e.currentTarget;
-                      el.style.transform   = "translateY(-3px)";
-                      el.style.borderColor = "rgba(37,99,235,0.4)";
-                      el.style.boxShadow   = "0 16px 48px rgba(0,0,0,0.4), 0 0 0 1px rgba(37,99,235,0.15)";
-                    }}
-                    onMouseLeave={e => {
-                      const el = e.currentTarget;
-                      el.style.transform   = "translateY(0)";
-                      el.style.borderColor = "var(--border)";
-                      el.style.boxShadow   = "var(--card-shadow)";
-                    }}
-                  >
-                    {/* ── Image area ── */}
-                    <div
-                      className="relative h-72 flex items-center justify-center overflow-hidden"
-                      style={{ background: "#050508" }}
-                    >
-                      {/* Blurred backdrop echo of the card art */}
-                      {a.items?.[0]?.imageUrls?.[0] && (
-                        <div
-                          className="absolute inset-0 scale-110"
-                          style={{
-                            backgroundImage: `url(${a.items[0].imageUrls[0]})`,
-                            backgroundSize: "cover",
-                            backgroundPosition: "center",
-                            filter: "blur(30px) saturate(1.3) brightness(0.5)",
-                            opacity: 0.55,
-                          }}
-                        />
-                      )}
+                return (
+                  <div key={a.id}
+                    className="a-card rounded-2xl overflow-hidden relative flex flex-col h-full"
+                    style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
 
-                      {/* Radial glow */}
-                      <div
-                        className="absolute inset-0"
-                        style={{
-                          background: `radial-gradient(circle at center, ${glow} 0%, transparent 68%)`,
-                          opacity: 0.4,
-                        }}
-                      />
+                    {/* Vertical "phone video" preview */}
+                    <Link href={`/auctions/${a.id}`} aria-label={cardAriaLabel}
+                      className="relative block overflow-hidden" style={{ aspectRatio: "4 / 5" }}>
+                      {/* blurred backdrop fills the frame like a live video */}
+                      {img
+                        ? <div className="absolute inset-0" style={{ backgroundImage: `url(${img})`, backgroundSize: "cover", backgroundPosition: "center", filter: "blur(26px) brightness(0.42) saturate(1.2)", transform: "scale(1.2)" }} />
+                        : <div className="absolute inset-0" style={{ background: "linear-gradient(165deg, var(--bg-elevated) 0%, var(--bg-surface) 100%)" }} />}
+                      {/* legibility gradient */}
+                      <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0) 32%, rgba(0,0,0,0.62) 100%)" }} />
+                      {/* card art — extra bottom room so the title/price overlay stays clear */}
+                      <div className="absolute inset-0 flex items-center justify-center px-5 pt-5 pb-14">
+                        {img
+                          ? <img src={img} alt="" className="relative max-h-full w-auto object-contain" style={{ filter: "drop-shadow(0 14px 30px rgba(0,0,0,0.55))" }} />
+                          : <CardPlaceholder />}
+                      </div>
 
-                      {a.items?.[0]?.imageUrls?.[0] ? (
-                        <img
-                          src={a.items[0].imageUrls[0]}
-                          alt={title}
-                          className="relative w-full h-full object-contain max-h-[260px] py-4 drop-shadow-2xl"
-                          style={{ filter: "drop-shadow(0 12px 30px rgba(0,0,0,0.55))" }}
-                        />
-                      ) : (
-                        <div
-                          className={`relative w-32 h-44 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-5xl shadow-2xl`}
-                          style={{ boxShadow: `0 0 40px ${glow}` }}
-                        >
-                          🃏
-                        </div>
-                      )}
-
-                      {/* Status badge */}
-                      <div
-                        className="absolute top-3 left-3 flex items-center gap-1.5 text-white text-[11px] font-black px-2.5 py-1 rounded-full"
-                        style={{
-                          background: status?.bg,
-                          boxShadow: `0 2px 12px ${status?.glow}`,
-                        }}
-                      >
-                        {a.status === "live" && (
-                          <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                        )}
+                      {/* chips */}
+                      <div className="absolute top-3 left-3 inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full"
+                        style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)", border: "1px solid rgba(255,255,255,0.14)", color: "#fff" }}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${a.status === "live" ? "animate-pulse" : ""}`} style={{ background: status.dot }} />
                         {status?.text ?? a.status}
                       </div>
-
-                      {/* Viewers */}
-                      {a.status !== "upcoming" && (
-                        <div
-                          className="absolute bottom-3 left-3 text-xs backdrop-blur-sm px-2.5 py-1 rounded-full"
-                          style={{ background: "rgba(0,0,0,0.65)", color: "rgba(255,255,255,0.75)" }}
-                        >
-                          👁 {a.viewers ?? 0}
-                        </div>
+                      <div className="absolute top-3 right-3 font-mono text-[11px] px-2 py-1 rounded-md tabular-nums"
+                        style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)", border: "1px solid rgba(255,255,255,0.14)", color: a.status === "live" ? "var(--brand-light)" : "#fff" }}>
+                        {timer}
+                      </div>
+                      {a.condition && (
+                        <span className="absolute bottom-[2.6rem] left-4 text-[10px] font-medium px-2 py-0.5 rounded-md"
+                          style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)", border: "1px solid rgba(255,255,255,0.14)", color: "#fff" }}>{a.condition}</span>
                       )}
 
-                      {/* Timer chip — red glow when live */}
-                      <div
-                        className="absolute bottom-3 right-3 text-xs font-mono font-black px-2.5 py-1 rounded-full backdrop-blur-sm"
-                        style={{
-                          background: a.status === "live" ? "rgba(239,68,68,0.88)" : "rgba(0,0,0,0.7)",
-                          color: "#fff",
-                          boxShadow: a.status === "live" ? "0 0 14px rgba(239,68,68,0.5)" : "none",
-                        }}
-                      >
-                        {formatTimer(a.endTime)}
-                      </div>
-
-                      {/* Bottom fade overlay */}
-                      <div
-                        className="absolute inset-x-0 bottom-0 h-16 pointer-events-none"
-                        style={{ background: "linear-gradient(to top, rgba(0,0,0,0.65), transparent)" }}
-                      />
-                    </div>
-
-                    {/* ── Card body ── */}
-                    <div className="p-4">
-                      <div className="flex items-start justify-between gap-2 mb-0.5">
-                        <p className="font-bold text-sm leading-tight" style={{ color: "var(--text-primary)" }}>
-                          {title}
-                        </p>
-                        {a.condition && (
-                          <span
-                            className="shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-md"
-                            style={{
-                              background: "rgba(37,99,235,0.15)",
-                              color: "var(--accent-text)",
-                              border: "1px solid rgba(37,99,235,0.2)",
-                            }}
-                          >
-                            {a.condition}
+                      {/* Overlaid title only. The running price is two taps of text over the
+                          card art; whoever cares about it is going in anyway, where it
+                          updates live instead of being a stale number on a grid. */}
+                      <div className="absolute inset-x-0 bottom-0 p-3.5 flex items-end justify-between gap-2">
+                        <p className="font-medium text-sm leading-tight tracking-tight text-white line-clamp-2 min-w-0">{title}</p>
+                        {/* On a phone card there is no room for both: the pill was breaking
+                            the title into scraps. The whole card is the link anyway, and the
+                            "En vivo" chip already marks it. */}
+                        {disp === "live" && (
+                          <span className="btn-brand shrink-0 hidden sm:inline-flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-full"
+                            style={{ background: "var(--brand-light)", color: INK }}>
+                            Entrar <span aria-hidden>→</span>
                           </span>
                         )}
                       </div>
-                      <p className="text-xs mb-4 truncate" style={{ color: "var(--text-muted)" }}>
-                        {gameLabel(a.game)}
-                        {a.items?.[0]?.cardSet && (
-                          <span style={{ color: "var(--accent-text)" }}> · {a.items[0].cardSet}</span>
-                        )}
-                      </p>
+                    </Link>
 
-                      <div className="flex items-end justify-between mb-4">
-                        <div>
-                          <p className="text-[11px] mb-0.5" style={{ color: "var(--text-muted)" }}>
-                            {a.status === "upcoming" ? "Precio inicial" : "Puja actual"}
-                          </p>
-                          <p className="text-xl font-black" style={{ color: "var(--text-primary)" }}>
-                            ${(currentBid / 100).toLocaleString("es-MX")}{" "}
-                            <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>MXN</span>
-                          </p>
-                          {a.binPrice && (
-                            <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
-                              Comprar ya: ${(a.binPrice / 100).toLocaleString("es-MX")} MXN
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[11px] mb-0.5" style={{ color: "var(--text-muted)" }}>Vendedor</p>
-                          <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
-                            {sellerName}{" "}
-                            {verified && <span style={{ color: "var(--accent-text)" }}>✓</span>}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div
-                        className="w-full py-2.5 rounded-xl text-sm font-black text-white text-center transition-all active:scale-95"
-                        style={{
-                          background: "linear-gradient(135deg, #2563EB, #3B82F6)",
-                          boxShadow: "0 4px 14px rgba(37,99,235,0.3)",
-                        }}
-                      >
-                        {a.status === "live"
-                          ? "Entrar y pujar →"
-                          : a.status === "ending"
-                          ? "Ver subasta →"
-                          : "Recordarme →"}
-                      </div>
-                    </div>
                   </div>
-                </Link>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
 
-        {/* ── Load more ── */}
-        {!loading && !error && hasMore && (
-          <div className="flex justify-center mt-12">
-            <button
-              onClick={loadMore}
-              disabled={loadingMore}
-              className="px-8 py-3.5 rounded-full font-bold text-sm transition-all disabled:opacity-50"
-              style={{
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border-brand)",
-                color: "var(--accent-text)",
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background  = "rgba(37,99,235,0.12)";
-                e.currentTarget.style.boxShadow   = "0 0 20px rgba(37,99,235,0.18)";
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background  = "var(--bg-elevated)";
-                e.currentTarget.style.boxShadow   = "none";
-              }}
-            >
-              {loadingMore ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
-                  Cargando...
-                </span>
-              ) : (
-                `Cargar más — ${total - auctions.length} restantes`
-              )}
-            </button>
-          </div>
-        )}
-      </div>
+          {/* Load more */}
+          {!loading && !error && hasMore && (
+            <div className="flex justify-center mt-12">
+              <button onClick={loadMore} disabled={loadingMore}
+                className="a-btn px-8 py-3 rounded-full font-medium text-sm disabled:opacity-50"
+                style={{ border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+                {loadingMore ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                    Cargando…
+                  </span>
+                ) : `Cargar más — ${total - auctions.length} restantes`}
+              </button>
+            </div>
+          )}
+        </div>
       </main>
+
+      {/* ── Scheduler modal (Agendar stream) ── */}
+      {showScheduler && (
+        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setShowScheduler(false)}>
+          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)", maxHeight: "88vh" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 px-5 py-4 shrink-0" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+              <div className="min-w-0">
+                <p className="font-semibold" style={{ color: "var(--text-primary)" }}>📅 Agendar stream</p>
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>Aparecerá en “Próximas” y avisará a tus seguidores 1 h antes.</p>
+              </div>
+              <button onClick={() => setShowScheduler(false)} aria-label="Cerrar" className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-base leading-none" style={{ color: "var(--text-muted)", background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>✕</button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {schedError && <p className="text-xs" style={{ color: "var(--error-text)" }}>{schedError}</p>}
+
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-muted)" }}>Fecha</label>
+                  <input type="date" value={schedDate} onChange={(e) => setSchedDate(e.target.value)}
+                    className="w-full rounded-xl px-3 py-2.5 text-sm" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
+                </div>
+                <div className="w-32">
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-muted)" }}>Hora</label>
+                  <input type="time" value={schedTime} onChange={(e) => setSchedTime(e.target.value)}
+                    className="w-full rounded-xl px-3 py-2.5 text-sm" style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)", fontSize: "16px" }} />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-muted)" }}>Categorías</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {CATEGORIES.map((c) => {
+                    const on = schedCats.includes(c.value);
+                    return (
+                      <button key={c.value} type="button" aria-pressed={on}
+                        onClick={() => setSchedCats((p) => p.includes(c.value) ? p.filter((x) => x !== c.value) : [...p, c.value])}
+                        className="px-3 py-1.5 rounded-full text-[13px] font-medium"
+                        style={on
+                          ? { background: "color-mix(in srgb, var(--brand) 12%, transparent)", border: "1px solid var(--border-brand)", color: "var(--accent-text)" }
+                          : { background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                        {c.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button type="button" onClick={scheduleStream} disabled={scheduling}
+                className="w-full py-3 rounded-xl text-sm font-black disabled:opacity-60" style={{ background: "var(--brand-light)", color: INK }}>
+                {scheduling ? "Agendando…" : "Agendar stream"}
+              </button>
+              <p className="text-[11px] text-center" style={{ color: "var(--text-muted)" }}>
+                El día del stream lo inicias desde aquí o tu panel de vendedor.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 const AUCTIONS_EMPTY = [
-  { icon: "🎴", title: "Sin subastas en este momento",  sub: "El estadio está en calma. Los duelos comienzan pronto." },
-  { icon: "⏳", title: "Nada por aquí aún",              sub: "Como buscar una carta holográfica — hay que tener paciencia." },
-  { icon: "🌙", title: "El mercado descansa",            sub: "Vuelve pronto para ver las próximas subastas en vivo." },
-  { icon: "🔍", title: "Sin resultados",                 sub: "Intenta buscar con otras palabras o quita los filtros." },
+  { title: "Sin subastas en este momento",  sub: "El estadio está en calma. Los duelos comienzan pronto." },
+  { title: "Nada por aquí aún",              sub: "Como buscar una carta holográfica — hay que tener paciencia." },
+  { title: "El mercado descansa",            sub: "Vuelve pronto para ver las próximas subastas en vivo." },
+  { title: "Sin resultados",                 sub: "Busca por vendedor o por juego — Pokémon, One Piece, Lorcana…" },
 ];
 
-function AuctionsEmptyState({ search, filter }: { search: string; filter: string }) {
+function AuctionsEmptyState({ search }: { search: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- pick once per mount, not per keystroke
   const randomIdx = useMemo(() => Math.floor(Math.random() * 3), []);
   const msg = search ? AUCTIONS_EMPTY[3] : AUCTIONS_EMPTY[randomIdx];
   return (
     <div className="text-center py-28">
-      <div
-        className="inline-flex items-center justify-center w-24 h-24 rounded-3xl text-5xl mb-6"
-        style={{
-          background: "var(--bg-elevated)",
-          border: "1px solid var(--border-brand)",
-          boxShadow: "0 0 40px rgba(37,99,235,0.1)",
-        }}
-      >
-        {msg.icon}
+      <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6"
+        style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round">
+          <rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" />
+        </svg>
       </div>
-      <p className="text-xl font-black mb-2" style={{ color: "var(--text-primary)" }}>
-        {msg.title}
-      </p>
-      <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-        {msg.sub}
-      </p>
-      {filter !== "all" && (
-        <p className="text-xs mt-3" style={{ color: "var(--text-muted)", opacity: 0.6 }}>
-          Prueba cambiando el filtro a &ldquo;Todas&rdquo;
-        </p>
-      )}
+      <p className="text-lg font-medium mb-2" style={{ color: "var(--text-primary)" }}>{msg.title}</p>
+      <p className="text-sm" style={{ color: "var(--text-muted)" }}>{msg.sub}</p>
     </div>
   );
 }

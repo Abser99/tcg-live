@@ -34,6 +34,11 @@ export class Bid {
   @Column({ type: 'int' })
   amount: number; // MXN cents
 
+  // True for the automatic counter-bid a max bid places on the winner's behalf, so we can
+  // tell a real human bid ("who just pushed") apart from the proxy's response.
+  @Column({ default: false })
+  auto: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 }

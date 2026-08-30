@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Listing, ListingStatus } from './entities/listing.entity';
 import { ListingOffer, OfferStatus } from './entities/listing-offer.entity';
 import { CreateListingDto } from './dto/create-listing.dto';
+import { UpdateListingDto } from './dto/update-listing.dto';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { OrdersService } from '../orders/orders.service';
 import { Order } from '../orders/entities/order.entity';
@@ -31,9 +32,42 @@ export class ListingsService {
     return listing;
   }
 
-  create(dto: CreateListingDto, sellerId: string) {
+  private readonly MAX_ACTIVE = 25;
+
+  async create(dto: CreateListingDto, sellerId: string) {
+    const activeCount = await this.repo.count({ where: { sellerId, status: ListingStatus.ACTIVE } });
+    if (activeCount >= this.MAX_ACTIVE) {
+      throw new BadRequestException(`Solo puedes tener hasta ${this.MAX_ACTIVE} artículos activos de compra directa.`);
+    }
     const listing = this.repo.create({ ...dto, sellerId, status: ListingStatus.ACTIVE });
     return this.repo.save(listing);
+  }
+
+  async update(id: string, sellerId: string, dto: UpdateListingDto) {
+    const listing = await this.findOne(id);
+    if (listing.sellerId !== sellerId) throw new ForbiddenException();
+    Object.assign(listing, dto);
+    return this.repo.save(listing);
+  }
+
+  /**
+   * Atomically take a listing out of the catalogue for its owner.
+   *
+   * markSold() just overwrites the status, so calling it twice hands the same card to
+   * two people. This only succeeds while the listing is still ACTIVE, which is the same
+   * guard buy() uses against two buyers racing for one card.
+   */
+  async claim(id: string, sellerId: string) {
+    const listing = await this.findOne(id);
+    if (listing.sellerId !== sellerId) throw new ForbiddenException('Ese artículo no es tuyo');
+    const result = await this.repo.update(
+      { id, status: ListingStatus.ACTIVE },
+      { status: ListingStatus.SOLD },
+    );
+    if (result.affected === 0) {
+      throw new ConflictException('Ese artículo ya se entregó o no está disponible');
+    }
+    return listing;
   }
 
   async markSold(id: string, sellerId: string) {

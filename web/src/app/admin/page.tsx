@@ -4,10 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { useAuth } from "@/contexts/auth";
-import {
-  sellerApplicationsApi, sellerDocumentsApi, disputesApi, usersApi, adminOrdersApi,
-  type SellerApplication, type SellerDocumentRecord, type ApiDispute, type AdminUser, type ApiOrder,
-} from "@/lib/api";
+import { sellerApplicationsApi, sellerDocumentsApi, disputesApi, usersApi, adminOrdersApi, type SellerApplication, type SellerDocumentRecord, type ApiDispute, type AdminUser, type ApiOrder, adminStatsApi, type ApiAdminOverview, type ApiSellerStatsRow, type ApiBuyerStatsRow, incidentsApi, type ApiIncident } from "@/lib/api";
 
 const DOC_LABELS: Record<string, string> = {
   identificacion:        "Identificación Oficial",
@@ -24,6 +21,11 @@ const STATUS_STYLE: Record<string, { label: string; color: string; bg: string }>
   rejected: { label: "Rechazado", color: "var(--error-text)", bg: "rgba(248,113,113,0.12)" },
 };
 
+/** MXN from cents, with no decimals — these are reporting figures, not receipts. */
+function money(cents: number): string {
+  return `$${Math.round((cents ?? 0) / 100).toLocaleString("es-MX")}`;
+}
+
 export default function AdminPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -32,7 +34,22 @@ export default function AdminPage() {
   const [documents,     setDocuments]     = useState<SellerDocumentRecord[]>([]);
   const [allDisputes,   setAllDisputes]   = useState<ApiDispute[]>([]);
   const [loading,       setLoading]       = useState(true);
-  const [tab,           setTab]           = useState<"applications" | "documents" | "disputes" | "users" | "cobros">("applications");
+  const [tab,           setTab]           = useState<"stats" | "incidents" | "applications" | "documents" | "disputes" | "users" | "cobros">("stats");
+
+  // ── Reporting ──
+  const [overview, setOverview] = useState<ApiAdminOverview | null>(null);
+  const [sellerRows, setSellerRows] = useState<ApiSellerStatsRow[]>([]);
+  const [buyerRows, setBuyerRows] = useState<ApiBuyerStatsRow[]>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [who, setWho] = useState<"sellers" | "buyers">("sellers");
+
+  // ── Incident queue ──
+  const [incidents, setIncidents] = useState<ApiIncident[]>([]);
+  const [incidentNote, setIncidentNote] = useState<Record<string, string>>({});
+  const openIncidents = incidents.filter(i => i.status === "open").length;
+  const loadIncidents = useCallback(() => {
+    incidentsApi.list().then(r => setIncidents(r.data)).catch(() => {});
+  }, []);
   const [filter,        setFilter]        = useState("pending");
   const [selected,      setSelected]      = useState<SellerApplication | null>(null);
   const [rejectNote,    setRejectNote]    = useState("");
@@ -158,9 +175,24 @@ export default function AdminPage() {
     }
   }, [user]);
 
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      const [o, se, bu] = await Promise.all([adminStatsApi.overview(), adminStatsApi.sellers(50), adminStatsApi.buyers(50)]);
+      setOverview(o.data); setSellerRows(se.data); setBuyerRows(bu.data);
+    } catch {
+      // the empty state already reads as "sin datos"
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
+
+  // Each tab pays for its own query the first time it is opened.
   useEffect(() => {
+    if (tab === "stats" && !overview && !statsLoading) loadStats();
+    if (tab === "incidents" && incidents.length === 0) loadIncidents();
     if (tab === "users" && allUsers.length === 0) loadUsers(1);
-  }, [tab, allUsers.length, loadUsers]);
+  }, [tab, overview, statsLoading, loadStats, incidents.length, loadIncidents, allUsers.length, loadUsers]);
 
   useEffect(() => {
     if (tab === "cobros" && pendingPayouts === null) loadPendingPayouts();
@@ -300,7 +332,7 @@ export default function AdminPage() {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-2xl font-black">Panel de Administración</h1>
-              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Revisión de solicitudes y documentos KYC</p>
+              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Actividad de la plataforma, solicitudes de vendedor y disputas</p>
             </div>
             <div className="flex gap-2">
               {(["pending", "approved", "rejected", "all"] as const).map(f => (
@@ -317,6 +349,8 @@ export default function AdminPage() {
 
           <div className="flex gap-1 mt-6 flex-wrap">
             {[
+              { key: "stats",        label: "Estadísticas",            count: 0            },
+              { key: "incidents",    label: "Reportes",                count: openIncidents },
               { key: "applications", label: "Solicitudes de Vendedor", count: pendingApps  },
               { key: "documents",    label: "Documentos KYC",          count: pendingDocs  },
               { key: "disputes",     label: "Disputas",                count: openDisputes },
@@ -349,6 +383,174 @@ export default function AdminPage() {
         ) : (
           <>
             {/* ── SOLICITUDES ── */}
+            {tab === "stats" && (
+              <div className="space-y-6">
+                {statsLoading && !overview ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[1,2,3,4,5,6,7,8].map(i => <div key={i} className="h-24 rounded-2xl shimmer" style={{ border: "1px solid var(--border)" }} />)}
+                  </div>
+                ) : overview ? (
+                  <>
+                    {/* Headline numbers. Money first — it's what the question usually is. */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {([
+                        ["Ingresos cobrados", money(overview.orders.revenueCents), `comisión ${money(overview.orders.commissionCents)}`],
+                        ["Ventas totales",    money(overview.orders.gmvCents),     `${overview.orders.total} órdenes · ${overview.orders.paid} pagadas`],
+                        ["Minutos vistos",    overview.watch.watchedMinutes.toLocaleString("es-MX"), `${overview.watch.viewers} espectadores`],
+                        ["Pujas",             overview.bids.total.toLocaleString("es-MX"), `${overview.bids.bidders} pujadores · ${overview.bids.automatic} automáticas`],
+                        ["Minutos al aire",   overview.auctions.streamedMinutes.toLocaleString("es-MX"), `${overview.auctions.total} subastas`],
+                        ["En vivo ahora",     String(overview.auctions.live), `${overview.auctions.scheduled} programadas`],
+                        ["Usuarios",          String(overview.users.total), `${overview.users.sellers} vendedores · ${overview.users.buyers} compradores`],
+                        ["Sorteos",           String(overview.raffles.drawn), `de ${overview.raffles.total} creados`],
+                      ] as const).map(([label, value, sub]) => (
+                        <div key={label} className="rounded-2xl p-4" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+                          <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>{label}</p>
+                          <p className="text-2xl font-black mt-1 tabular-nums" style={{ color: "var(--text-primary)" }}>{value}</p>
+                          <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{sub}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Per-person detail. One table at a time keeps the columns readable. */}
+                    <div className="flex gap-2">
+                      {(["sellers", "buyers"] as const).map(k => (
+                        <button key={k} onClick={() => setWho(k)}
+                          className="px-4 py-2 rounded-full text-sm font-semibold"
+                          style={who === k
+                            ? { background: "var(--brand-light)", color: "var(--brand-ink)" }
+                            : { background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                          {k === "sellers" ? `Vendedores (${sellerRows.length})` : `Compradores (${buyerRows.length})`}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="rounded-2xl overflow-x-auto" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
+                      <table className="w-full text-sm" style={{ minWidth: 680 }}>
+                        <thead>
+                          <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                            {(who === "sellers"
+                              ? ["Vendedor", "Lives", "Min. al aire", "Órdenes", "Ingresos", "Pujas recibidas", "Min. de audiencia"]
+                              : ["Comprador", "Órdenes", "Gastado", "Sorteos ganados", "Pujas", "Min. vistos", "Lives"]
+                            ).map((h, i) => (
+                              <th key={h} className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap"
+                                style={{ color: "var(--text-muted)", textAlign: i === 0 ? "left" : "right" }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {who === "sellers" ? sellerRows.map(r => (
+                            <tr key={r.userId} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                              <td className="px-4 py-2.5 font-semibold whitespace-nowrap" style={{ color: "var(--text-primary)" }}>
+                                @{r.username}{r.verified && <span style={{ color: "var(--accent-text)" }}> ✓</span>}
+                              </td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.lives}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.streamedMinutes.toLocaleString("es-MX")}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.orders}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: "var(--text-primary)" }}>{money(r.revenueCents)}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.bidsReceived}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.audienceMinutes.toLocaleString("es-MX")}</td>
+                            </tr>
+                          )) : buyerRows.map(r => (
+                            <tr key={r.userId} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                              <td className="px-4 py-2.5 font-semibold whitespace-nowrap" style={{ color: "var(--text-primary)" }}>@{r.username}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.orders}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{ color: "var(--text-primary)" }}>{money(r.spentCents)}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.giveaways}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.bids}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.watchedMinutes.toLocaleString("es-MX")}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: "var(--text-secondary)" }}>{r.livesAttended}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-center py-12" style={{ color: "var(--text-muted)" }}>No se pudieron cargar las estadísticas.</p>
+                )}
+              </div>
+            )}
+
+            {tab === "incidents" && (
+              <div className="space-y-3">
+                {incidents.length === 0 ? (
+                  <p className="text-sm text-center py-16" style={{ color: "var(--text-muted)" }}>No hay reportes.</p>
+                ) : incidents.map(i => {
+                  const kindLabel: Record<string, string> = {
+                    live: "En transmisión", no_response: "Vendedor no responde",
+                    seller_report: "Denuncia a vendedor", other: "Otro",
+                  };
+                  const stamp = (sec: number | null) =>
+                    sec === null ? "" : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+                  const done = i.status === "resolved" || i.status === "dismissed";
+                  return (
+                    <div key={i.id} className="rounded-2xl p-4" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", opacity: done ? 0.6 : 1 }}>
+                      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ background: "var(--bg-elevated)", color: "var(--accent-text)" }}>{kindLabel[i.kind] ?? i.kind}</span>
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ background: "var(--bg-elevated)", color: done ? "var(--text-muted)" : "var(--warn)" }}>{i.status}</span>
+                        </div>
+                        <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                          {new Date(i.createdAt).toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+
+                      <p className="text-sm" style={{ color: "var(--text-primary)" }}>{i.description}</p>
+                      <p className="text-[11px] mt-1.5" style={{ color: "var(--text-muted)" }}>
+                        Reportó @{i.reporterUsername}
+                        {i.reportedUsername && <> · sobre <span style={{ color: "var(--error-text)" }}>@{i.reportedUsername}</span></>}
+                      </p>
+
+                      {/* The whole point of marking instead of buffering: jump straight
+                          to the minute in the recording that already exists. */}
+                      {i.auctionId && i.fromOffsetSec !== null && (
+                        <a href={`/auctions/${i.auctionId}/replay?t=${i.fromOffsetSec}`} target="_blank" rel="noopener"
+                          className="inline-flex items-center gap-1.5 mt-2.5 text-xs font-semibold px-3 py-1.5 rounded-full"
+                          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+                          ▶ Ver la grabación {stamp(i.fromOffsetSec)} – {stamp(i.toOffsetSec)}
+                        </a>
+                      )}
+
+                      {i.adminNote && (
+                        <p className="text-xs mt-2 pt-2" style={{ color: "var(--text-secondary)", borderTop: "1px solid var(--border-subtle)" }}>
+                          Nota: {i.adminNote}
+                        </p>
+                      )}
+
+                      {!done && (
+                        <div className="mt-3 pt-3 space-y-2" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+                          <input
+                            value={incidentNote[i.id] ?? ""}
+                            onChange={e => setIncidentNote(p => ({ ...p, [i.id]: e.target.value }))}
+                            placeholder="Qué se hizo (lo verá quien reportó)"
+                            className="w-full rounded-lg px-3 py-2 text-sm"
+                            style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+                          <div className="flex gap-2">
+                            {([["resolved", "Resolver"], ["dismissed", "Descartar"], ["reviewing", "En revisión"]] as const).map(([st, label]) => (
+                              <button key={st} onClick={async () => {
+                                try {
+                                  await incidentsApi.resolve(i.id, st, incidentNote[i.id]);
+                                  loadIncidents();
+                                } catch {}
+                              }}
+                                className="text-xs font-bold px-3 py-1.5 rounded-lg"
+                                style={st === "resolved"
+                                  ? { background: "var(--brand-light)", color: "var(--brand-ink)" }
+                                  : { background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {tab === "applications" && (
               <div className="space-y-3">
                 <h2 className="sr-only">Solicitudes de vendedor</h2>

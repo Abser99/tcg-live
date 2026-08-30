@@ -6,7 +6,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { usersApi, auctionsApi, listingsApi, watchlistApi, type PublicProfile, type ApiAuction, type ApiListing } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
-import { gameLabel } from "@/lib/format";
+import { gameLabel, liveName } from "@/lib/format";
 
 const GRADIENTS = [
   "from-orange-500 to-red-600",
@@ -275,7 +275,7 @@ export default function StorefrontPage() {
                             {s?.text ?? a.status}
                           </span>
                         </div>
-                        <p className="font-bold text-sm mt-1 truncate">{a.title ?? a.name ?? "Sin título"}</p>
+                        <p className="font-bold text-sm mt-1 truncate">{liveName(a)}</p>
                         <p className="text-xs" style={{ color: "var(--text-muted)" }}>{gameLabel(a.game)} {a.condition ? `· ${a.condition}` : ""}</p>
                         <p className="text-sm font-black mt-1">
                           ${(a.currentBid ?? a.startingBid ?? 0).toLocaleString("es-MX")}{" "}
@@ -320,7 +320,7 @@ export default function StorefrontPage() {
                     <div key={a.id} className="flex items-center gap-3 rounded-xl p-3" style={{ background: "var(--bg-hover)", border: "1px solid var(--border-subtle)" }}>
                       <div className="w-9 h-12 rounded-lg flex items-center justify-center text-base shrink-0" style={{ background: "var(--bg-input)" }} aria-hidden="true">🃏</div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate" style={{ color: "var(--text-secondary)" }}>{a.title ?? a.name ?? "Sin título"}</p>
+                        <p className="text-sm font-semibold truncate" style={{ color: "var(--text-secondary)" }}>{liveName(a)}</p>
                         <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>${(a.currentBid ?? 0).toLocaleString("es-MX")} MXN · Finalizada</p>
                       </div>
                     </div>
@@ -344,8 +344,10 @@ export default function StorefrontPage() {
                 {listings.filter(l => l.status === "active").map(l => {
                   const gradient = hashColor(l.id, GRADIENTS);
                   return (
-                    <Link key={l.id} href={`/shop`}>
-                      <div className="rounded-2xl p-4 flex items-center gap-4 hover:border-[#2563EB]/30 transition-all cursor-pointer" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+                    // Not a link: there's no per-listing page, and the old href sent every
+                    // card to the generic marketplace, which no longer exists.
+                    <div key={l.id}>
+                      <div className="rounded-2xl p-4 flex items-center gap-4" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
                         {l.imageUrls?.[0] ? (
                           <img src={l.imageUrls[0]} alt={`Carta: ${l.title}`} className="w-14 h-20 rounded-xl object-cover shrink-0" />
                         ) : (
@@ -367,7 +369,7 @@ export default function StorefrontPage() {
                           )}
                         </div>
                       </div>
-                    </Link>
+                    </div>
                   );
                 })}
               </div>
