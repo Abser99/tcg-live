@@ -160,6 +160,50 @@ export class AuctionsController {
     );
   }
 
+  /**
+   * A preview for a scheduled show. Kept short on purpose: this is a trailer that
+   * plays while people wait, not the recording of a live.
+   */
+  @Post(':id/trailer')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: './uploads/trailers',
+      filename: (_req, file, cb) => {
+        const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+        cb(null, `${unique}${extname(file.originalname) || '.mp4'}`);
+      },
+    }),
+    fileFilter: (_req, file, cb) =>
+      file.mimetype.startsWith('video/')
+        ? cb(null, true)
+        : cb(new BadRequestException('El tráiler tiene que ser un video'), false),
+    limits: { fileSize: 60 * 1024 * 1024 },
+  }))
+  async uploadTrailer(
+    @Param('id') id: string,
+    @UploadedFile() file: { filename: string; path: string } | undefined,
+    @CurrentUser() user: User,
+  ) {
+    if (!file) throw new BadRequestException('No se recibió el video');
+    // Multer writes before the handler runs, so an upload aimed at someone else's
+    // show has to be swept up rather than left behind.
+    const auction = await this.auctionsService.findOne(id);
+    if (auction.sellerId !== user.id && user.role !== UserRole.ADMIN) {
+      await unlink(file.path).catch(() => undefined);
+      throw new ForbiddenException('Este live no es tuyo');
+    }
+    return this.auctionsService.setTrailer(id, user.id, `/uploads/trailers/${file.filename}`);
+  }
+
+  @Delete(':id/trailer')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  removeTrailer(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.auctionsService.setTrailer(id, user.id, null);
+  }
+
   /** "I'm still watching." Credits time toward raffle entries. */
   @Post(':id/heartbeat')
   @UseGuards(AuthGuard('jwt'))

@@ -60,6 +60,11 @@ export class Auction {
   @Column({ type: 'varchar', length: 80, nullable: true })
   displayName: string | null;
 
+  /** Short preview the seller uploads before going live — what a scheduled show has
+      to offer instead of an empty room. A path under /uploads, never a foreign URL. */
+  @Column({ type: 'varchar', nullable: true })
+  trailerUrl: string | null;
+
   @Column({ type: 'enum', enum: AuctionGame, default: AuctionGame.POKEMON })
   game: AuctionGame;
 

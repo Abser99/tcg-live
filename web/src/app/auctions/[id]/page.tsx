@@ -13,7 +13,7 @@ import { Room, RoomEvent, Track, createLocalVideoTrack } from "livekit-client";
 import { auctionsApi, watchlistApi, usersApi, paymentMethodsApi, listingsApi, bidIncrement, type ApiAuction, type ApiAuctionItem, type ApiPaymentMethod, type ApiListing, type BidMode, type ApiRaffle, type ApiLiveStats, fileUrl, incidentsApi, geoApi } from "@/lib/api";
 import { createLiveRecorder } from "@/lib/live-recorder";
 import { getAuctionsCache } from "@/lib/live-back-cache";
-import { useFavoriteSeller } from "@/lib/seller-favorites";
+import { useFavoriteSeller, requestLiveAlertPermission } from "@/lib/seller-favorites";
 import { uploadToCloudinary } from "@/lib/cloudinary";
 import { censorText } from "@/lib/profanity";
 import { formatTimer, gameLabel, liveName, apiMessage, copyText } from "@/lib/format";
@@ -618,6 +618,185 @@ function ProductPanel({ auction: a, gradient, glow, activeItem, isSeller, onAuct
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── Upcoming: the reservation screen ─────────────────────
+   What someone sees when they arrive before the show. A trailer if the seller left
+   one, when it starts, and the one action that matters — being told when it does. */
+function UpcomingPanel({ auction: a, isSeller, fullScreen, onAuctionUpdate, flashToast }: {
+  auction: ApiAuction;
+  isSeller: boolean;
+  fullScreen?: boolean;
+  onAuctionUpdate?: (a: ApiAuction) => void;
+  flashToast: (msg: string) => void;
+}) {
+  const { user } = useAuth();
+  const sellerName = a.seller?.username ?? a.sellerName ?? "—";
+  const [favSeller, toggleFavSeller] = useFavoriteSeller(sellerName, a.seller?.id);
+  const [reserved, setReserved] = useState(false);
+  const [reserving, setReserving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const trailerInputRef = useRef<HTMLInputElement>(null);
+
+  // Ticks once a second so the countdown moves.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const startsAt = a.scheduledAt ? new Date(a.scheduledAt).getTime() : null;
+  const away = startsAt ? startsAt - now : null;
+  const countdown = (() => {
+    if (away === null) return null;
+    if (away <= 0) return "Empieza en cualquier momento";
+    const s = Math.floor(away / 1000);
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60), sec = s % 60;
+    if (d > 0) return `Faltan ${d} ${d === 1 ? "día" : "días"} y ${h} h`;
+    if (h > 0) return `Faltan ${h} h ${String(m).padStart(2, "0")} min`;
+    return `Faltan ${m}:${String(sec).padStart(2, "0")}`;
+  })();
+
+  const when = startsAt
+    ? new Date(startsAt).toLocaleString("es-MX", {
+        weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
+      })
+    : null;
+
+  /* Reserving is following the seller: that is what already sends the alert when they
+     go live, so this is one promise kept by one mechanism rather than a second one. */
+  async function reserve() {
+    if (!user) { flashToast("Inicia sesión para que te avisemos."); return; }
+    setReserving(true);
+    try {
+      await watchlistApi.add(a.id).catch(() => {});   // also lands in "Seguimiento"
+      if (!favSeller) toggleFavSeller();
+      requestLiveAlertPermission();
+      setReserved(true);
+      flashToast("Listo — te avisamos cuando empiece 🔔");
+    } finally { setReserving(false); }
+  }
+
+  async function pickTrailer(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const { data } = await auctionsApi.uploadTrailer(a.id, form);
+      onAuctionUpdate?.(data);
+      flashToast("Tráiler subido");
+    } catch (err: unknown) {
+      flashToast(apiMessage(err, "No se pudo subir el tráiler."));
+    } finally { setUploading(false); }
+  }
+
+  async function dropTrailer() {
+    try {
+      const { data } = await auctionsApi.removeTrailer(a.id);
+      onAuctionUpdate?.(data);
+      flashToast("Tráiler quitado");
+    } catch (err: unknown) {
+      flashToast(apiMessage(err, "No se pudo quitar el tráiler."));
+    }
+  }
+
+  const lots = a.items?.length ?? 0;
+
+  return (
+    <div
+      className={fullScreen ? "relative overflow-hidden flex flex-col" : "rounded-2xl overflow-hidden flex flex-col"}
+      style={fullScreen
+        ? { background: "#08080c", minHeight: "60vh" }
+        : { background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "var(--card-shadow)" }}
+    >
+      {/* The trailer, or the space where one would be */}
+      <div className="relative w-full" style={{ aspectRatio: "16 / 10", background: "#000" }}>
+        {a.trailerUrl ? (
+          <video
+            src={fileUrl(a.trailerUrl)}
+            controls playsInline preload="metadata"
+            className="absolute inset-0 w-full h-full object-contain"
+          />
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center">
+            <span className="text-4xl" aria-hidden="true">🎬</span>
+            <p className="text-sm font-semibold text-white">Aún no hay adelanto</p>
+            <p className="text-[12px] max-w-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
+              {isSeller
+                ? "Sube un video corto para que quien entre sepa qué vas a sacar."
+                : `${sellerName} todavía no subió un adelanto de este live.`}
+            </p>
+          </div>
+        )}
+
+        <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full"
+          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)", border: "1px solid rgba(255,255,255,0.16)", color: "#fff" }}>
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--text-muted)" }} />
+          Próximo
+        </span>
+      </div>
+
+      {/* When, and what to do about it */}
+      <div className="p-5 space-y-4">
+        <div>
+          <p className="text-lg font-black leading-tight" style={{ color: "var(--text-primary)" }}>{liveName(a)}</p>
+          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+            de <Link href={`/tienda/${encodeURIComponent(sellerName)}`} className="u-link" style={{ color: "var(--text-secondary)" }}>@{sellerName}</Link>
+            {lots > 0 && ` · ${lots} ${lots === 1 ? "lote listo" : "lotes listos"}`}
+          </p>
+        </div>
+
+        <div className="rounded-2xl p-4" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+          <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Empieza</p>
+          <p className="text-xl font-black tabular-nums mt-0.5" style={{ color: "var(--accent-text)" }}>
+            {countdown ?? "Sin fecha todavía"}
+          </p>
+          {when && <p className="text-xs mt-0.5 first-letter:uppercase" style={{ color: "var(--text-secondary)" }}>{when}</p>}
+        </div>
+
+        {isSeller ? (
+          <div className="space-y-2">
+            <input ref={trailerInputRef} type="file" accept="video/*" onChange={pickTrailer} className="hidden" />
+            <div className="flex gap-2">
+              <button type="button" onClick={() => trailerInputRef.current?.click()} disabled={uploading}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold disabled:opacity-60"
+                style={{ background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+                {uploading ? "Subiendo…" : a.trailerUrl ? "Cambiar tráiler" : "🎬 Subir tráiler"}
+              </button>
+              {a.trailerUrl && (
+                <button type="button" onClick={dropTrailer}
+                  className="px-4 rounded-xl text-sm font-semibold"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--error-text)" }}>
+                  Quitar
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-center" style={{ color: "var(--text-muted)" }}>
+              Un video corto, hasta 60 MB. Se ve aquí hasta que abras el live.
+            </p>
+          </div>
+        ) : (
+          <button type="button" onClick={reserve} disabled={reserving || reserved}
+            className="w-full py-3 rounded-xl text-sm font-black disabled:opacity-70"
+            style={reserved
+              ? { background: "var(--bg-input)", border: "1px solid var(--border-brand)", color: "var(--accent-text)" }
+              : { background: "var(--brand-light)", color: "var(--brand-ink)" }}>
+            {reserved ? "✓ Te avisamos cuando empiece" : reserving ? "…" : "🔔 Avísame cuando empiece"}
+          </button>
+        )}
+
+        {!isSeller && (
+          <p className="text-[11px] text-center" style={{ color: "var(--text-muted)" }}>
+            Las pujas abren cuando {sellerName} inicie la transmisión.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -2592,6 +2771,22 @@ function StreamPanel({ auction: a, gradient, glow, autoStream = false, onAuction
   // Keep the badge narrow so it never collides with the seller row ("Finalizada" is too wide)
   const timer      = !closesAt ? "—" : secsLeft === 0 ? "0:00" : formatTimer(closesAt);
   const showVideo  = streaming || hasRemoteVideo;
+
+  /* A scheduled show is not a live with nothing in it. Dropping people into the bidding
+     UI before anything exists gave them an empty room with a timer at "—" and no way to
+     do the one thing they came for: come back when it starts. */
+  const upcoming = a.status === "scheduled" || a.status === "upcoming";
+  if (upcoming) {
+    return (
+      <UpcomingPanel
+        auction={a}
+        isSeller={isSeller}
+        fullScreen={fullScreen}
+        onAuctionUpdate={onAuctionUpdate}
+        flashToast={flashToast}
+      />
+    );
+  }
 
   return (
     <div

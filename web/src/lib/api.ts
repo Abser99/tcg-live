@@ -176,6 +176,13 @@ export const auctionsApi = {
   /** Hand the roulette prize to its winner: records it and creates their order. */
   awardGiveaway: (id: string, dto: { winnerUsername: string; listingId?: string }) =>
     api.post<{ awarded: boolean; winner: string; order: ApiOrder | null }>(`/auctions/${id}/giveaway`, dto),
+  /** Multipart: a short preview for a scheduled show. */
+  uploadTrailer: (id: string, form: FormData) =>
+    api.post<ApiAuction>(`/auctions/${id}/trailer`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 180_000,
+    }),
+  removeTrailer: (id: string) => api.delete<ApiAuction>(`/auctions/${id}/trailer`),
   /** Multipart: the browser-captured recording for this live. */
   uploadRecording: (id: string, form: FormData) =>
     api.post<ApiAuction>(`/auctions/${id}/recording`, form, {
@@ -455,6 +462,8 @@ export interface ApiUser {
 }
 
 export interface ApiAuction {
+  /** Short preview shown while a scheduled show is still waiting to start. */
+  trailerUrl?: string | null;
   id: string;
   sellerId?: string;
   status: "live" | "ending" | "upcoming" | "scheduled" | "cancelled" | "ended";

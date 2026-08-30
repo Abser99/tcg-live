@@ -1332,6 +1332,14 @@ export class AuctionsService implements OnModuleInit {
     };
   }
 
+  /** Attach or clear a scheduled show's preview. Only paths we wrote ourselves. */
+  async setTrailer(auctionId: string, sellerId: string, url: string | null): Promise<Auction> {
+    const auction = await this.findOne(auctionId);
+    this.assertOwner(auction.sellerId, sellerId);
+    auction.trailerUrl = url && url.startsWith('/uploads/') ? url : null;
+    return this.auctionsRepo.save(auction);
+  }
+
   /** Watch time for one viewer of one live. */
   async myWatchTime(auctionId: string, userId: string) {
     const row = await this.attendanceRepo.findOne({ where: { auctionId, userId } });
